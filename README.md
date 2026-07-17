@@ -7,13 +7,15 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&amp;logoColor=white" alt="TypeScript 5.7" /></a>
   <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&amp;logoColor=white" alt="PostgreSQL 16" /></a>
   <a href="https://docs.docker.com/compose/"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&amp;logoColor=white" alt="Docker Compose" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial-7357F5" alt="PolyForm Noncommercial License 1.0.0" /></a>
   <p><strong>A self-hosted workflow engine for reviewable, recoverable AI-assisted software delivery.</strong></p>
   <p>
     <a href="#why-kyron">Why Kyron</a> ·
     <a href="#how-it-works">How it works</a> ·
     <a href="#quick-start">Quick start</a> ·
     <a href="#workflow-example">Workflow example</a> ·
-    <a href="#documentation">Documentation</a>
+    <a href="#documentation">Documentation</a> ·
+    <a href="#license">License</a>
   </p>
 </div>
 
@@ -306,6 +308,14 @@ See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [acceptance check
 | [Decision log](docs/decisions.md) | Architectural decisions and normative deviations |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Milestone scope, status, and verification gates |
 | [Normative engine specification](workflow_orchestration_engine_spec.md) | Authoritative product behavior and constraints |
+
+## License
+
+Kyron is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and redistribute it for permitted noncommercial purposes, subject to the license terms and required notices.
+
+Commercial use—including paid distribution, bundling, hosting, managed services, or use in revenue-generating business operations—requires a separate written license. See [commercial licensing](COMMERCIAL-LICENSE.md) for details.
+
+Copyright © 2026 Noah Maeschli. All rights reserved except as expressly granted under the applicable license.
 
 ---
 
