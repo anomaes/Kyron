@@ -12,6 +12,6 @@ A separate written commercial license is required to use Kyron for a commercial 
 
 Commercial terms may be structured as a fixed fee, subscription, per-deployment license, royalty, revenue-sharing arrangement, or another mutually agreed model.
 
-Contact Noah Maeschli through the contact details on the repository owner's GitHub profile to discuss commercial licensing. No commercial rights are granted until both parties enter into a separate written agreement.
+Contact Noah Mäschli at [enomaes.business@outlook.com](mailto:enomaes.business@outlook.com) to discuss commercial licensing. No commercial rights are granted until both parties enter into a separate written agreement.
 
 This document is an invitation to discuss commercial terms. It is not itself a commercial license or an offer that can be accepted without a separate written agreement.

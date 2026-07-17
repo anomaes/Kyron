@@ -315,7 +315,7 @@ Kyron is source-available under the [PolyForm Noncommercial License 1.0.0](LICEN
 
 Commercial use—including paid distribution, bundling, hosting, managed services, or use in revenue-generating business operations—requires a separate written license. See [commercial licensing](COMMERCIAL-LICENSE.md) for details.
 
-Copyright © 2026 Noah Maeschli. All rights reserved except as expressly granted under the applicable license.
+Copyright © 2026 Noah Mäschli. All rights reserved except as expressly granted under the applicable license.
 
 ---
 
