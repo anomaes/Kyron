@@ -23,3 +23,17 @@ Accepted. Production images pin `@earendil-works/pi-coding-agent` 0.80.9 and use
 Node 22.20 or newer, matching the package's declared engine requirement at the
 time of implementation. Upgrade the pin only with JSON-event fixture and smoke
 test verification.
+
+## D-005 — Workflow tags remain definition metadata
+
+Accepted. Workflow tags are stored in each `.workflowEngine/<workflow_id>.json`
+definition and travel with Git review, exact-SHA snapshots, and exports. They are not
+duplicated into database catalog tables because they have no runtime semantics. The
+catalog derives search, filtering, and grouping from the exact default-branch
+definitions already returned by the workflow API.
+
+## D-006 — Run visualization is derived from durable invocation state
+
+Accepted. Expanded child workflows and review-loop history are reconstructed from the
+snapshotted definitions, invocation parent links, iteration numbers, node executions,
+and feedback events. The UI does not persist a second visualization-specific history.

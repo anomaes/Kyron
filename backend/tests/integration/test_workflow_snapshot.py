@@ -42,7 +42,9 @@ async def test_bundle_is_loaded_transitively_from_one_exact_commit(tmp_path: Pat
         ]
     )
     (definitions / "root.json").write_text(json.dumps(root))
-    (definitions / "child.json").write_text(json.dumps(workflow("child")))
+    (definitions / "child.json").write_text(
+        json.dumps(workflow("child", tags=["implementation"]))
+    )
     await git("add", ".workflowEngine", cwd=repository)
     await git("commit", "-m", "workflows", cwd=repository)
     sha = await git("rev-parse", "HEAD", cwd=repository)
@@ -59,3 +61,4 @@ async def test_bundle_is_loaded_transitively_from_one_exact_commit(tmp_path: Pat
     assert bundle.base_commit_sha == sha
     assert set(bundle.workflows) == {"root", "child"}
     assert bundle.reference_graph == {"root": ["child"], "child": []}
+    assert bundle.workflows["child"].tags == ["implementation"]

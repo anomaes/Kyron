@@ -28,6 +28,12 @@ Run `./scripts/verify.sh` to repeat the repository-local portion of this gate.
 - Auth service: strict TypeScript check and production build.
 - Supply chain: both Node package trees pass `npm audit --audit-level=high`.
 
+For workflow catalog and visualization changes, additionally verify that tags survive
+definition serialization; catalog search, tag filtering, and grouping agree; composite
+workflow selectors expose the exact default-branch catalog; declared child mappings are
+editable without raw JSON; and a multi-round review run displays each child invocation
+and feedback transition in order.
+
 ## Environment-dependent acceptance
 
 The following checks require the target GitLab instance, OAuth application,

@@ -18,8 +18,18 @@ transitive workflow JSON are read with `git show <sha>:<path>` and stored as a
 secret-free snapshot. All invocations share the run worktree. Process nodes can
 run concurrently only within a checkpointed wave; control nodes are serialized.
 
+Workflow tags are versioned metadata inside those JSON definitions rather than
+database state. Consequently catalog grouping, filtering, and builder child-workflow
+selection always describe the same default-branch revision returned by the workflow
+API. Tags have no execution semantics.
+
+The run graph is reconstructed from the immutable workflow bundle plus durable
+invocation and node-execution rows. The root graph and each child invocation are
+rendered as separate instances; parent execution IDs establish invocation edges and
+loop iteration numbers order review rounds. No visualization-only execution state is
+persisted.
+
 Secret values occupy a separate lifetime from public workflow context. Stored
 Fernet ciphertext is decrypted immediately before process or GitLab use, added
 to an in-memory redactor, and discarded after the operation. Secret values are
 never valid `${...}` template variables.
-

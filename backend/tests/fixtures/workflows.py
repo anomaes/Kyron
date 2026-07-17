@@ -20,6 +20,7 @@ def workflow(
     edges: list[dict[str, Any]] | None = None,
     inputs: dict[str, Any] | None = None,
     outputs: dict[str, Any] | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": workflow_id,
@@ -27,6 +28,7 @@ def workflow(
         "description": "test workflow",
         "version": 2,
         "created_by": "test@example.com",
+        "tags": tags or [],
         "inputs": inputs or {},
         "outputs": outputs or {},
         "variables": {},

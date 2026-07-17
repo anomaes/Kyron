@@ -92,7 +92,11 @@ tests cover state conflicts, path safety, identity restrictions, and replay.
 Build the authenticated shell, projects, credentials, workflow list/run dialog,
 run list/detail, graphs, waves, attempts, logs, and feedback. Build the React Flow
 editor for every node/condition/settings field, reject cycles client-side, show
-server validation, and save through definition MRs.
+server validation, and save through definition MRs. Workflow definitions carry
+versioned tags used by catalog search/filter/group controls. Composite-node editors
+use searchable catalog selectors and schema-driven input/output mapping fields. Run
+graphs expand all durable child invocation instances and connect review iterations in
+feedback order.
 
 Verification gate: TypeScript checks and component tests pass, production build
 succeeds, and the documented review-loop example can be constructed and saved.

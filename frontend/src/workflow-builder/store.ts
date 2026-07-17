@@ -31,7 +31,7 @@ type BuilderStore = {
   serialize: () => Workflow;
 };
 
-const initial: Workflow = { id: "new_workflow", name: "New workflow", description: "", version: 2, created_by: "", inputs: {}, outputs: {}, variables: {}, nodes: [], edges: [], settings: {} };
+const initial: Workflow = { id: "new_workflow", name: "New workflow", description: "", version: 2, created_by: "", tags: [], inputs: {}, outputs: {}, variables: {}, nodes: [], edges: [], settings: {} };
 
 function flowNode(node: WorkflowNode): BuilderNode {
   return { id: node.id, position: node.position, type: "workflow", data: { workflowNode: node, label: node.label, type: node.type } };

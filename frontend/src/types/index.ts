@@ -59,6 +59,7 @@ export type Workflow = {
   description: string;
   version: 2;
   created_by: string;
+  tags: string[];
   inputs: Record<string, { type: string; required?: boolean; default?: unknown; description?: string }>;
   outputs: Record<string, { type: string; source: string; description?: string }>;
   variables: Record<string, string | number | boolean>;
@@ -97,12 +98,25 @@ export type Run = {
 
 export type RunGraph = {
   snapshot: { root_workflow_id: string; workflows: Record<string, Workflow> };
-  invocations: Array<Record<string, unknown>>;
+  invocations: Array<{
+    id: string;
+    workflow_id: string;
+    invocation_path: string;
+    parent_invocation_id: string | null;
+    parent_node_execution_id: string | null;
+    loop_iteration: number;
+    status: string;
+  }>;
   waves: Array<Record<string, unknown>>;
-  nodes: Array<Record<string, unknown>>;
+  nodes: Array<{
+    id: string;
+    invocation_id: string;
+    node_id: string;
+    status: string;
+  }>;
   attempts: Array<Record<string, unknown>>;
   edge_evaluations: Array<Record<string, unknown>>;
-  feedback: Array<Record<string, unknown>>;
+  feedback: Array<{ node_execution_id: string; iteration: number; message: string; event_type: string }>;
 };
 
 export type LogEvent = {

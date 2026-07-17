@@ -605,6 +605,11 @@ Workflow IDs, node IDs, input names, output names, and variable names must match
 
 Workflow filenames must equal `<workflow_id>.json`.
 
+Workflow tags are optional lowercase labels used only for catalog organization. A tag must
+match `^[a-z0-9][a-z0-9._-]*$`, is limited to 64 characters, and may occur only once per
+workflow. A workflow may have at most 32 tags. Tags do not affect execution or reference
+resolution.
+
 ## 5.3 Root Schema
 
 ```json
@@ -614,6 +619,7 @@ Workflow filenames must equal `<workflow_id>.json`.
   "description": "Implements a task, validates it, and repeats revisions after review feedback.",
   "version": 2,
   "created_by": "user@example.com",
+  "tags": ["implementation", "team-platform"],
 
   "inputs": {
     "TASK": {
@@ -2867,6 +2873,7 @@ For each workflow:
 - Name.
 - ID.
 - Description.
+- Tags.
 - Node count.
 - Direct child-workflow references.
 - Last commit SHA and modification time.
@@ -2875,6 +2882,9 @@ For each workflow:
 - Delete.
 
 The run dialog renders typed workflow inputs from the workflow's `inputs` schema.
+The catalog provides text search across name, ID, description, and tags; a tag filter;
+and an optional grouping mode that groups workflows into tag sections. Multi-tagged
+workflows appear in each applicable group.
 
 ## 20.6 Workflow Builder
 
@@ -2910,7 +2920,7 @@ Show:
 
 ### Sub-workflow editor
 
-- Child workflow dropdown.
+- Searchable child-workflow dropdown populated from the repository catalog.
 - Input mapping table.
 - Output mapping table.
 - Reference preview.
@@ -2918,8 +2928,8 @@ Show:
 
 ### Review-loop editor
 
-- Initial child workflow.
-- Optional revision child workflow.
+- Searchable initial child-workflow dropdown populated from the repository catalog.
+- Searchable optional revision child-workflow dropdown.
 - Initial input mapping.
 - Revision input mapping.
 - Maximum review iterations.
@@ -2946,6 +2956,7 @@ Show:
 - Maximum review iterations.
 - Maximum sub-workflow depth.
 - Maximum output-variable bytes.
+- Workflow tags.
 
 ### Validation UX
 
@@ -2962,7 +2973,17 @@ Highlight:
 
 The frontend must not offer arbitrary edge loops. React Flow connection validation should reject a connection that creates a DAG cycle.
 
-## 20.7 Run List
+## 20.7 Run Graph and Invocation History
+
+The run graph renders the root workflow and every persisted child invocation from the
+run snapshot. Each invocation is a distinct visual section containing the child
+workflow's nodes and execution states. A control edge connects the parent node to its
+first child invocation. Later invocations belonging to the same review-loop node are
+linked in iteration order with a feedback transition, and their cards show the
+iteration number, child workflow, invocation path, status, and the feedback that
+started the round. Nested sub-workflow invocations are expanded using the same rules.
+
+## 20.8 Run List
 
 Columns:
 
@@ -2987,7 +3008,7 @@ Filters:
 
 Auto-refresh every ten seconds when no WebSocket status channel is available.
 
-## 20.8 Run Detail
+## 20.9 Run Detail
 
 Header:
 
@@ -3077,7 +3098,7 @@ For other users:
 - View MR.
 - View base commit.
 
-## 20.9 Frontend WebSocket Behavior
+## 20.10 Frontend WebSocket Behavior
 
 - Connect while viewing a run.
 - Reconnect with exponential backoff.

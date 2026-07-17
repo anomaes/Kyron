@@ -21,6 +21,19 @@ def parsed(data: dict[str, Any]) -> WorkflowDefinition:
     return result
 
 
+def test_workflow_tags_are_validated_and_preserved() -> None:
+    definition = parsed(workflow(tags=["implementation", "team-platform"]))
+    assert definition.tags == ["implementation", "team-platform"]
+
+    invalid, errors = parse_workflow(workflow(tags=["Not valid"]))
+    assert invalid is None
+    assert any(issue.path == "workflow.tags.0" for issue in errors)
+
+    duplicate, errors = parse_workflow(workflow(tags=["implementation", "implementation"]))
+    assert duplicate is None
+    assert any(issue.path == "workflow.tags" for issue in errors)
+
+
 def codes(report: WorkflowValidationResponse) -> set[str]:
     return {issue.code for issue in report.errors}
 

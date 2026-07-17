@@ -26,7 +26,7 @@ bypass browser OAuth; the webhook authenticates its raw body and GitLab headers.
 | POST | `/api/projects/{project_id}/validate` | Validate GitLab and repository access |
 | GET/POST | `/api/credentials` | List metadata or create a write-only credential |
 | PUT/DELETE | `/api/credentials/{credential_id}` | Replace or remove a credential |
-| GET | `/api/projects/{project_id}/workflows` | List definitions at the default-branch SHA |
+| GET | `/api/projects/{project_id}/workflows` | List tagged definitions at the default-branch SHA for catalog search/grouping and workflow selection |
 | GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or propose a definition change through an MR |
 | POST | `/api/projects/{project_id}/workflows/validate` | Validate one definition and related drafts |
 | GET | `/api/projects/{project_id}/workflows/{workflow_id}/references` | Direct and reverse references |
@@ -47,6 +47,17 @@ bypass browser OAuth; the webhook authenticates its raw body and GitLab headers.
 `GET /api/runs` accepts `project_id`, `root_workflow_id`, `status`,
 `triggered_by`, `created_after`, and `created_before`. Output retrieval accepts
 `attempt`, `stream=stdout|stderr|pi_events`, and `tail_lines`.
+
+Workflow definitions include a `tags` array. Tags are lowercase catalog metadata
+stored in the workflow JSON; they do not alter scheduling. The workflow list response
+contains complete definitions so the builder can populate searchable child-workflow
+selectors and generate input/output mapping controls from each child's declared
+schema.
+
+The run-graph response includes every invocation and node execution, not only the
+root invocation. The frontend uses `parent_invocation_id`,
+`parent_node_execution_id`, `loop_iteration`, and `invocation_path` to expand child
+workflow instances and order review-loop rounds.
 
 ## Common workflows
 

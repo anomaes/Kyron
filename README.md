@@ -43,6 +43,7 @@ pytest
 uvicorn backend.main:app --reload
 ```
 
+
 Production must use one Uvicorn worker and must expose only Caddy. See
 `docs/operations.md` for deployment, backup, recovery, and retention procedures.
 
@@ -53,6 +54,13 @@ registered repository. A workflow is a DAG containing `bash`, `script`,
 `prompt`, `human_feedback`, `subworkflow`, and `review_loop` nodes. At trigger
 time Kyron pins the base SHA and snapshots the root definition plus every
 transitive child definition from that same SHA.
+
+Definitions may carry lowercase tags such as `implementation` or `team-platform`.
+The workflow catalog can search, filter, and group by those tags. In the visual
+builder, sub-workflow and review-loop children are selected from the repository
+catalog with searchable fields, and their declared inputs and outputs drive structured
+mapping controls. Run graphs expand persisted child invocations so review-loop rounds
+and their feedback transitions remain visible.
 
 Process nodes that are ready together execute as a wave. The worktree HEAD at
 wave start is persisted; a failed wave is fully reset and all its nodes receive

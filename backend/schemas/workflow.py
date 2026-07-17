@@ -6,7 +6,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 IDENTIFIER_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
+TAG_PATTERN = r"^[a-z0-9][a-z0-9._-]*$"
 Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN, min_length=1, max_length=255)]
+WorkflowTag = Annotated[str, Field(pattern=TAG_PATTERN, min_length=1, max_length=64)]
 TemplateValue = str | int | float | bool
 
 
@@ -211,12 +213,20 @@ class WorkflowDefinition(StrictModel):
     description: str = ""
     version: Literal[2] = 2
     created_by: str
+    tags: list[WorkflowTag] = Field(default_factory=list, max_length=32)
     inputs: dict[Identifier, WorkflowInput] = Field(default_factory=dict)
     outputs: dict[Identifier, WorkflowOutput] = Field(default_factory=dict)
     variables: dict[Identifier, TemplateValue] = Field(default_factory=dict)
     nodes: list[WorkflowNode]
     edges: list[Edge] = Field(default_factory=list)
     settings: WorkflowSettings = Field(default_factory=WorkflowSettings)
+
+    @field_validator("tags")
+    @classmethod
+    def tags_must_be_unique(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("workflow tags must be unique")
+        return value
 
 
 class ValidationIssue(BaseModel):
