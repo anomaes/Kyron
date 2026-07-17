@@ -1,0 +1,37 @@
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, type Connection, type Edge, type NodeTypes } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { api, json } from "../api/client";
+import type { NodeType, User, Workflow } from "../types";
+import { useBuilderStore, wouldCreateCycle } from "../workflow-builder/store";
+import { WorkflowCard } from "../workflow-builder/WorkflowCard";
+
+const nodeTypes: NodeTypes = { workflow: WorkflowCard };
+const palette: Array<{ type: NodeType; label: string; help: string }> = [
+  { type: "bash", label: "Bash", help: "Shell command" }, { type: "script", label: "Python Script", help: "Repository script" }, { type: "prompt", label: "Pi Prompt", help: "Coding agent" }, { type: "human_feedback", label: "Human Feedback", help: "Pause for review" }, { type: "subworkflow", label: "Sub-workflow", help: "Invoke child DAG" }, { type: "review_loop", label: "Review Loop", help: "Iterative revision" },
+];
+
+function Builder() {
+  const { projectId = "", workflowId } = useParams(); const navigate = useNavigate(); const { user } = useOutletContext<{ user?: User }>();
+  const store = useBuilderStore(); const [configText, setConfigText] = useState(""); const [advanced, setAdvanced] = useState(false); const [result, setResult] = useState<string | null>(null);
+  const existing = useQuery({ queryKey: ["workflow", projectId, workflowId], enabled: Boolean(workflowId), queryFn: () => api<{ base_commit_sha: string; workflow: Workflow }>(`/projects/${projectId}/workflows/${workflowId}`) });
+  const catalog = useQuery({ queryKey: ["workflows", projectId], queryFn: () => api<{ base_commit_sha: string }>(`/projects/${projectId}/workflows`) });
+  useEffect(() => { if (existing.data) store.setWorkflow(existing.data.workflow); else if (!workflowId) store.setWorkflow({ id: "new_workflow", name: "New workflow", description: "", version: 2, created_by: user?.email ?? "", inputs: {}, outputs: {}, variables: {}, nodes: [], edges: [], settings: {} }); }, [existing.data, workflowId, user?.email]);
+  const selected = store.nodes.find((node) => node.id === store.selectedNodeId);
+  useEffect(() => { setConfigText(selected ? JSON.stringify(selected.data.workflowNode.config, null, 2) : ""); }, [selected?.id]);
+  const validate = useMutation({ mutationFn: (workflow: Workflow) => api<{ valid: boolean; errors: Array<{ path: string; message: string }> }>(`/projects/${projectId}/workflows/validate`, json("POST", { workflow, proposed_related_workflows: {} })) });
+  const save = useMutation({ mutationFn: (workflow: Workflow) => api<{ mr_url: string }>(`/projects/${projectId}/workflows/${workflow.id}`, json("PUT", { workflow, expected_base_commit_sha: existing.data?.base_commit_sha ?? catalog.data?.base_commit_sha })), onSuccess: (data) => setResult(data.mr_url) });
+  const isValidConnection = (connection: Connection | Edge) => !wouldCreateCycle(connection, store.nodes, store.edges);
+  const commitConfig = () => { if (!selected) return; try { store.updateNode(selected.id, { config: JSON.parse(configText) as Record<string, unknown> }); } catch { /* retain text so the user can fix it */ } };
+  const errors = validate.data?.errors ?? [];
+  return <div className="builder-page"><header className="builder-header"><div><Link to={`/projects/${projectId}/workflows`} className="eyebrow">← Workflow catalog</Link><input className="title-input" value={store.workflow.name} onChange={(event) => store.patchWorkflow({ name: event.target.value })} /><span className="mono">{store.workflow.id}</span></div><div><button className="secondary" onClick={() => validate.mutate(store.serialize())}>Validate</button><button onClick={() => { const workflow = store.serialize(); validate.mutate(workflow, { onSuccess: (report) => { if (report.valid) save.mutate(workflow); } }); }}>Create review MR</button></div></header>
+    <div className="builder-shell"><aside className="palette"><h3>Nodes</h3>{palette.map((item) => <button key={item.type} onClick={() => store.addNode(item.type)}><span className={`palette-icon type-${item.type}`}>◈</span><div><strong>{item.label}</strong><small>{item.help}</small></div><b>+</b></button>)}<hr /><button className="plain" onClick={() => setAdvanced(!advanced)}>Workflow settings <span>›</span></button>{advanced && <div className="advanced-settings"><label>ID<input value={store.workflow.id} onChange={(event) => store.patchWorkflow({ id: event.target.value })} /></label><label>Description<textarea value={store.workflow.description} onChange={(event) => store.patchWorkflow({ description: event.target.value })} /></label><label>Variables JSON<textarea value={JSON.stringify(store.workflow.variables, null, 2)} onChange={(event) => { try { store.patchWorkflow({ variables: JSON.parse(event.target.value) as Workflow["variables"] }); } catch { /* wait for valid JSON */ } }} /></label></div>}</aside>
+      <main className="builder-canvas"><ReactFlow nodes={store.nodes} edges={store.edges} nodeTypes={nodeTypes} onNodesChange={store.onNodesChange} onEdgesChange={store.onEdgesChange} onConnect={store.connect} isValidConnection={isValidConnection} onNodeClick={(_, node) => store.selectNode(node.id)} onPaneClick={() => store.selectNode(null)} fitView><Background gap={22} size={1} /><MiniMap pannable /><Controls /></ReactFlow>{errors.length > 0 && <div className="validation-drawer"><strong>{errors.length} validation issue{errors.length === 1 ? "" : "s"}</strong>{errors.slice(0, 5).map((error) => <p key={`${error.path}-${error.message}`}><code>{error.path}</code> {error.message}</p>)}</div>}</main>
+      <aside className="inspector">{selected ? <><div className="inspector-head"><div><span className={`palette-icon type-${selected.data.type}`}>◈</span><div><small>{selected.data.type.replaceAll("_", " ")}</small><strong>{selected.data.label}</strong></div></div><button className="icon-button" onClick={store.removeSelected}>×</button></div><label>Node ID<input value={selected.data.workflowNode.id} disabled /></label><label>Label<input value={selected.data.workflowNode.label} onChange={(event) => store.updateNode(selected.id, { label: event.target.value })} /></label><label>Join<select value={selected.data.workflowNode.join ?? "and"} onChange={(event) => store.updateNode(selected.id, { join: event.target.value as "and" | "or" })}><option value="and">AND — wait for all</option><option value="or">OR — first matching edge</option></select></label><label>Configuration JSON<textarea className="code-editor" value={configText} onChange={(event) => setConfigText(event.target.value)} onBlur={commitConfig} /></label><p className="hint">Public placeholders use <code>{"${NAME}"}</code>. Secrets use shell-native <code>$NAME</code>.</p></> : <div className="inspector-empty"><span>◎</span><h3>Select a node</h3><p>Choose a card to edit its join and configuration.</p></div>}</aside></div>
+    {result && <div className="toast"><strong>Definition MR created</strong><a href={result} target="_blank" rel="noreferrer">Open in GitLab ↗</a><button onClick={() => navigate(`/projects/${projectId}/workflows`)}>Done</button></div>}
+  </div>;
+}
+
+export function WorkflowBuilderPage() { return <ReactFlowProvider><Builder /></ReactFlowProvider>; }

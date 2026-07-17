@@ -1,0 +1,56 @@
+{$APP_HOST:workflow.example.internal} {
+	encode zstd gzip
+
+	handle /api/webhook/gitlab {
+		reverse_proxy backend:8000
+	}
+
+	handle /api/health {
+		reverse_proxy backend:8000
+	}
+
+	handle /auth/* {
+		reverse_proxy auth-service:3001
+	}
+
+	handle /api/* {
+		route {
+			request_header -X-Token-User-Email
+			request_header -X-Token-User-Name
+			request_header -X-Token-User-Avatar
+			request_header -X-Token-GitLab-User-Id
+			request_header -X-Token-GitLab-Username
+
+			forward_auth auth-service:3001 {
+				uri /auth/verify
+				copy_headers {
+					X-Token-User-Email
+					X-Token-User-Name
+					X-Token-User-Avatar
+					X-Token-GitLab-User-Id
+					X-Token-GitLab-Username
+				}
+			}
+
+			reverse_proxy backend:8000
+		}
+	}
+
+	handle {
+		route {
+			request_header -X-Token-User-Email
+			request_header -X-Token-User-Name
+			request_header -X-Token-User-Avatar
+			request_header -X-Token-GitLab-User-Id
+			request_header -X-Token-GitLab-Username
+
+			forward_auth auth-service:3001 {
+				uri /auth/verify
+			}
+
+			root * /srv/frontend
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}

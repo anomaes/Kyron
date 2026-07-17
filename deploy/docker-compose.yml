@@ -1,0 +1,83 @@
+name: kyron
+
+services:
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/Caddy.Dockerfile
+    env_file:
+      - path: ../${KYRON_ENV_FILE:-.env}
+        required: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ../auth-service
+    env_file:
+      - path: ../${KYRON_ENV_FILE:-.env}
+        required: true
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - path: ../${KYRON_ENV_FILE:-.env}
+        required: true
+    environment:
+      POSTGRES_USER: workflow_engine
+      POSTGRES_DB: workflow_engine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow_engine -d workflow_engine"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      args:
+        PI_VERSION: ${PI_VERSION:-0.80.9}
+    env_file:
+      - path: ../${KYRON_ENV_FILE:-.env}
+        required: true
+    expose:
+      - "8000"
+    volumes:
+      - ${WORKFLOW_DATA_HOST_PATH:-/var/workflowengine}:/var/workflowengine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

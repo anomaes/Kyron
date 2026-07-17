@@ -1,0 +1,31 @@
+from backend.api.run_routes import websocket_router
+from backend.main import create_app
+
+
+def test_required_http_and_websocket_routes_are_registered() -> None:
+    paths = set(create_app().openapi()["paths"])
+    paths.update(
+        f"/api{getattr(route, 'path', '')}" for route in websocket_router.routes
+    )
+
+    required = {
+        "/api/health",
+        "/api/auth/me",
+        "/api/projects",
+        "/api/projects/{project_id}/workflows",
+        "/api/projects/{project_id}/workflows/validate",
+        "/api/projects/{project_id}/workflows/{workflow_id}/runs",
+        "/api/credentials",
+        "/api/runs",
+        "/api/runs/{run_id}",
+        "/api/runs/{run_id}/graph",
+        "/api/runs/{run_id}/logs",
+        "/api/runs/{run_id}/cancel",
+        "/api/runs/{run_id}/resume",
+        "/api/runs/{run_id}/approve",
+        "/api/runs/{run_id}/feedback",
+        "/api/webhook/gitlab",
+        "/api/ws/runs/{run_id}/logs",
+    }
+
+    assert required <= paths
