@@ -8,16 +8,22 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.dependencies import AuthenticatedUser
 from backend.config import Settings
-from backend.db.models import Project, User, WorkflowRun
+from backend.db.models import Project, WorkflowRun
 from backend.engine.snapshot import WorkflowSnapshotLoader
 from backend.engine.validation import (
     parse_workflow,
     validate_trigger_inputs,
     validate_workflow_bundle,
 )
+from backend.integrations.code_host import (
+    ProviderUser,
+    code_host_client,
+    git_username,
+    repository_locator,
+)
 from backend.integrations.git_manager import GitManager, project_git_locks
-from backend.integrations.gitlab_client import GitLabClient
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition, WorkflowValidationResponse
 from backend.services.crypto import SecretCipher
 
@@ -33,13 +39,11 @@ class WorkflowService:
         settings: Settings,
         cipher: SecretCipher,
         git: GitManager,
-        gitlab: GitLabClient,
     ) -> None:
         self.session = session
         self.settings = settings
         self.cipher = cipher
         self.git = git
-        self.gitlab = gitlab
 
     async def list(self, project: Project) -> tuple[str, list[WorkflowDefinition]]:
         sha, definitions = await self._load_all(project)
@@ -87,7 +91,9 @@ class WorkflowService:
         repository = Path(project.local_path)
         try:
             async with project_git_locks.for_project(project.id):
-                await self.git.fetch(repository, token)
+                await self.git.fetch(
+                    repository, token, username=git_username(project.provider)
+                )
                 sha = await self.git.resolve_remote_sha(repository, base_ref)
                 bundle = await WorkflowSnapshotLoader(self.git).load(
                     repository,
@@ -104,11 +110,13 @@ class WorkflowService:
     async def create_run(
         self,
         project: Project,
-        user: User,
+        user: AuthenticatedUser,
         workflow_id: str,
         base_ref: str,
         inputs: dict[str, Any],
     ) -> WorkflowRun:
+        if user.provider != project.provider:
+            raise PermissionError("Authentication provider does not match project provider")
         sha, bundle = await self.snapshot_for_run(project, workflow_id, base_ref)
         workflow = bundle.workflows[workflow_id]
         validated_inputs = validate_trigger_inputs(workflow, inputs)
@@ -122,7 +130,9 @@ class WorkflowService:
             workflow_definition_commit_sha=sha,
             workflow_bundle_snapshot=bundle.model_dump(mode="json"),
             public_context={**workflow.variables, **validated_inputs},
-            reviewer_gitlab_user_id=user.gitlab_user_id,
+            reviewer_provider=user.provider,
+            reviewer_provider_user_id=user.provider_user_id,
+            reviewer_provider_username=user.provider_username,
         )
         self.session.add(run)
         await self.session.commit()
@@ -131,12 +141,14 @@ class WorkflowService:
     async def save_definition(
         self,
         project: Project,
-        user: User,
+        user: AuthenticatedUser,
         workflow: WorkflowDefinition,
         expected_base_commit_sha: str,
         *,
         delete: bool = False,
     ) -> dict[str, Any]:
+        if user.provider != project.provider:
+            raise PermissionError("Authentication provider does not match project provider")
         token = self.cipher.decrypt(project.encrypted_access_token)
         repository = Path(project.local_path)
         operation_id = uuid.uuid4()
@@ -144,7 +156,9 @@ class WorkflowService:
         worktree = self.git.worktree_base_path / f"definition-{operation_id}"
         try:
             async with project_git_locks.for_project(project.id):
-                await self.git.fetch(repository, token)
+                await self.git.fetch(
+                    repository, token, username=git_username(project.provider)
+                )
                 current_sha = await self.git.resolve_remote_sha(repository, project.default_branch)
                 if current_sha != expected_base_commit_sha:
                     raise WorkflowConflictError("Workflow base branch changed; reload the editor")
@@ -176,20 +190,29 @@ class WorkflowService:
                     await asyncio.to_thread(definition_path.write_text, serialized, "utf-8")
                     message = f"Update workflow: {workflow.name}"
                 await self.git.checkpoint(worktree, message)
-                await self.git.push(worktree, branch, token)
-                merge_request = await self.gitlab.create_merge_request(
-                    project.gitlab_project_id,
-                    token,
-                    source_branch=branch,
-                    target_branch=project.default_branch,
-                    title=message,
-                    description="Workflow definition change created by Kyron.",
-                    reviewer_id=user.gitlab_user_id,
+                await self.git.push(
+                    worktree, branch, token, username=git_username(project.provider)
                 )
+                async with code_host_client(project.provider, self.settings) as provider:
+                    change_request = await provider.create_change_request(
+                        repository_locator(
+                            project.provider,
+                            project.provider_project_id,
+                            project.provider_project_path,
+                        ),
+                        token,
+                        source_branch=branch,
+                        target_branch=project.default_branch,
+                        title=message,
+                        description="Workflow definition change created by Kyron.",
+                        reviewer=ProviderUser(
+                            id=user.provider_user_id, username=user.provider_username
+                        ),
+                    )
                 return {
                     "branch_name": branch,
-                    "mr_iid": int(merge_request["iid"]),
-                    "mr_url": str(merge_request["web_url"]),
+                    "change_request_number": change_request.number,
+                    "change_request_url": change_request.url,
                 }
         finally:
             if await asyncio.to_thread(worktree.exists):
@@ -201,7 +224,9 @@ class WorkflowService:
         repository = Path(project.local_path)
         try:
             async with project_git_locks.for_project(project.id):
-                await self.git.fetch(repository, token)
+                await self.git.fetch(
+                    repository, token, username=git_username(project.provider)
+                )
                 sha = await self.git.resolve_remote_sha(repository, project.default_branch)
                 files = await self.git.list_files(repository, sha, ".workflowEngine")
                 definitions: dict[str, WorkflowDefinition] = {}

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
@@ -7,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     git_url: HttpUrl
-    gitlab_project_id: int = Field(gt=0)
+    provider: Literal["gitlab", "github"]
+    provider_project: str = Field(min_length=1, max_length=1024)
     access_token: str = Field(min_length=1)
     default_branch: str = Field(default="main", min_length=1, max_length=255)
 
@@ -16,6 +18,8 @@ class ProjectCreate(BaseModel):
     def require_https(cls, value: HttpUrl) -> HttpUrl:
         if value.scheme != "https":
             raise ValueError("Only HTTPS Git URLs are supported")
+        if value.username or value.password:
+            raise ValueError("Authenticated Git URLs are not allowed")
         return value
 
 
@@ -29,7 +33,9 @@ class ProjectResponse(BaseModel):
     id: uuid.UUID
     name: str
     git_url: str
-    gitlab_project_id: int
+    provider: str
+    provider_project_id: str
+    provider_project_path: str
     local_path: str
     default_branch: str
     added_by: uuid.UUID
@@ -41,4 +47,4 @@ class ProjectResponse(BaseModel):
 class ProjectValidationResponse(BaseModel):
     valid: bool
     default_branch: str
-    gitlab_path: str
+    provider_project_path: str

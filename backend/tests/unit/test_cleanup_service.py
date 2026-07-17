@@ -27,14 +27,14 @@ async def test_cancelled_run_output_is_removed_and_audited(
         id=uuid.uuid4(),
         email="cleanup@example.com",
         display_name="Cleanup",
-        gitlab_user_id=901,
-        gitlab_username="cleanup",
     )
     project = Project(
         id=uuid.uuid4(),
         name="Cleanup",
         git_url="https://gitlab.example/group/repo.git",
-        gitlab_project_id=901,
+        provider="gitlab",
+        provider_project_id="901",
+        provider_project_path="901",
         encrypted_access_token=b"ciphertext",
         local_path=str(clone_root / "project"),
         default_branch="main",
@@ -52,7 +52,9 @@ async def test_cancelled_run_output_is_removed_and_audited(
         workflow_bundle_snapshot={},
         public_context={},
         run_data_path=str(output),
-        reviewer_gitlab_user_id=user.gitlab_user_id,
+        reviewer_provider="gitlab",
+        reviewer_provider_user_id="901",
+        reviewer_provider_username="cleanup",
     )
     db_session.add_all([user, project, run])
     await db_session.commit()

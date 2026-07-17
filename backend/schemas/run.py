@@ -30,9 +30,11 @@ class RunResponse(BaseModel):
     branch_name: str | None
     current_head_sha: str | None
     final_commit_sha: str | None
-    mr_iid: int | None
-    mr_url: str | None
-    reviewer_gitlab_user_id: int
+    change_request_number: int | None
+    change_request_url: str | None
+    reviewer_provider: str
+    reviewer_provider_user_id: str
+    reviewer_provider_username: str
     current_invocation_id: uuid.UUID | None
     current_node_execution_id: uuid.UUID | None
     current_wave_id: uuid.UUID | None

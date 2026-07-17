@@ -10,24 +10,25 @@ page size of 200.
 Caddy removes every incoming `X-Token-*` identity header, verifies the signed
 OAuth session through the auth service, and copies trusted identity headers to
 the backend. Do not publish the backend port or call it through an untrusted
-proxy. `/api/health` and `/api/webhook/gitlab` are the only API routes that
-bypass browser OAuth; the webhook authenticates its raw body and GitLab headers.
+proxy. `/api/health`, `/api/webhook/gitlab`, and `/api/webhook/github` bypass
+browser OAuth; each webhook authenticates its raw body with provider-specific
+headers and secrets.
 
 ## Route inventory
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Worker and database health |
-| GET | `/api/auth/me` | Current user, upserting trusted GitLab identity |
+| GET | `/api/auth/me` | Current user and active provider identity |
 | GET/POST | `/api/projects` | List or register repositories |
 | GET/DELETE | `/api/projects/{project_id}` | Inspect or remove a project |
 | PUT | `/api/projects/{project_id}/token` | Replace the write-only project token |
 | POST | `/api/projects/{project_id}/fetch` | Fetch/prune the local clone |
-| POST | `/api/projects/{project_id}/validate` | Validate GitLab and repository access |
+| POST | `/api/projects/{project_id}/validate` | Validate provider and repository access |
 | GET/POST | `/api/credentials` | List metadata or create a write-only credential |
 | PUT/DELETE | `/api/credentials/{credential_id}` | Replace or remove a credential |
 | GET | `/api/projects/{project_id}/workflows` | List tagged definitions at the default-branch SHA for catalog search/grouping and workflow selection |
-| GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or propose a definition change through an MR |
+| GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or propose a definition change through a change request |
 | POST | `/api/projects/{project_id}/workflows/validate` | Validate one definition and related drafts |
 | GET | `/api/projects/{project_id}/workflows/{workflow_id}/references` | Direct and reverse references |
 | POST | `/api/projects/{project_id}/workflows/{workflow_id}/runs` | Snapshot and queue a run |
@@ -42,6 +43,7 @@ bypass browser OAuth; the webhook authenticates its raw body and GitLab headers.
 | POST | `/api/runs/{run_id}/approve` | Continue the current human checkpoint |
 | POST | `/api/runs/{run_id}/feedback` | Submit revision feedback and continue |
 | POST | `/api/webhook/gitlab` | Authenticated, idempotent GitLab events |
+| POST | `/api/webhook/github` | Authenticated, idempotent GitHub events |
 | WS | `/api/ws/runs/{run_id}/logs?after_id=N` | Replayed then live run events |
 
 `GET /api/runs` accepts `project_id`, `root_workflow_id`, `status`,
@@ -61,7 +63,7 @@ workflow instances and order review-loop rounds.
 
 ## Common workflows
 
-Validate a draft before proposing its merge request:
+Validate a draft before proposing its change request:
 
 ```json
 POST /api/projects/<project-id>/workflows/validate

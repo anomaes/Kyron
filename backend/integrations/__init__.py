@@ -1,1 +1,1 @@
-"""Git, GitLab, and external process integrations."""
+"""Git, code-host, and external process integrations."""

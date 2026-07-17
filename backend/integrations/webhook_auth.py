@@ -49,3 +49,19 @@ def delivery_key(headers: Mapping[str, str]) -> str:
     if event_uuid and webhook_uuid:
         return f"{event_uuid}:{webhook_uuid}"
     raise WebhookAuthenticationError("GitLab webhook has no stable delivery identifier")
+
+
+def verify_github_webhook(headers: Mapping[str, str], body: bytes, *, secret: str) -> None:
+    if not secret:
+        raise WebhookAuthenticationError("GitHub webhook secret is not configured")
+    signature = headers.get("x-hub-signature-256", "")
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise WebhookAuthenticationError("GitHub webhook signature is invalid")
+
+
+def github_delivery_key(headers: Mapping[str, str]) -> str:
+    value = headers.get("x-github-delivery", "")
+    if not value:
+        raise WebhookAuthenticationError("GitHub webhook has no delivery identifier")
+    return value

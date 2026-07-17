@@ -1,7 +1,7 @@
 # Architecture
 
 Kyron is a single-VM system with Caddy as the only exposed service. Caddy serves
-the React bundle, delegates browser identity to the GitLab OAuth service, and
+the React bundle, delegates browser identity to the code-host OAuth service, and
 forwards authenticated API/WebSocket traffic to one FastAPI worker. PostgreSQL
 is the durable source of execution truth; repository clones, worktrees, process
 output, and artifacts live on a persistent host volume.
@@ -30,6 +30,13 @@ loop iteration numbers order review rounds. No visualization-only execution stat
 persisted.
 
 Secret values occupy a separate lifetime from public workflow context. Stored
-Fernet ciphertext is decrypted immediately before process or GitLab use, added
+Fernet ciphertext is decrypted immediately before process or code-host use, added
 to an in-memory redactor, and discarded after the operation. Secret values are
 never valid `${...}` template variables.
+
+GitLab and GitHub integrations implement one normalized code-host contract. A
+session carries one provider identity, projects carry one provider, and API
+boundaries reject cross-provider mutations. Provider-specific REST payloads and
+webhook shapes are normalized before they reach orchestration services. The full
+contract, migration rules, and acceptance criteria are defined in
+`docs/code-host-provider-spec.md`.

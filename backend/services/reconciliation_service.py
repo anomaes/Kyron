@@ -14,8 +14,8 @@ from backend.db.models import Project, WorkflowRun
 from backend.db.statuses import ACTIVE_RUN_STATUSES, RESUMABLE_RUN_STATUSES, RunStatus
 from backend.engine.process_registry import ProcessRegistry
 from backend.engine.task_registry import TaskRegistry
+from backend.integrations.code_host import CodeHostError, code_host_client, repository_locator
 from backend.integrations.git_manager import GitManager, project_git_locks
-from backend.integrations.gitlab_client import GitLabClient, GitLabError
 from backend.services.cleanup_service import CleanupService
 from backend.services.crypto import EncryptionError, SecretCipher
 
@@ -29,7 +29,6 @@ class ReconciliationService:
         settings: Settings,
         cipher: SecretCipher | None,
         git: GitManager,
-        gitlab: GitLabClient,
         processes: ProcessRegistry,
         tasks: TaskRegistry,
     ) -> None:
@@ -37,7 +36,6 @@ class ReconciliationService:
         self.settings = settings
         self.cipher = cipher
         self.git = git
-        self.gitlab = gitlab
         self.cleanup = CleanupService(
             session,
             git,
@@ -71,10 +69,10 @@ class ReconciliationService:
             worktree_closed = await self._merge_request_is_closed(run, project)
             if worktree_closed:
                 await self.cleanup.cleanup_run(run.id)
-            elif run.mr_iid is None and status == RunStatus.CANCELLED:
+            elif run.change_request_number is None and status == RunStatus.CANCELLED:
                 await self.cleanup.cleanup_run(run.id, remove_output=True)
             elif (
-                run.mr_iid is None
+                run.change_request_number is None
                 and status in RESUMABLE_RUN_STATUSES
                 and (run.finished_at or run.created_at) <= stale_before
             ):
@@ -104,22 +102,29 @@ class ReconciliationService:
         self._report_orphan_worktrees(runs)
 
     async def _merge_request_is_closed(self, run: WorkflowRun, project: Project) -> bool:
-        if run.mr_iid is None or run.worktree_path is None:
+        if run.change_request_number is None or run.worktree_path is None:
             return False
         if self.cipher is None:
-            logger.warning("Cannot reconcile merge request for run %s without a cipher", run.id)
+            logger.warning("Cannot reconcile change request for run %s without a cipher", run.id)
             return False
         try:
             token = self.cipher.decrypt(project.encrypted_access_token)
-            merge_request = await self.gitlab.get_merge_request(
-                project.gitlab_project_id, run.mr_iid, token
-            )
-        except (EncryptionError, GitLabError) as exc:
-            logger.warning("Could not reconcile merge request for run %s: %s", run.id, exc)
+            async with code_host_client(project.provider, self.settings) as provider:
+                change_request = await provider.get_change_request(
+                    repository_locator(
+                        project.provider,
+                        project.provider_project_id,
+                        project.provider_project_path,
+                    ),
+                    run.change_request_number,
+                    token,
+                )
+        except (EncryptionError, CodeHostError) as exc:
+            logger.warning("Could not reconcile change request for run %s: %s", run.id, exc)
             return False
         finally:
             token = ""
-        return merge_request.get("state") in {"closed", "merged"}
+        return change_request.state in {"closed", "merged"}
 
     async def _prune_projects(self, projects: Iterable[Project]) -> None:
         for project in projects:

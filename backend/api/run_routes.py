@@ -28,8 +28,8 @@ from backend.db.models import (
     FeedbackEvent,
     NodeAttempt,
     NodeExecution,
+    ProviderIdentity,
     RunLog,
-    User,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -38,8 +38,8 @@ from backend.dependencies import Cipher
 from backend.engine.cancellation import cancel_run
 from backend.engine.process_registry import process_registry
 from backend.engine.resume import ResumeError, prepare_resume
+from backend.integrations.code_host import create_code_host_client, provider_display_name
 from backend.integrations.git_manager import GitManager
-from backend.integrations.gitlab_client import GitLabClient
 from backend.lifecycle import runtime
 from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
 from backend.services.cleanup_service import CleanupService
@@ -225,11 +225,18 @@ async def node_output(
 @router.post("/{run_id}/cancel", response_model=RunResponse)
 async def cancel(
     run_id: uuid.UUID,
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RunResponse:
     try:
+        existing = await db.get(WorkflowRun, run_id)
+        if existing is not None and existing.reviewer_provider != user.provider:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Sign in with "
+                f"{provider_display_name(existing.reviewer_provider)} to control this run",
+            )
         run = await cancel_run(
             db,
             runtime.tasks,
@@ -239,7 +246,7 @@ async def cancel(
         )
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    if run.status == RunStatus.CANCELLED and run.mr_iid is None:
+    if run.status == RunStatus.CANCELLED and run.change_request_number is None:
         await CleanupService(
             db,
             GitManager(
@@ -257,7 +264,7 @@ async def cancel(
 @router.post("/{run_id}/resume", response_model=RunResponse)
 async def resume(
     run_id: uuid.UUID,
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RunResponse:
@@ -267,6 +274,13 @@ async def resume(
         settings.RUN_DATA_BASE_PATH,
     )
     try:
+        existing = await db.get(WorkflowRun, run_id)
+        if existing is not None and existing.reviewer_provider != user.provider:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Sign in with "
+                f"{provider_display_name(existing.reviewer_provider)} to control this run",
+            )
         run = await prepare_resume(db, git, run_id)
     except ResumeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
@@ -275,15 +289,19 @@ async def resume(
 
 
 async def feedback_service(
+    run_id: uuid.UUID,
     db: DbSession,
     cipher: Cipher,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AsyncIterator[FeedbackService]:
-    gitlab = GitLabClient(str(settings.GITLAB_URL))
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    code_host = create_code_host_client(run.reviewer_provider, settings)
     try:
-        yield FeedbackService(db, cipher, gitlab, runtime.schedule)
+        yield FeedbackService(db, cipher, code_host, runtime.schedule)
     finally:
-        await gitlab.close()
+        await code_host.close()
 
 
 FeedbackDependency = Annotated[FeedbackService, Depends(feedback_service)]
@@ -300,8 +318,9 @@ async def approve(
             run_id,
             event_type="approval",
             source="frontend",
+            author_provider=user.provider,
             author_user_id=user.id,
-            author_gitlab_user_id=user.gitlab_user_id,
+            author_provider_user_id=user.provider_user_id,
             author_username=user.display_name,
         )
     except PermissionError as exc:
@@ -323,8 +342,9 @@ async def submit_feedback(
             run_id,
             event_type="comment",
             source="frontend",
+            author_provider=user.provider,
             author_user_id=user.id,
-            author_gitlab_user_id=user.gitlab_user_id,
+            author_provider_user_id=user.provider_user_id,
             author_username=user.display_name,
             message=request.message,
         )
@@ -337,15 +357,20 @@ async def submit_feedback(
 
 async def websocket_logs(websocket: WebSocket, run_id: uuid.UUID, after_id: int = 0) -> None:
     try:
-        _, gitlab_user_id, _ = websocket_identity(websocket)
+        _, provider, provider_user_id, _ = websocket_identity(websocket)
     except HTTPException:
         await websocket.close(code=4401)
         return
     async with session_factory() as session:
-        user = await session.scalar(select(User).where(User.gitlab_user_id == gitlab_user_id))
+        identity = await session.scalar(
+            select(ProviderIdentity).where(
+                ProviderIdentity.provider == provider,
+                ProviderIdentity.provider_user_id == provider_user_id,
+            )
+        )
         run = await session.get(WorkflowRun, run_id)
-        if user is None or run is None:
-            await websocket.close(code=4401 if user is None else 4404)
+        if identity is None or run is None:
+            await websocket.close(code=4401 if identity is None else 4404)
             return
         subscription = log_broadcaster.subscribe(run_id)
         await websocket.accept()

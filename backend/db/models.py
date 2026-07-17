@@ -34,14 +34,28 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text)
-    gitlab_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
-    gitlab_username: Mapped[str] = mapped_column(String(255), nullable=False)
-    oauth_provider: Mapped[str] = mapped_column(String(50), default="gitlab", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProviderIdentity(Base):
+    __tablename__ = "provider_identities"
+    __table_args__ = (UniqueConstraint("provider", "provider_user_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class Credential(Base):
@@ -70,11 +84,14 @@ class Credential(Base):
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("provider", "provider_project_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     git_url: Mapped[str] = mapped_column(Text, nullable=False)
-    gitlab_project_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_project_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     encrypted_access_token: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     token_key_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     local_path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
@@ -91,7 +108,7 @@ class WorkflowRun(Base):
     __table_args__ = (
         Index("ix_workflow_runs_status_queued", "status", "queued_at"),
         Index("ix_workflow_runs_project_created", "project_id", "created_at"),
-        Index("ix_workflow_runs_mr_project", "mr_iid", "project_id"),
+        Index("ix_workflow_runs_change_request_project", "change_request_number", "project_id"),
         Index("ix_workflow_runs_triggered_created", "triggered_by", "created_at"),
     )
 
@@ -113,9 +130,11 @@ class WorkflowRun(Base):
     run_data_path: Mapped[str | None] = mapped_column(Text)
     current_head_sha: Mapped[str | None] = mapped_column(String(40))
     final_commit_sha: Mapped[str | None] = mapped_column(String(40))
-    mr_iid: Mapped[int | None] = mapped_column(Integer)
-    mr_url: Mapped[str | None] = mapped_column(Text)
-    reviewer_gitlab_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    change_request_number: Mapped[int | None] = mapped_column(Integer)
+    change_request_url: Mapped[str | None] = mapped_column(Text)
+    reviewer_provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    reviewer_provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewer_provider_username: Mapped[str] = mapped_column(String(255), nullable=False)
     current_invocation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     current_node_execution_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     current_wave_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -239,10 +258,11 @@ class FeedbackEvent(Base):
     event_type: Mapped[str] = mapped_column(String(30), nullable=False)
     source: Mapped[str] = mapped_column(String(30), nullable=False)
     author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
-    author_gitlab_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    author_provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    author_provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     author_username: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    gitlab_note_id: Mapped[int | None] = mapped_column(BigInteger)
+    provider_comment_id: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -270,7 +290,8 @@ class WebhookDelivery(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     delivery_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    gitlab_project_id: Mapped[int | None] = mapped_column(BigInteger)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_project_id: Mapped[str | None] = mapped_column(String(255))
     event_name: Mapped[str] = mapped_column(String(100), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

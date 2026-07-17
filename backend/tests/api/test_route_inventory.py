@@ -25,6 +25,7 @@ def test_required_http_and_websocket_routes_are_registered() -> None:
         "/api/runs/{run_id}/approve",
         "/api/runs/{run_id}/feedback",
         "/api/webhook/gitlab",
+        "/api/webhook/github",
         "/api/ws/runs/{run_id}/logs",
     }
 

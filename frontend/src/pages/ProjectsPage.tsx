@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, json } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
-import type { Project } from "../types";
+import type { Project, User } from "../types";
 
 export function ProjectsPage() {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api<Project[]>("/projects") });
+  const user = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/auth/me") });
   const [open, setOpen] = useState(false);
   const create = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api<Project>("/projects", json("POST", payload)),
@@ -18,24 +19,24 @@ export function ProjectsPage() {
     const data = new FormData(event.currentTarget);
     create.mutate({
       name: data.get("name"), git_url: data.get("git_url"),
-      gitlab_project_id: Number(data.get("gitlab_project_id")),
+      provider: user.data?.provider, provider_project: data.get("provider_project"),
       access_token: data.get("access_token"), default_branch: data.get("default_branch") || "main",
     });
   }
   return (
     <section>
-      <header className="page-header"><div><p className="eyebrow">Repository registry</p><h1>Projects</h1><p>Connect GitLab repositories and manage their workflow catalog.</p></div><button onClick={() => setOpen(true)}>Add project</button></header>
+      <header className="page-header"><div><p className="eyebrow">Repository registry</p><h1>Projects</h1><p>Connect GitLab and GitHub repositories and manage their workflow catalog.</p></div><button onClick={() => setOpen(true)}>Add project</button></header>
       {projects.isLoading ? <div className="skeleton tall" /> : projects.data?.length ? (
         <div className="card-grid">{projects.data.map((project) => (
           <article className="card project-card" key={project.id}>
-            <div className="card-top"><span className="repo-icon">⌘</span><span className="badge success">TOKEN READY</span></div>
+            <div className="card-top"><span className="repo-icon">⌘</span><span className="badge success">{project.provider.toUpperCase()} · TOKEN READY</span></div>
             <h2>{project.name}</h2><p className="mono muted truncate">{project.git_url}</p>
-            <dl><div><dt>GitLab ID</dt><dd>{project.gitlab_project_id}</dd></div><div><dt>Default branch</dt><dd>{project.default_branch}</dd></div></dl>
-            <div className="card-actions"><Link className="button" to={`/projects/${project.id}/workflows`}>View workflows</Link><button className="secondary" onClick={() => api(`/projects/${project.id}/fetch`, { method: "POST" })}>Fetch</button></div>
+            <dl><div><dt>Repository</dt><dd>{project.provider_project_path}</dd></div><div><dt>Default branch</dt><dd>{project.default_branch}</dd></div></dl>
+            <div className="card-actions"><Link className="button" to={`/projects/${project.id}/workflows`}>View workflows</Link><button className="secondary" disabled={user.data?.provider !== project.provider} title={user.data?.provider !== project.provider ? `Sign in with ${project.provider} to fetch` : undefined} onClick={() => api(`/projects/${project.id}/fetch`, { method: "POST" })}>Fetch</button></div>
           </article>
         ))}</div>
-      ) : <EmptyState title="No projects connected">Register a GitLab repository to begin creating workflows.</EmptyState>}
-      {open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}><h2>Add GitLab project</h2><label>Name<input name="name" required /></label><label>HTTPS clone URL<input name="git_url" type="url" required /></label><div className="form-row"><label>GitLab project ID<input name="gitlab_project_id" type="number" required /></label><label>Default branch<input name="default_branch" defaultValue="main" /></label></div><label>Project access token<input name="access_token" type="password" required autoComplete="new-password" /></label>{create.error && <p className="error">{create.error.message}</p>}<footer><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button><button disabled={create.isPending}>Validate & add</button></footer></form></div>}
+      ) : <EmptyState title="No projects connected">Register a repository to begin creating workflows.</EmptyState>}
+      {open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}><h2>Add {user.data?.provider === "github" ? "GitHub" : "GitLab"} project</h2><p className="muted">This session is signed in with {user.data?.provider}. Sign out to register a project from another provider.</p><label>Name<input name="name" required /></label><label>HTTPS clone URL<input name="git_url" type="url" required /></label><div className="form-row"><label>{user.data?.provider === "github" ? "Repository (owner/name)" : "GitLab project ID or path"}<input name="provider_project" required placeholder={user.data?.provider === "github" ? "owner/repository" : "12345"} /></label><label>Default branch<input name="default_branch" defaultValue="main" /></label></div><label>Project access token<input name="access_token" type="password" required autoComplete="new-password" /></label>{create.error && <p className="error">{create.error.message}</p>}<footer><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button><button disabled={create.isPending || !user.data}>Validate & add</button></footer></form></div>}
     </section>
   );
 }

@@ -6,72 +6,74 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Project, WorkflowRun
-from backend.db.statuses import RunStatus
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 
 
-async def route_gitlab_event(
+async def route_github_event(
     session: AsyncSession,
+    event_name: str,
     payload: dict[str, Any],
     feedback: FeedbackService,
     cleanup: CleanupService,
 ) -> dict[str, Any]:
-    project_data = payload.get("project") or {}
-    project_id = project_data.get("id")
-    if not isinstance(project_id, int):
-        return {"status": "ignored", "reason": "missing_project"}
+    repository = payload.get("repository") or {}
+    repository_id = repository.get("id")
+    if not isinstance(repository_id, int):
+        return {"status": "ignored", "reason": "missing_repository"}
     project = await session.scalar(
         select(Project).where(
-            Project.provider == "gitlab",
-            Project.provider_project_id == str(project_id),
+            Project.provider == "github",
+            Project.provider_project_id == str(repository_id),
         )
     )
     if project is None:
         return {"status": "ignored", "reason": "unknown_project"}
-    merge_request = payload.get("merge_request") or payload.get("object_attributes") or {}
-    mr_iid = merge_request.get("iid")
-    if not isinstance(mr_iid, int):
-        return {"status": "ignored", "reason": "missing_merge_request"}
+    pull_request = payload.get("pull_request") or {}
+    number = pull_request.get("number") or (payload.get("issue") or {}).get("number")
+    if not isinstance(number, int):
+        return {"status": "ignored", "reason": "missing_pull_request"}
     run = await session.scalar(
         select(WorkflowRun).where(
             WorkflowRun.project_id == project.id,
-            WorkflowRun.change_request_number == mr_iid,
+            WorkflowRun.change_request_number == number,
         )
     )
     if run is None:
         return {"status": "ignored", "reason": "unknown_run"}
-    actor = payload.get("user") or {}
-    actor_id = actor.get("id")
-    actor_username = str(actor.get("username") or "unknown")
+    sender = payload.get("sender") or {}
+    actor_id = sender.get("id")
+    actor_username = str(sender.get("login") or "unknown")
     if not isinstance(actor_id, int):
         return {"status": "ignored", "reason": "missing_actor"}
 
-    object_kind = payload.get("object_kind")
-    attributes = payload.get("object_attributes") or {}
-    action = attributes.get("action")
-    if object_kind == "merge_request" and action in {"approval", "approved"}:
-        if action == "approved" and run.status != RunStatus.AWAITING_FEEDBACK:
-            return {"status": "ignored", "reason": "duplicate_approved_event"}
+    action = str(payload.get("action") or "")
+    if event_name == "pull_request_review" and action == "submitted":
+        review = payload.get("review") or {}
+        if str(review.get("state") or "").lower() != "approved":
+            return {"status": "ignored", "reason": "review_not_approved"}
         try:
             await feedback.accept(
                 run.id,
                 event_type="approval",
-                source="gitlab",
-                author_provider="gitlab",
+                source="github",
+                author_provider="github",
                 author_provider_user_id=str(actor_id),
                 author_username=actor_username,
+                provider_review_id=(str(review["id"]) if review.get("id") else None),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
         return {"status": "processed", "action": "approval"}
 
-    if object_kind == "note" and payload.get("merge_request"):
-        if attributes.get("system") is True:
-            return {"status": "ignored", "reason": "system_note"}
-        note = str(attributes.get("note") or "").strip()
+    if event_name == "issue_comment" and action == "created":
+        issue = payload.get("issue") or {}
+        if not issue.get("pull_request"):
+            return {"status": "ignored", "reason": "not_pull_request"}
+        comment = payload.get("comment") or {}
+        note = str(comment.get("body") or "").strip()
         if not note.lower().startswith("@kyron"):
-            return {"status": "ignored", "reason": "unrelated_note"}
+            return {"status": "ignored", "reason": "unrelated_comment"}
         message = note[len("@kyron") :].strip()
         if not message:
             return {"status": "ignored", "reason": "empty_feedback"}
@@ -79,20 +81,21 @@ async def route_gitlab_event(
             await feedback.accept(
                 run.id,
                 event_type="comment",
-                source="gitlab",
-                author_provider="gitlab",
+                source="github",
+                author_provider="github",
                 author_provider_user_id=str(actor_id),
                 author_username=actor_username,
                 message=message,
-                provider_comment_id=(
-                    str(attributes["id"]) if attributes.get("id") is not None else None
-                ),
+                provider_comment_id=(str(comment["id"]) if comment.get("id") else None),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
         return {"status": "processed", "action": "comment"}
 
-    if object_kind == "merge_request" and action in {"merge", "close"}:
+    if event_name == "pull_request" and action == "closed":
         await cleanup.cleanup_run(run.id)
-        return {"status": "processed", "action": action}
+        return {
+            "status": "processed",
+            "action": "merge" if pull_request.get("merged") is True else "close",
+        }
     return {"status": "ignored", "reason": "unhandled_event"}

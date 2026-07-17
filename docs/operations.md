@@ -6,7 +6,7 @@ auth-service, or PostgreSQL ports on the host.
 
 ## Deployment
 
-Copy `.env.example` to a root-readable protected `.env`, configure GitLab OAuth
+Copy `.env.example` to a root-readable protected `.env`, configure GitLab and/or GitHub OAuth
 and webhook settings, choose the external URL, generate independent encryption
 and session-signing keys, then run:
 
@@ -23,6 +23,17 @@ must be identical.
 The backend entrypoint runs `alembic upgrade head` before starting the single
 Uvicorn worker. Do not start a second backend container while migrations or run
 recovery are active.
+
+Configure GitLab webhooks for merge-request and note events at
+`/api/webhook/gitlab`. Configure GitHub webhooks for pull requests, pull-request
+reviews, and issue comments at `/api/webhook/github`; GitHub must send JSON and
+use `GITHUB_WEBHOOK_SECRET`. The GitHub project token needs repository contents
+and pull-request write access. Its bot/app identity must also be allowed to
+dismiss pull-request reviews so Kyron can consume intermediate approval.
+
+Every protected target branch must require a fresh approving review. On GitHub,
+grant the Kyron identity review-dismissal authority explicitly; do not rely only
+on the optional “dismiss stale approvals on new commits” repository setting.
 
 Validate Caddy before promotion with `caddy validate` and review `caddy adapt`
 output for route ordering and trusted-header removal.
@@ -50,7 +61,7 @@ recovery can classify interrupted work.
 
 ## Retention
 
-Worktrees remain while an MR is open. Merge/close events trigger worktree and
+Worktrees remain while a change request is open. Merge/close events trigger worktree and
 local-branch cleanup. Run output is retained independently for the configured
 number of days; database metadata and engine logs remain until an explicit
 policy is introduced. Hourly reconciliation repairs missed webhook cleanup and

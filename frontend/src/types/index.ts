@@ -3,15 +3,18 @@ export type User = {
   email: string;
   display_name: string;
   avatar_url: string | null;
-  gitlab_user_id: number;
-  gitlab_username: string;
+  provider: "gitlab" | "github";
+  provider_user_id: string;
+  provider_username: string;
 };
 
 export type Project = {
   id: string;
   name: string;
   git_url: string;
-  gitlab_project_id: number;
+  provider: "gitlab" | "github";
+  provider_project_id: string;
+  provider_project_path: string;
   local_path: string;
   default_branch: string;
   added_by: string;
@@ -82,9 +85,11 @@ export type Run = {
   branch_name: string | null;
   current_head_sha: string | null;
   final_commit_sha: string | null;
-  mr_iid: number | null;
-  mr_url: string | null;
-  reviewer_gitlab_user_id: number;
+  change_request_number: number | null;
+  change_request_url: string | null;
+  reviewer_provider: "gitlab" | "github";
+  reviewer_provider_user_id: string;
+  reviewer_provider_username: string;
   current_invocation_id: string | null;
   current_node_execution_id: string | null;
   current_wave_id: string | null;

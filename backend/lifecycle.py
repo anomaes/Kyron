@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from backend.config import Settings, get_settings
 from backend.db.database import session_factory
-from backend.db.models import Credential, WorkflowRun
+from backend.db.models import Credential, Project, WorkflowRun
 from backend.db.statuses import RunStatus
 from backend.engine.coordinator import RunCoordinator
 from backend.engine.nodes.process_nodes import ProcessNodeExecutor
@@ -18,8 +18,8 @@ from backend.engine.process_runner import ProcessRunner
 from backend.engine.resume import mark_interrupted_runs
 from backend.engine.task_registry import TaskRegistry
 from backend.engine.waves import WaveExecutor
+from backend.integrations.code_host import create_code_host_client
 from backend.integrations.git_manager import GitManager
-from backend.integrations.gitlab_client import GitLabClient
 from backend.services.crypto import SecretCipher
 from backend.services.log_broadcaster import log_broadcaster
 from backend.services.reconciliation_service import ReconciliationService
@@ -74,7 +74,6 @@ class EngineRuntime:
             settings.WORKTREE_BASE_PATH,
             settings.RUN_DATA_BASE_PATH,
         )
-        gitlab = GitLabClient(str(settings.GITLAB_URL))
 
         async def credentials(user_id: uuid.UUID) -> dict[str, str]:
             async with session_factory() as credential_session:
@@ -85,18 +84,25 @@ class EngineRuntime:
                 )
                 return {row.key_name: cipher.decrypt(row.encrypted_value) for row in rows}
 
-        try:
-            async with session_factory() as session:
-                runner = ProcessRunner(
-                    process_registry,
-                    log_broadcaster,
-                    settings.PROCESS_TERMINATION_GRACE_SECONDS,
-                )
-                waves = WaveExecutor(session, git, ProcessNodeExecutor(runner), credentials)
-                coordinator = RunCoordinator(session, git, gitlab, cipher, waves)
+        async with session_factory() as session:
+            run = await session.get(WorkflowRun, run_id)
+            if run is None:
+                return
+            project = await session.get(Project, run.project_id)
+            if project is None:
+                return
+            code_host = create_code_host_client(project.provider, settings)
+            runner = ProcessRunner(
+                process_registry,
+                log_broadcaster,
+                settings.PROCESS_TERMINATION_GRACE_SECONDS,
+            )
+            waves = WaveExecutor(session, git, ProcessNodeExecutor(runner), credentials)
+            try:
+                coordinator = RunCoordinator(session, git, code_host, cipher, waves)
                 await coordinator.execute_run(run_id)
-        finally:
-            await gitlab.close()
+            finally:
+                await code_host.close()
 
     async def _queue_reconciler(self) -> None:
         while True:
@@ -115,7 +121,6 @@ class EngineRuntime:
     async def _resource_reconciler(self) -> None:
         while True:
             await asyncio.sleep(self.settings.STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS)
-            gitlab = GitLabClient(str(self.settings.GITLAB_URL))
             cipher = (
                 SecretCipher(
                     self.settings.CREDENTIALS_ENCRYPTION_KEY,
@@ -135,14 +140,11 @@ class EngineRuntime:
                             self.settings.WORKTREE_BASE_PATH,
                             self.settings.RUN_DATA_BASE_PATH,
                         ),
-                        gitlab,
                         process_registry,
                         self.tasks,
                     ).reconcile()
             except Exception:
                 logger.exception("Stale-resource reconciliation failed")
-            finally:
-                await gitlab.close()
 
 
 runtime = EngineRuntime(get_settings())

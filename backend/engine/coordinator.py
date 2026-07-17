@@ -21,8 +21,13 @@ from backend.engine.conditions import evaluate_condition
 from backend.engine.context import expand_public_variables
 from backend.engine.scheduler import DagScheduler, GraphDeadlockError, LogicalStatus
 from backend.engine.waves import WaveExecutionError, WaveExecutor
+from backend.integrations.code_host import (
+    CodeHostClient,
+    ProviderUser,
+    git_username,
+    repository_locator,
+)
 from backend.integrations.git_manager import GitManager, project_git_locks
-from backend.integrations.gitlab_client import GitLabClient
 from backend.schemas.workflow import (
     HumanFeedbackNode,
     ReviewLoopNode,
@@ -46,13 +51,13 @@ class RunCoordinator:
         self,
         session: AsyncSession,
         git: GitManager,
-        gitlab: GitLabClient,
+        code_host: CodeHostClient,
         cipher: SecretCipher,
         wave_executor: WaveExecutor,
     ) -> None:
         self.session = session
         self.git = git
-        self.gitlab = gitlab
+        self.code_host = code_host
         self.cipher = cipher
         self.wave_executor = wave_executor
 
@@ -129,7 +134,12 @@ class RunCoordinator:
         final_sha = await self.git.checkpoint(Path(run.worktree_path), final_message)
         token = self.cipher.decrypt(project.encrypted_access_token)
         try:
-            await self.git.push(Path(run.worktree_path), run.branch_name, token)
+            await self.git.push(
+                Path(run.worktree_path),
+                run.branch_name,
+                token,
+                username=git_username(project.provider),
+            )
             await self._ensure_merge_request(run, project, workflow, token)
         finally:
             token = ""
@@ -381,7 +391,12 @@ class RunCoordinator:
         head = await self.git.checkpoint(Path(run.worktree_path), message)
         token = self.cipher.decrypt(project.encrypted_access_token)
         try:
-            await self.git.push(Path(run.worktree_path), run.branch_name, token)
+            await self.git.push(
+                Path(run.worktree_path),
+                run.branch_name,
+                token,
+                username=git_username(project.provider),
+            )
             await self._ensure_merge_request(run, project, workflow, token, node=node)
         finally:
             token = ""
@@ -420,25 +435,35 @@ class RunCoordinator:
         )
         title = expand_public_variables(title_template, run.public_context)
         description = expand_public_variables(description_template, run.public_context)
-        if run.mr_iid:
-            await self.gitlab.update_merge_request_reviewers(
-                project.gitlab_project_id,
-                run.mr_iid,
+        reviewer = ProviderUser(
+            id=run.reviewer_provider_user_id,
+            username=run.reviewer_provider_username,
+        )
+        if run.change_request_number:
+            await self.code_host.update_change_request_reviewer(
+                repository_locator(
+                    project.provider,
+                    project.provider_project_id,
+                    project.provider_project_path,
+                ),
+                run.change_request_number,
                 token,
-                run.reviewer_gitlab_user_id,
+                reviewer,
             )
             return
-        merge_request = await self.gitlab.create_merge_request(
-            project.gitlab_project_id,
+        change_request = await self.code_host.create_change_request(
+            repository_locator(
+                project.provider, project.provider_project_id, project.provider_project_path
+            ),
             token,
             source_branch=run.branch_name,
             target_branch=run.base_ref,
             title=title,
             description=description,
-            reviewer_id=run.reviewer_gitlab_user_id,
+            reviewer=reviewer,
         )
-        run.mr_iid = int(merge_request["iid"])
-        run.mr_url = str(merge_request["web_url"])
+        run.change_request_number = change_request.number
+        run.change_request_url = change_request.url
         await self.session.commit()
 
     async def _node_execution(
@@ -538,8 +563,15 @@ class RunCoordinator:
             "RUN_DATA_PATH": run.run_data_path or "",
             "USER_NAME": user.display_name,
             "USER_EMAIL": user.email,
-            "GITLAB_USER_ID": str(user.gitlab_user_id),
-            "GITLAB_USERNAME": user.gitlab_username,
+            "CODE_HOST_PROVIDER": run.reviewer_provider,
+            "PROVIDER_USER_ID": run.reviewer_provider_user_id,
+            "PROVIDER_USERNAME": run.reviewer_provider_username,
+            "GITLAB_USER_ID": (
+                run.reviewer_provider_user_id if run.reviewer_provider == "gitlab" else ""
+            ),
+            "GITLAB_USERNAME": (
+                run.reviewer_provider_username if run.reviewer_provider == "gitlab" else ""
+            ),
         }
 
     async def _run(self, run_id: uuid.UUID) -> WorkflowRun:

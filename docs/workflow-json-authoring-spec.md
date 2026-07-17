@@ -220,8 +220,11 @@ Public built-ins available during a normal run are:
 | `RUN_DATA_PATH` | Absolute output-data path. |
 | `USER_NAME` | Triggering user's display name. |
 | `USER_EMAIL` | Triggering user's email. |
-| `GITLAB_USER_ID` | Triggering user's GitLab ID as text. |
-| `GITLAB_USERNAME` | Triggering user's GitLab username. |
+| `CODE_HOST_PROVIDER` | Active run provider: `gitlab` or `github`. |
+| `PROVIDER_USER_ID` | Triggering user's provider ID as text. |
+| `PROVIDER_USERNAME` | Triggering user's provider username. |
+| `GITLAB_USER_ID` | Legacy alias populated only for GitLab runs. |
+| `GITLAB_USERNAME` | Legacy alias populated only for GitLab runs. |
 | `REVIEW_ITERATION` | Current review-loop iteration when inside a review loop. |
 | `FEEDBACK` | Latest feedback text after feedback has been submitted. |
 | `FEEDBACK_TYPE` | `comment` or `approval` after feedback has been submitted. |
@@ -411,8 +414,8 @@ by the repository; otherwise omit both fields.
 | `allow_comment_feedback` | boolean | no | `true` |
 | `allow_approval` | boolean | no | `true` |
 
-This node checkpoints, pushes, opens or updates the merge request, and pauses. Approval
-or feedback from the triggering GitLab user completes it. It does not repeat prior
+This node checkpoints, pushes, opens or updates the provider change request, and pauses.
+Approval or feedback from the triggering provider user completes it. It does not repeat prior
 nodes; use `review_loop` for revision cycles.
 
 ### 6.5 Sub-workflow

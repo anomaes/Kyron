@@ -14,8 +14,6 @@ async def test_credentials_are_write_only_and_user_scoped(db_session: AsyncSessi
         id=uuid.uuid4(),
         email="developer@example.com",
         display_name="Developer",
-        gitlab_user_id=321,
-        gitlab_username="developer",
     )
     db_session.add(user)
     await db_session.flush()

@@ -6,6 +6,7 @@ from backend.db.database import Base
 def test_complete_domain_tables_are_declared() -> None:
     assert set(Base.metadata.tables) == {
         "users",
+        "provider_identities",
         "credentials",
         "projects",
         "workflow_runs",

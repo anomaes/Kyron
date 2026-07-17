@@ -78,7 +78,7 @@ export function CompositeNodeConfig({ node, workflows, onChange }: Props) {
     <MappingFields title="Output mappings" definitions={outputDefinitions} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" onChange={(value) => set("output_mapping", value)} />
     <label>Maximum iterations<input type="number" min={1} value={Number(config.max_iterations ?? 5)} onChange={(event) => set("max_iterations", Number(event.target.value))} /></label>
     <label>Checkpoint commit message<input value={String(config.commit_message ?? "")} onChange={(event) => set("commit_message", event.target.value)} /></label>
-    <label>Merge request title<input value={String(config.mr_title ?? "")} placeholder="Use workflow default" onChange={(event) => set("mr_title", event.target.value || null)} /></label>
-    <label>Merge request description<textarea value={String(config.mr_description ?? "")} placeholder="Use workflow default" onChange={(event) => set("mr_description", event.target.value || null)} /></label>
+    <label>Change request title<input value={String(config.mr_title ?? "")} placeholder="Use workflow default" onChange={(event) => set("mr_title", event.target.value || null)} /></label>
+    <label>Change request description<textarea value={String(config.mr_description ?? "")} placeholder="Use workflow default" onChange={(event) => set("mr_description", event.target.value || null)} /></label>
   </div>;
 }

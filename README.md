@@ -21,7 +21,7 @@
 
 ---
 
-Kyron orchestrates coding workflows against Git repositories and delivers their changes through GitLab merge requests. Every run is pinned to an exact commit, every parallel execution wave is checkpointed in Git, and every decision needed to recover or resume a run is persisted.
+Kyron orchestrates coding workflows against Git repositories and delivers their changes through GitLab merge requests or GitHub pull requests. Every run is pinned to an exact commit, every parallel execution wave is checkpointed in Git, and every decision needed to recover or resume a run is persisted.
 
 It is designed for trusted internal engineering teams that want the speed of coding agents without giving up review, reproducibility, or operational control.
 
@@ -42,7 +42,7 @@ It is designed for trusted internal engineering teams that want the speed of cod
     </td>
     <td width="33%" valign="top">
       <h3>Human control built in</h3>
-      GitLab merge requests, approval resets, feedback checkpoints, and review loops make human decisions part of the workflow.
+      Provider change requests, approval consumption, feedback checkpoints, and review loops make human decisions part of the workflow.
     </td>
   </tr>
 </table>
@@ -53,30 +53,30 @@ It is designed for trusted internal engineering teams that want the speed of cod
 - **Composable DAGs** with conditional edges, `AND`/`OR` joins, typed inputs, public variables, declared outputs, and reusable child workflows.
 - **Durable execution history** covering invocations, waves, node executions, attempts, edge evaluations, feedback, and engine logs.
 - **Live operations UI** with expanded run graphs, nested review iterations, WebSocket logs, Git checkpoint boundaries, and resume/cancel controls.
-- **GitLab-native delivery** with OAuth identity, repository registration, workflow-definition review MRs, run MRs, and authenticated webhooks.
+- **GitLab and GitHub delivery** with provider-bound OAuth identity, repository registration, workflow-definition reviews, run change requests, and authenticated webhooks.
 - **Secret-aware execution** with Fernet-encrypted credentials, just-in-time decryption, in-memory redaction, and write-only API values.
 - **Recovery after interruption** through startup reconciliation, exact worktree state, immutable attempts, and explicit operator-driven resume.
-- **Single-VM deployment** with Caddy, React, FastAPI, PostgreSQL, GitLab OAuth, and the Pi coding agent packaged in Docker Compose.
+- **Single-VM deployment** with Caddy, React, FastAPI, PostgreSQL, GitLab/GitHub OAuth, and the Pi coding agent packaged in Docker Compose.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    U[Engineer] -->|GitLab OAuth| C[Caddy]
+    U[Engineer] -->|GitLab or GitHub OAuth| C[Caddy]
     C --> UI[React operator UI]
     C -->|trusted identity headers| API[FastAPI engine<br/>one worker]
     C --> AUTH[OAuth service]
-    AUTH <--> GL[GitLab]
+    AUTH <--> HOST[GitLab / GitHub]
     API <--> DB[(PostgreSQL)]
     API <--> FS[(Clones, worktrees,<br/>logs and artifacts)]
     API --> PI[Pi coding agent]
-    API <--> GL
+    API <--> HOST
 
     classDef edge fill:#c9f55b,stroke:#171914,color:#171914;
     classDef core fill:#171914,stroke:#171914,color:#f3f2ed;
     classDef store fill:#eeeDE7,stroke:#71756a,color:#292b25;
     class C,API core;
-    class U,UI,AUTH,PI,GL edge;
+    class U,UI,AUTH,PI,HOST edge;
     class DB,FS store;
 ```
 
@@ -84,8 +84,8 @@ flowchart LR
 2. Kyron resolves that ref to an exact SHA and snapshots the root workflow plus every transitive child from the same revision.
 3. The engine creates an isolated branch and worktree, then schedules ready nodes in deterministic waves.
 4. Successful waves become Git checkpoints. If one node fails, the whole wave rolls back before a new attempt can start.
-5. Human-feedback and review-loop nodes pause execution behind GitLab MR review. Only the triggering GitLab user can continue the checkpoint.
-6. Kyron persists the final state, commit, logs, attempts, and MR metadata for later inspection or recovery.
+5. Human-feedback and review-loop nodes pause execution behind provider review. Only the triggering user on that provider can continue the checkpoint.
+6. Kyron persists the final state, commit, logs, attempts, and change-request metadata for later inspection or recovery.
 
 Workflow definitions live in the repository at `.workflowEngine/<workflow_id>.json`, so orchestration logic is versioned and reviewed alongside the code it changes.
 
@@ -94,8 +94,8 @@ Workflow definitions live in the repository at `.workflowEngine/<workflow_id>.js
 The React operator UI includes:
 
 - a repository registry and searchable, tag-aware workflow catalog;
-- a React Flow builder with a node palette, configuration inspector, validation feedback, and MR-based saves;
-- run history pinned to base revisions and linked to delivery merge requests;
+- a React Flow builder with a node palette, configuration inspector, validation feedback, and review-based saves;
+- run history pinned to base revisions and linked to delivery change requests;
 - expanded execution graphs for child workflows and every review-loop iteration;
 - live engine/process output, human-feedback controls, execution waves, and attempt history.
 
@@ -104,9 +104,9 @@ The React operator UI includes:
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/assets/screenshots/projects.png" alt="Kyron project registry with three connected GitLab repositories" width="100%" />
+      <img src="docs/assets/screenshots/projects.png" alt="Kyron project registry with connected repositories" width="100%" />
       <br />
-      <sub><strong>Projects.</strong> Register trusted GitLab repositories and see token and default-branch status at a glance.</sub>
+      <sub><strong>Projects.</strong> Register trusted GitLab or GitHub repositories and see token and default-branch status at a glance.</sub>
     </td>
     <td width="50%" valign="top">
       <img src="docs/assets/screenshots/workflow-catalog.png" alt="Kyron workflow catalog with search, tags, and run controls" width="100%" />
@@ -127,7 +127,7 @@ The React operator UI includes:
     <td width="40%" valign="top">
       <img src="docs/assets/screenshots/runs.png" alt="Kyron run history with running, awaiting-feedback, completed, and failed executions" width="100%" />
       <br />
-      <sub><strong>Run history.</strong> Track status, workflow, immutable base revision, current execution, and delivery merge request.</sub>
+      <sub><strong>Run history.</strong> Track status, workflow, immutable base revision, current execution, and delivery change request.</sub>
     </td>
     <td width="60%" valign="top">
       <img src="docs/assets/screenshots/run-detail.png" alt="Kyron run detail with expanded workflow graph and live execution logs" width="100%" />
@@ -144,8 +144,8 @@ The React operator UI includes:
 ### Prerequisites
 
 - Docker Engine with Docker Compose v2
-- a GitLab OAuth application with `read_user` access
-- a GitLab project access token for each repository Kyron will manage
+- a GitLab OAuth application with `read_user` access and/or a GitHub OAuth application with `read:user user:email`
+- a project access token for each GitLab or GitHub repository Kyron will manage
 - a hostname that resolves to the machine running Kyron
 
 ### 1. Configure the environment
@@ -163,11 +163,17 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Update `.env` with:
 
-- `APP_HOST`, `APP_BASE_URL`, and the GitLab URL;
+- `APP_HOST`, `APP_BASE_URL`, and enabled provider URLs;
 - OAuth client ID, secret, and the exact callback URL `${APP_BASE_URL}/auth/callback`;
 - the generated Fernet and session-signing keys;
 - webhook secrets; and
 - the same database password in `POSTGRES_PASSWORD` and `DATABASE_URL`.
+
+For GitHub, subscribe the webhook to pull requests, pull-request reviews, and
+issue comments. The repository token needs contents and pull-request write
+access, and the Kyron identity must be permitted to dismiss reviews. See
+[`docs/code-host-provider-spec.md`](docs/code-host-provider-spec.md) for the
+provider contract and security invariants.
 
 Never commit `.env`. Kyron intentionally refuses to start without it.
 
@@ -178,7 +184,7 @@ docker compose -f deploy/docker-compose.yml config
 docker compose -f deploy/docker-compose.yml up --build -d
 ```
 
-Open the configured `APP_BASE_URL`. Caddy redirects the first request through GitLab OAuth, then serves the UI and authenticated API from the same origin.
+Open the configured `APP_BASE_URL`. Caddy presents the configured GitLab/GitHub sign-in options, then serves the UI and authenticated API from the same origin.
 
 ```bash
 # Follow the services
@@ -292,7 +298,7 @@ State-machine changes must include tests. Preserve unrelated worktree changes, u
 
 ## Project status
 
-Kyron is currently at **v0.1.0**. All eight implementation milestones are complete; acceptance scenarios that require a real GitLab instance, OAuth application, TLS hostname, and provider credentials remain deployment-specific checks.
+Kyron is currently at **v0.1.0**. The original eight milestones are complete and dual-provider support is tracked as milestone 9; acceptance scenarios that require real provider instances, OAuth applications, a TLS hostname, and provider credentials remain deployment-specific checks.
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [acceptance checklist](docs/acceptance.md) for the detailed delivery record.
 

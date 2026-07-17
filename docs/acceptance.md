@@ -1,5 +1,23 @@
 # Acceptance verification
 
+## Dual-provider local record — 2026-07-17
+
+- Ruff and strict MyPy passed across 94 Python source files; all 66 backend tests
+  passed.
+- GitHub adapter tests cover authentication, metadata, pull-request creation,
+  reviewer request, approval discovery/dismissal, and sanitized failures.
+- GitHub webhook tests cover HMAC verification, delivery identity, provider-scoped
+  deduplication, and approved-review normalization.
+- A clean PostgreSQL 16 migration and an upgrade of a populated legacy `0001`
+  GitLab schema both reached revision `0002`; legacy provider identities and
+  project IDs were preserved.
+- Frontend and auth-service strict TypeScript checks and production builds passed;
+  both npm audits reported zero vulnerabilities. Compose configuration rendered
+  successfully with both provider configurations.
+
+Live-provider OAuth, token permission, webhook, and protected-branch scenarios
+remain environment-dependent and are listed below.
+
 ## Local release record — 2026-07-16
 
 The implementation release gate completed successfully:
@@ -20,7 +38,7 @@ Run `./scripts/verify.sh` to repeat the repository-local portion of this gate.
 ## Automated coverage
 
 - Backend: unit/API/integration tests cover models, atomic state transitions,
-  encryption/redaction, auth identity, Git/GitLab adapters, exact snapshots,
+  encryption/redaction, provider identity, Git/GitLab/GitHub adapters, exact snapshots,
   workflow validation, scheduling/joins, conditions, process timeout/output,
   Pi JSON events, worktree checkpoint rollback, webhook authentication and
   feedback actor/approval-reset semantics.
@@ -36,13 +54,14 @@ and feedback transition in order.
 
 ## Environment-dependent acceptance
 
-The following checks require the target GitLab instance, OAuth application,
-project bot token, Pi provider credential, TLS hostname, and a PostgreSQL-backed
-production-like VM. Run them before the first production promotion:
+The following checks require each enabled target code host, OAuth applications,
+project bot tokens, a Pi provider credential, TLS hostname, and a PostgreSQL-backed
+production-like VM. Run them before the first production promotion for both GitLab
+and GitHub:
 
-- Trigger Bash → Pi → test and verify branch, commits, reviewer, logs and MR.
+- Trigger Bash → Pi → test and verify branch, commits, reviewer, logs and change request.
 - Complete two review-loop feedback rounds, approve, verify approval reset, then
-  confirm a fresh final GitLab approval is required.
+  confirm a fresh final provider approval is required.
 - Fail one member of a parallel wave, verify full rollback, resume, and confirm
   both attempts increment.
 - Restart the backend during a root wave and a child wave; confirm `INTERRUPTED`
@@ -52,5 +71,5 @@ production-like VM. Run them before the first production promotion:
   of decrypted credentials.
 - Validate/adapt the final Caddy configuration and test spoofed identity headers.
 
-Record the date, operator, GitLab version, Pi version, and result for each item in
+Record the date, operator, provider/version, Pi version, and result for each item in
 the deployment change record.

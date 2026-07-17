@@ -67,14 +67,16 @@ class GitManager:
             raise GitError(f"Git operation failed ({process.returncode}): {error.strip()}")
         return output.strip()
 
-    async def clone(self, git_url: str, destination: Path, token: str) -> None:
+    async def clone(
+        self, git_url: str, destination: Path, token: str, *, username: str = "oauth2"
+    ) -> None:
         self.clone_base_path.mkdir(parents=True, exist_ok=True)
         self.assert_beneath(destination, self.clone_base_path)
         if await asyncio.to_thread(destination.exists):
             raise GitError("Project clone destination already exists")
         redactor = SecretRedactor([token])
         try:
-            with temporary_git_askpass("oauth2", token) as credentials:
+            with temporary_git_askpass(username, token) as credentials:
                 await self.run(
                     ["clone", "--no-checkout", "--", git_url, str(destination)],
                     env_patch=credentials,
@@ -86,11 +88,13 @@ class GitManager:
         finally:
             redactor.clear()
 
-    async def fetch(self, local_path: Path, token: str) -> None:
+    async def fetch(
+        self, local_path: Path, token: str, *, username: str = "oauth2"
+    ) -> None:
         self.assert_beneath(local_path, self.clone_base_path)
         redactor = SecretRedactor([token])
         try:
-            with temporary_git_askpass("oauth2", token) as credentials:
+            with temporary_git_askpass(username, token) as credentials:
                 await self.run(
                     ["fetch", "origin", "--prune"],
                     cwd=local_path,
@@ -181,10 +185,12 @@ class GitManager:
         if await self.head_sha(worktree) != start_commit_sha:
             raise GitError("Worktree recovery did not restore the wave start commit")
 
-    async def push(self, worktree: Path, branch: str, token: str) -> None:
+    async def push(
+        self, worktree: Path, branch: str, token: str, *, username: str = "oauth2"
+    ) -> None:
         redactor = SecretRedactor([token])
         try:
-            with temporary_git_askpass("oauth2", token) as credentials:
+            with temporary_git_askpass(username, token) as credentials:
                 await self.run(
                     ["push", "origin", branch],
                     cwd=worktree,

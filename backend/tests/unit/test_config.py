@@ -23,3 +23,14 @@ def test_max_timeout_must_cover_default() -> None:
             MAX_NODE_TIMEOUT_SECONDS=10,
             _env_file=None,
         )
+
+
+def test_enabled_provider_requires_webhook_secret_in_production() -> None:
+    settings = Settings(
+        APP_ENV="production",
+        CREDENTIALS_ENCRYPTION_KEY="configured",
+        GITHUB_OAUTH_CLIENT_ID="client",
+        _env_file=None,
+    )
+    with pytest.raises(ValueError, match="GITHUB_WEBHOOK_SECRET"):
+        settings.validate_runtime_secrets()

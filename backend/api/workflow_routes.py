@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.auth.dependencies import CurrentUser, DbSession
+from backend.auth.dependencies import CurrentUser, DbSession, require_project_provider
 from backend.config import Settings, get_settings
 from backend.db.models import Project
 from backend.dependencies import Cipher
 from backend.engine.validation import direct_references
 from backend.integrations.git_manager import GitManager
-from backend.integrations.gitlab_client import GitLabClient
 from backend.lifecycle import runtime
 from backend.schemas.run import RunTriggerRequest, RunTriggerResponse
 from backend.schemas.workflow import (
@@ -29,22 +27,17 @@ async def get_workflow_service(
     db: DbSession,
     cipher: Cipher,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> AsyncIterator[WorkflowService]:
-    gitlab = GitLabClient(str(settings.GITLAB_URL))
-    try:
-        yield WorkflowService(
-            db,
-            settings,
-            cipher,
-            GitManager(
-                settings.PROJECT_CLONE_BASE_PATH,
-                settings.WORKTREE_BASE_PATH,
-                settings.RUN_DATA_BASE_PATH,
-            ),
-            gitlab,
-        )
-    finally:
-        await gitlab.close()
+) -> WorkflowService:
+    return WorkflowService(
+        db,
+        settings,
+        cipher,
+        GitManager(
+            settings.PROJECT_CLONE_BASE_PATH,
+            settings.WORKTREE_BASE_PATH,
+            settings.RUN_DATA_BASE_PATH,
+        ),
+    )
 
 
 WorkflowServiceDependency = Annotated[WorkflowService, Depends(get_workflow_service)]
@@ -116,6 +109,7 @@ async def trigger_workflow(
     workflows: WorkflowServiceDependency,
 ) -> RunTriggerResponse:
     project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
     try:
         run = await workflows.create_run(
             project, user, workflow_id, request.base_ref, request.inputs
@@ -136,6 +130,7 @@ async def save_workflow(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
     raw = request.get("workflow")
     expected = request.get("expected_base_commit_sha")
     if not isinstance(raw, dict) or not isinstance(expected, str):
@@ -165,6 +160,7 @@ async def delete_workflow(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
     _, definitions = await workflows.list(project)
     definition = next((item for item in definitions if item.id == workflow_id), None)
     if definition is None:

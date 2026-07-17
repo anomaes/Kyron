@@ -1,10 +1,14 @@
 # Workflow Orchestration Engine
 ## Complete Implementation Specification
 
+> **Provider extension:** `docs/code-host-provider-spec.md` is the normative
+> delta for GitLab/GitHub dual-provider identity, delivery, webhooks, fields, and
+> configuration. It supersedes GitLab-only clauses in this original specification.
+
 **Revision:** 2.0  
 **Status:** Implementation handoff  
 **Target environment:** Trusted internal deployment on a single VM  
-**Primary integrations:** GitLab, Caddy OAuth, Pi coding agent  
+**Primary integrations:** GitLab, GitHub, Caddy OAuth, Pi coding agent
 
 ---
 
@@ -21,7 +25,7 @@ The specification defines:
 - Explicit review-loop semantics.
 - Git worktree and exact-revision handling.
 - Deterministic failure recovery and resume behavior.
-- GitLab merge request, feedback, approval, and webhook integration.
+- GitLab merge-request and GitHub pull-request feedback, approval, and webhook integration.
 - Pi coding-agent invocation and event handling.
 - Backend APIs, frontend behavior, testing, and implementation order.
 
@@ -37,7 +41,7 @@ Build a self-hosted workflow orchestration platform that allows authenticated in
 
 The platform runs on a single VM behind Caddy. It integrates with:
 
-- GitLab for repositories, branches, merge requests, comments, reviewers, approvals, and lifecycle webhooks.
+- GitLab and GitHub for repositories, branches, change requests, comments, reviewers, approvals, and lifecycle webhooks.
 - Pi as the coding assistant used by prompt nodes.
 - PostgreSQL for durable execution metadata.
 - The local filesystem for cloned repositories, worktrees, node output, and run artifacts.
@@ -59,7 +63,7 @@ These assumptions simplify the initial implementation. They must be clearly docu
 
 ## 1.3 Core Execution Concept
 
-Users register GitLab repositories, then define workflows in a visual graph editor. A workflow is a directed acyclic graph of executable and control nodes.
+Users register GitLab or GitHub repositories, then define workflows in a visual graph editor. A workflow is a directed acyclic graph of executable and control nodes.
 
 Supported node types are:
 

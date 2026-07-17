@@ -23,11 +23,10 @@ and delivery status are recorded under `docs/`.
 - Resolve and snapshot workflows from the run's exact base commit.
 - Ordinary workflow graphs remain acyclic; repetition belongs to `review_loop`.
 - A failed wave is reset as a whole and retried with new attempt rows.
-- Only the triggering GitLab user may control feedback checkpoints.
-- Intermediate GitLab approval must be reset before execution continues.
+- Only the triggering user on the run's code-host provider may control feedback checkpoints.
+- Intermediate provider approval must be consumed before execution continues.
 - Production runs exactly one backend worker.
 
 Use argument arrays for Git and Pi processes, validate all filesystem paths
 against configured roots, preserve unrelated worktree changes, and add tests for
 every state-machine change.
-

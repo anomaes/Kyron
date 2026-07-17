@@ -2,21 +2,28 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
+from backend.integrations.code_host import (
+    ChangeRequest,
+    CodeHostError,
+    ProviderComment,
+    ProviderUser,
+    RepositoryMetadata,
+)
 from backend.services.crypto import SecretRedactor
 
 
-class GitLabError(RuntimeError):
+class GitLabError(CodeHostError):
     def __init__(self, category: str, status_code: int | None = None) -> None:
-        suffix = f" (HTTP {status_code})" if status_code else ""
-        super().__init__(f"GitLab {category} request failed{suffix}")
-        self.category = category
-        self.status_code = status_code
+        super().__init__("gitlab", category, status_code)
 
 
 class GitLabClient:
+    provider = "gitlab"
+
     def __init__(self, base_url: str, client: httpx.AsyncClient | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self._owned_client = client is None
@@ -69,10 +76,25 @@ class GitLabClient:
             redactor.clear()
         raise GitLabError(category)
 
-    async def get_project(self, project_id: int, token: str) -> dict[str, Any]:
-        return await self.request(
-            "GET", f"/projects/{project_id}", token, category="project metadata"
+    async def get_repository(self, repository: str, token: str) -> RepositoryMetadata:
+        data = await self.request(
+            "GET", f"/projects/{quote(repository, safe='')}", token, category="project metadata"
         )
+        return RepositoryMetadata(
+            id=str(data["id"]),
+            path=str(data["path_with_namespace"]),
+            default_branch=str(data.get("default_branch") or "main"),
+            clone_url=str(data.get("http_url_to_repo") or ""),
+        )
+
+    async def get_project(self, project_id: int, token: str) -> dict[str, Any]:
+        metadata = await self.get_repository(str(project_id), token)
+        return {
+            "id": int(metadata.id),
+            "path_with_namespace": metadata.path,
+            "default_branch": metadata.default_branch,
+            "http_url_to_repo": metadata.clone_url,
+        }
 
     async def create_merge_request(
         self,
@@ -165,3 +187,66 @@ class GitLabClient:
             if asyncio.get_running_loop().time() >= deadline:
                 raise GitLabError("approval synchronization")
             await asyncio.sleep(0.5)
+
+    async def create_change_request(
+        self,
+        repository: str,
+        token: str,
+        *,
+        source_branch: str,
+        target_branch: str,
+        title: str,
+        description: str,
+        reviewer: ProviderUser,
+    ) -> ChangeRequest:
+        data = await self.create_merge_request(
+            int(repository),
+            token,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            title=title,
+            description=description,
+            reviewer_id=int(reviewer.id),
+        )
+        return ChangeRequest(
+            number=int(data["iid"]), url=str(data["web_url"]), state=str(data["state"])
+        )
+
+    async def update_change_request_reviewer(
+        self,
+        repository: str,
+        number: int,
+        token: str,
+        reviewer: ProviderUser,
+    ) -> None:
+        await self.update_merge_request_reviewers(
+            int(repository), number, token, int(reviewer.id)
+        )
+
+    async def get_change_request(
+        self, repository: str, number: int, token: str
+    ) -> ChangeRequest:
+        data = await self.get_merge_request(int(repository), number, token)
+        return ChangeRequest(
+            number=int(data["iid"]),
+            url=str(data.get("web_url") or ""),
+            state=str(data["state"]),
+        )
+
+    async def post_comment(
+        self, repository: str, number: int, token: str, body: str
+    ) -> ProviderComment:
+        data = await self.post_note(int(repository), number, token, body)
+        return ProviderComment(id=str(data["id"]))
+
+    async def consume_approval(
+        self,
+        repository: str,
+        number: int,
+        token: str,
+        reviewer: ProviderUser,
+        review_id: str | None = None,
+    ) -> None:
+        del reviewer, review_id
+        await self.wait_for_approval_sync(int(repository), number, token)
+        await self.reset_approvals(int(repository), number, token)

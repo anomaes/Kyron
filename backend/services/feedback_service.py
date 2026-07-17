@@ -18,7 +18,7 @@ from backend.db.models import (
 )
 from backend.db.statuses import NodeStatus, RunStatus
 from backend.engine.conditions import evaluate_condition
-from backend.integrations.gitlab_client import GitLabClient
+from backend.integrations.code_host import CodeHostClient, ProviderUser, repository_locator
 from backend.schemas.workflow import ReviewLoopNode, WorkflowBundle, WorkflowDefinition
 from backend.services.crypto import SecretCipher
 
@@ -34,12 +34,12 @@ class FeedbackService:
         self,
         session: AsyncSession,
         cipher: SecretCipher,
-        gitlab: GitLabClient,
+        code_host: CodeHostClient,
         schedule_continuation: ScheduleContinuation,
     ) -> None:
         self.session = session
         self.cipher = cipher
-        self.gitlab = gitlab
+        self.code_host = code_host
         self.schedule_continuation = schedule_continuation
 
     async def accept(
@@ -48,11 +48,13 @@ class FeedbackService:
         *,
         event_type: str,
         source: str,
-        author_gitlab_user_id: int,
+        author_provider: str,
+        author_provider_user_id: str,
         author_username: str,
         message: str = "",
         author_user_id: uuid.UUID | None = None,
-        gitlab_note_id: int | None = None,
+        provider_comment_id: str | None = None,
+        provider_review_id: str | None = None,
     ) -> FeedbackEvent:
         run = await self.session.scalar(
             select(WorkflowRun).where(WorkflowRun.id == run_id).with_for_update()
@@ -61,8 +63,12 @@ class FeedbackService:
             raise LookupError("Run does not exist")
         if run.status != RunStatus.AWAITING_FEEDBACK:
             raise FeedbackError("Run is not awaiting feedback")
-        if author_gitlab_user_id != run.reviewer_gitlab_user_id:
+        if author_provider_user_id != run.reviewer_provider_user_id:
             raise PermissionError("Only the triggering user may continue this run")
+        if author_provider != run.reviewer_provider:
+            raise PermissionError("Sign in with the run's code-host provider")
+        if source != "frontend" and source != run.reviewer_provider:
+            raise PermissionError("Feedback provider does not match this run")
         if event_type not in {"approval", "comment"}:
             raise FeedbackError("Unsupported feedback event type")
         clean_message = message.strip()
@@ -86,12 +92,22 @@ class FeedbackService:
         token = self.cipher.decrypt(project.encrypted_access_token)
         try:
             if event_type == "approval":
-                if not run.mr_iid:
-                    raise FeedbackError("Run has no merge request to reset")
-                await self.gitlab.wait_for_approval_sync(
-                    project.gitlab_project_id, run.mr_iid, token
+                if not run.change_request_number:
+                    raise FeedbackError("Run has no change request to reset")
+                await self.code_host.consume_approval(
+                    repository_locator(
+                        project.provider,
+                        project.provider_project_id,
+                        project.provider_project_path,
+                    ),
+                    run.change_request_number,
+                    token,
+                    ProviderUser(
+                        id=run.reviewer_provider_user_id,
+                        username=run.reviewer_provider_username,
+                    ),
+                    provider_review_id,
                 )
-                await self.gitlab.reset_approvals(project.gitlab_project_id, run.mr_iid, token)
         except Exception:
             run.status = RunStatus.AWAITING_FEEDBACK
             run.status_version += 1
@@ -106,10 +122,11 @@ class FeedbackService:
             event_type=event_type,
             source=source,
             author_user_id=author_user_id,
-            author_gitlab_user_id=author_gitlab_user_id,
+            author_provider=author_provider,
+            author_provider_user_id=author_provider_user_id,
             author_username=author_username,
             message=clean_message,
-            gitlab_note_id=gitlab_note_id,
+            provider_comment_id=provider_comment_id,
         )
         self.session.add(event)
         run.public_context = {
@@ -149,11 +166,11 @@ class FeedbackService:
         await self.session.commit()
 
         try:
-            if source == "frontend" and run.mr_iid:
+            if source == "frontend" and run.change_request_number:
                 if event_type == "approval":
                     note = (
                         f"Approved via Workflow Engine by {author_username}.\n"
-                        "The intermediate approval was reset; a fresh GitLab approval is "
+                        "The intermediate approval was consumed; a fresh provider approval is "
                         "required for final merge."
                     )
                 else:
@@ -161,12 +178,18 @@ class FeedbackService:
                         f"@kyron {clean_message}\n\n"
                         f"Submitted via Workflow Engine by {author_username}."
                     )
-                note_result = await self.gitlab.post_note(
-                    project.gitlab_project_id, run.mr_iid, token, note
+                note_result = await self.code_host.post_comment(
+                    repository_locator(
+                        project.provider,
+                        project.provider_project_id,
+                        project.provider_project_path,
+                    ),
+                    run.change_request_number,
+                    token,
+                    note,
                 )
-                if note_result.get("id"):
-                    event.gitlab_note_id = int(note_result["id"])
-                    await self.session.commit()
+                event.provider_comment_id = note_result.id
+                await self.session.commit()
         finally:
             token = ""
         if run.status == RunStatus.RUNNING:

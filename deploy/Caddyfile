@@ -5,6 +5,10 @@
 		reverse_proxy backend:8000
 	}
 
+	handle /api/webhook/github {
+		reverse_proxy backend:8000
+	}
+
 	handle /api/health {
 		reverse_proxy backend:8000
 	}
@@ -18,8 +22,9 @@
 			request_header -X-Token-User-Email
 			request_header -X-Token-User-Name
 			request_header -X-Token-User-Avatar
-			request_header -X-Token-GitLab-User-Id
-			request_header -X-Token-GitLab-Username
+			request_header -X-Token-Provider
+			request_header -X-Token-Provider-User-Id
+			request_header -X-Token-Provider-Username
 
 			forward_auth auth-service:3001 {
 				uri /auth/verify
@@ -27,8 +32,9 @@
 					X-Token-User-Email
 					X-Token-User-Name
 					X-Token-User-Avatar
-					X-Token-GitLab-User-Id
-					X-Token-GitLab-Username
+					X-Token-Provider
+					X-Token-Provider-User-Id
+					X-Token-Provider-Username
 				}
 			}
 
@@ -41,8 +47,9 @@
 			request_header -X-Token-User-Email
 			request_header -X-Token-User-Name
 			request_header -X-Token-User-Avatar
-			request_header -X-Token-GitLab-User-Id
-			request_header -X-Token-GitLab-Username
+			request_header -X-Token-Provider
+			request_header -X-Token-Provider-User-Id
+			request_header -X-Token-Provider-Username
 
 			forward_auth auth-service:3001 {
 				uri /auth/verify

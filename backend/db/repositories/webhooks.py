@@ -23,14 +23,16 @@ class WebhookDeliveryRepository:
 
     async def try_begin(
         self,
+        provider: str,
         delivery_key: str,
         event_name: str,
-        gitlab_project_id: int | None = None,
+        provider_project_id: str | None = None,
     ) -> DeliveryReservation:
         delivery = WebhookDelivery(
-            delivery_key=delivery_key,
+            delivery_key=f"{provider}:{delivery_key}",
+            provider=provider,
             event_name=event_name,
-            gitlab_project_id=gitlab_project_id,
+            provider_project_id=provider_project_id,
         )
         nested = await self.session.begin_nested()
         try:
@@ -39,7 +41,9 @@ class WebhookDeliveryRepository:
         except IntegrityError:
             await nested.rollback()
             existing = await self.session.scalar(
-                select(WebhookDelivery).where(WebhookDelivery.delivery_key == delivery_key)
+                select(WebhookDelivery).where(
+                    WebhookDelivery.delivery_key == f"{provider}:{delivery_key}"
+                )
             )
             if existing is None:
                 raise

@@ -23,6 +23,18 @@ deployment acceptance activity; they are listed in `docs/acceptance.md`.
 | 6. HTTP and WebSocket API | Complete | OpenAPI/WebSocket route inventory and API tests |
 | 7. Operator UI and visual builder | Complete | Strict TypeScript check and Vite production build |
 | 8. OAuth, deployment and hardening | Complete | Auth build, audits, three image builds, Compose/Caddy validation |
+| 9. Dual code-host providers | Complete | Provider architecture, legacy migration, 66 backend tests, frontend/auth builds |
+
+## Milestone 9 — Dual code-host providers
+
+Implement the normative delta in `docs/code-host-provider-spec.md`: provider
+identities, automatic GitLab data migration, the normalized code-host contract,
+GitHub REST and webhook adapters, provider-affinity authorization, dual OAuth,
+provider-aware UI and deployment configuration, and complete regression coverage.
+
+Verification gate: the existing GitLab suite plus GitHub adapter/webhook/approval
+tests pass; cross-provider mutations are forbidden; backend, frontend, auth,
+migration, and Compose gates are green.
 
 ## Milestone 1 — Foundations and durable domain
 

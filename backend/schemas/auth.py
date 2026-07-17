@@ -10,5 +10,6 @@ class UserResponse(BaseModel):
     email: str
     display_name: str
     avatar_url: str | None
-    gitlab_user_id: int
-    gitlab_username: str
+    provider: str
+    provider_user_id: str
+    provider_username: str

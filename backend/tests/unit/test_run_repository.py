@@ -13,14 +13,14 @@ async def create_run(session: AsyncSession) -> WorkflowRun:
         id=uuid.uuid4(),
         email="owner@example.com",
         display_name="Owner",
-        gitlab_user_id=123,
-        gitlab_username="owner",
     )
     project = Project(
         id=uuid.uuid4(),
         name="Example",
         git_url="https://gitlab.example/group/repo.git",
-        gitlab_project_id=10,
+        provider="gitlab",
+        provider_project_id="10",
+        provider_project_path="10",
         encrypted_access_token=b"ciphertext",
         local_path="/var/workflowengine/repos/project-10",
         default_branch="main",
@@ -36,7 +36,9 @@ async def create_run(session: AsyncSession) -> WorkflowRun:
         workflow_definition_commit_sha="a" * 40,
         workflow_bundle_snapshot={},
         public_context={},
-        reviewer_gitlab_user_id=user.gitlab_user_id,
+        reviewer_provider="gitlab",
+        reviewer_provider_user_id="123",
+        reviewer_provider_username="owner",
     )
     session.add_all([user, project, run])
     await session.commit()

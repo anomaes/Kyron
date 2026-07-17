@@ -34,14 +34,14 @@ async def waiting_run(
         id=uuid.uuid4(),
         email="reviewer@example.com",
         display_name="Reviewer",
-        gitlab_user_id=777,
-        gitlab_username="reviewer",
     )
     project = Project(
         id=uuid.uuid4(),
         name="Project",
         git_url="https://gitlab.example/g/r.git",
-        gitlab_project_id=12,
+        provider="gitlab",
+        provider_project_id="12",
+        provider_project_path="12",
         encrypted_access_token=cipher.encrypt("project-token"),
         local_path=str(tmp_path / "repo"),
         default_branch="main",
@@ -87,8 +87,10 @@ async def waiting_run(
         workflow_bundle_snapshot=bundle.model_dump(mode="json"),
         public_context={},
         worktree_path=str(tmp_path),
-        mr_iid=42,
-        reviewer_gitlab_user_id=user.gitlab_user_id,
+        change_request_number=42,
+        reviewer_provider="gitlab",
+        reviewer_provider_user_id="777",
+        reviewer_provider_username="reviewer",
     )
     invocation = WorkflowInvocation(
         id=uuid.uuid4(),
@@ -128,7 +130,8 @@ async def test_only_triggering_user_is_accepted(db_session: AsyncSession, tmp_pa
                 run.id,
                 event_type="comment",
                 source="gitlab",
-                author_gitlab_user_id=999,
+                author_provider="gitlab",
+                author_provider_user_id="999",
                 author_username="other",
                 message="change it",
             )
@@ -154,8 +157,9 @@ async def test_review_comment_creates_next_iteration_and_schedules(
             run.id,
             event_type="comment",
             source="gitlab",
-            author_gitlab_user_id=user.gitlab_user_id,
-            author_username=user.gitlab_username,
+            author_provider="gitlab",
+            author_provider_user_id="777",
+            author_username="reviewer",
             message="update docs",
         )
     assert event.iteration == 1
@@ -185,8 +189,9 @@ async def test_approval_reset_failure_leaves_run_waiting(
                 run.id,
                 event_type="approval",
                 source="gitlab",
-                author_gitlab_user_id=user.gitlab_user_id,
-                author_username=user.gitlab_username,
+                author_provider="gitlab",
+                author_provider_user_id="777",
+                author_username="reviewer",
             )
     assert run.status == RunStatus.AWAITING_FEEDBACK
 

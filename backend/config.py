@@ -24,8 +24,12 @@ class Settings(BaseSettings):
     CREDENTIALS_ENCRYPTION_KEY_VERSION: int = Field(1, ge=1)
 
     GITLAB_URL: HttpUrl = HttpUrl("https://gitlab.com")
+    GITLAB_OAUTH_CLIENT_ID: str = ""
     GITLAB_WEBHOOK_SECRET: str = ""
     GITLAB_WEBHOOK_SIGNING_SECRET: str = ""
+    GITHUB_API_URL: HttpUrl = HttpUrl("https://api.github.com")
+    GITHUB_OAUTH_CLIENT_ID: str = ""
+    GITHUB_WEBHOOK_SECRET: str = ""
 
     PROJECT_CLONE_BASE_PATH: Path = Path("/var/workflowengine/repos")
     WORKTREE_BASE_PATH: Path = Path("/var/workflowengine/worktrees")
@@ -59,8 +63,10 @@ class Settings(BaseSettings):
     def validate_runtime_secrets(self) -> None:
         if self.is_production and not self.CREDENTIALS_ENCRYPTION_KEY:
             raise ValueError("CREDENTIALS_ENCRYPTION_KEY is required in production")
-        if self.is_production and not self.GITLAB_WEBHOOK_SECRET:
+        if self.is_production and self.GITLAB_OAUTH_CLIENT_ID and not self.GITLAB_WEBHOOK_SECRET:
             raise ValueError("GITLAB_WEBHOOK_SECRET is required in production")
+        if self.is_production and self.GITHUB_OAUTH_CLIENT_ID and not self.GITHUB_WEBHOOK_SECRET:
+            raise ValueError("GITHUB_WEBHOOK_SECRET is required in production")
 
 
 @lru_cache
