@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title description">
+  <title id="title">Kyron Workflow Engine</title>
+  <desc id="description">A dark Kyron banner with a small workflow graph and the tagline deterministic AI-assisted delivery.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#2a2c26" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="360" rx="24" fill="#11120f"/>
+  <rect width="1200" height="360" rx="24" fill="url(#grid)" opacity="0.52"/>
+
+  <g transform="translate(70 66)">
+    <rect width="70" height="70" rx="18" fill="#c9f55b"/>
+    <text x="35" y="48" text-anchor="middle" fill="#171914" font-family="Manrope, Inter, Arial, sans-serif" font-size="39" font-weight="800">K</text>
+    <text x="0" y="132" fill="#fbfaf6" font-family="Manrope, Inter, Arial, sans-serif" font-size="64" font-weight="750" letter-spacing="-2">Kyron</text>
+    <text x="2" y="172" fill="#9a9d92" font-family="Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="500">Deterministic AI-assisted delivery.</text>
+    <g transform="translate(2 202)">
+      <rect width="118" height="31" rx="15.5" fill="#20221d" stroke="#3a3c35"/>
+      <circle cx="18" cy="15.5" r="4" fill="#c9f55b"/>
+      <text x="31" y="20" fill="#d8dacd" font-family="DM Mono, Consolas, monospace" font-size="11">SELF-HOSTED</text>
+      <rect x="130" width="142" height="31" rx="15.5" fill="#20221d" stroke="#3a3c35"/>
+      <circle cx="148" cy="15.5" r="4" fill="#7357f5"/>
+      <text x="161" y="20" fill="#d8dacd" font-family="DM Mono, Consolas, monospace" font-size="11">GITLAB-NATIVE</text>
+    </g>
+  </g>
+
+  <g transform="translate(615 56)" filter="url(#shadow)">
+    <rect width="515" height="248" rx="18" fill="#f3f2ed" stroke="#3a3c35" stroke-width="2"/>
+    <rect width="515" height="43" rx="18" fill="#1a1b17"/>
+    <rect y="25" width="515" height="18" fill="#1a1b17"/>
+    <circle cx="23" cy="21" r="5" fill="#d95757"/>
+    <circle cx="41" cy="21" r="5" fill="#f09c46"/>
+    <circle cx="59" cy="21" r="5" fill="#c9f55b"/>
+    <text x="92" y="26" fill="#8f9288" font-family="DM Mono, Consolas, monospace" font-size="10">implement_and_review.workflow</text>
+
+    <path d="M 135 119 C 178 119, 173 88, 216 88" fill="none" stroke="#96998e" stroke-width="2"/>
+    <path d="M 135 119 C 178 119, 173 174, 216 174" fill="none" stroke="#96998e" stroke-width="2"/>
+    <path d="M 335 88 C 377 88, 369 130, 409 130" fill="none" stroke="#96998e" stroke-width="2"/>
+    <path d="M 335 174 C 377 174, 369 130, 409 130" fill="none" stroke="#96998e" stroke-width="2"/>
+
+    <g transform="translate(32 89)">
+      <rect width="103" height="61" rx="10" fill="#fbfaf6" stroke="#d3d5cb"/>
+      <rect width="7" height="61" rx="3.5" fill="#7357f5"/>
+      <text x="20" y="25" fill="#71756a" font-family="DM Mono, Consolas, monospace" font-size="8">PROMPT</text>
+      <text x="20" y="44" fill="#292b25" font-family="Manrope, Inter, Arial, sans-serif" font-size="12" font-weight="700">Implement</text>
+    </g>
+    <g transform="translate(216 58)">
+      <rect width="119" height="61" rx="10" fill="#fbfaf6" stroke="#d3d5cb"/>
+      <rect width="7" height="61" rx="3.5" fill="#f09c46"/>
+      <text x="20" y="25" fill="#71756a" font-family="DM Mono, Consolas, monospace" font-size="8">BASH</text>
+      <text x="20" y="44" fill="#292b25" font-family="Manrope, Inter, Arial, sans-serif" font-size="12" font-weight="700">Run tests</text>
+    </g>
+    <g transform="translate(216 144)">
+      <rect width="119" height="61" rx="10" fill="#fbfaf6" stroke="#d3d5cb"/>
+      <rect width="7" height="61" rx="3.5" fill="#c9f55b"/>
+      <text x="20" y="25" fill="#71756a" font-family="DM Mono, Consolas, monospace" font-size="8">SCRIPT</text>
+      <text x="20" y="44" fill="#292b25" font-family="Manrope, Inter, Arial, sans-serif" font-size="12" font-weight="700">Lint code</text>
+    </g>
+    <g transform="translate(409 100)">
+      <rect width="74" height="61" rx="10" fill="#171914" stroke="#171914"/>
+      <text x="14" y="25" fill="#9a9d92" font-family="DM Mono, Consolas, monospace" font-size="8">REVIEW</text>
+      <text x="14" y="44" fill="#f3f2ed" font-family="Manrope, Inter, Arial, sans-serif" font-size="12" font-weight="700">Approve</text>
+    </g>
+  </g>
+</svg>
