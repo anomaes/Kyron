@@ -158,7 +158,7 @@ class FeedbackService:
                     )
                 else:
                     note = (
-                        f"@yoke {clean_message}\n\n"
+                        f"@kyron {clean_message}\n\n"
                         f"Submitted via Workflow Engine by {author_username}."
                     )
                 note_result = await self.gitlab.post_note(

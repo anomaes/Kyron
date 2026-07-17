@@ -913,7 +913,7 @@ Pi's working directory is the run worktree, so Pi may read and modify files in t
   "config": {
     "commit_message": "Checkpoint: awaiting review",
     "mr_title": "Workflow: ${WORKFLOW_NAME}",
-    "mr_description": "Approve to continue or comment with `@yoke <feedback>`.",
+    "mr_description": "Approve to continue or comment with `@kyron <feedback>`.",
     "allow_comment_feedback": true,
     "allow_approval": true
   }
@@ -937,7 +937,7 @@ On approval:
 - Mark the human node successful.
 - Resume its outgoing edges.
 
-On `@yoke` comment:
+On `@kyron` comment:
 
 - Strip the prefix.
 - Store `FEEDBACK`, `FEEDBACK_TYPE=comment`, and feedback-author public variables.
@@ -1001,7 +1001,7 @@ The review loop is the only repeating control construct in version 1.
     },
     "commit_message": "Checkpoint: review iteration ${REVIEW_ITERATION}",
     "mr_title": "Implement: ${TASK}",
-    "mr_description": "Approve or request changes with `@yoke`.",
+    "mr_description": "Approve or request changes with `@kyron`.",
     "max_iterations": 5
   }
 }
@@ -1018,7 +1018,7 @@ The review loop is the only repeating control construct in version 1.
    - Reset MR approvals.
    - Mark the review-loop node `SUCCESS`.
    - Continue to the node's outgoing edges.
-6. If the triggering user provides an `@yoke` comment:
+6. If the triggering user provides an `@kyron` comment:
    - Store the feedback event.
    - Increment `REVIEW_ITERATION`.
    - If the new iteration exceeds `max_iterations`, fail the review-loop node with `MAX_REVIEW_ITERATIONS_REACHED`.
@@ -2493,7 +2493,7 @@ GitLab note webhook requirements:
 - `object_kind == "note"`
 - `merge_request` exists.
 - `object_attributes.system` is not true.
-- `object_attributes.note.strip()` begins with `@yoke`, case-insensitive.
+- `object_attributes.note.strip()` begins with `@kyron`, case-insensitive.
 - Top-level `user.id` equals the triggering user's GitLab user ID.
 
 The actor is read from:
@@ -2511,7 +2511,7 @@ payload["object_attributes"]["note"]
 
 Strip exactly the initial prefix and following whitespace.
 
-Empty feedback after `@yoke` is rejected or ignored with a clear result.
+Empty feedback after `@kyron` is rejected or ignored with a clear result.
 
 ## 17.9 Frontend Feedback Traceability
 
@@ -2527,12 +2527,12 @@ The intermediate approval was reset; a fresh GitLab approval is required for fin
 - Frontend feedback posts:
 
 ```text
-@yoke <feedback text>
+@kyron <feedback text>
 
 Submitted via Workflow Engine by <name>.
 ```
 
-The engine must avoid processing its own posted `@yoke` comment as a duplicate continuation. Options:
+The engine must avoid processing its own posted `@kyron` comment as a duplicate continuation. Options:
 
 1. Insert the frontend feedback event and transition state before posting the comment; the webhook then sees the run no longer awaiting and is ignored.
 2. Also store the returned GitLab note ID and ignore that note explicitly.
@@ -3773,7 +3773,7 @@ Test:
 - Maximum iterations reached.
 - Only triggering user approval accepted.
 - Other-user approval ignored.
-- Only triggering-user `@yoke` comment accepted.
+- Only triggering-user `@kyron` comment accepted.
 - Approval reset failure leaves run waiting.
 - Duplicate approval webhook ignored.
 - Frontend action racing GitLab webhook.
@@ -3870,7 +3870,7 @@ Mock HTTP endpoints and verify:
 
 - Initial child changes file.
 - MR created with triggering reviewer.
-- Triggering user comments `@yoke update docs`.
+- Triggering user comments `@kyron update docs`.
 - Revision child receives feedback and changes docs.
 - Triggering user approves.
 - Approval resets.

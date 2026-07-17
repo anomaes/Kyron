@@ -63,9 +63,9 @@ async def route_gitlab_event(
         if attributes.get("system") is True:
             return {"status": "ignored", "reason": "system_note"}
         note = str(attributes.get("note") or "").strip()
-        if not note.lower().startswith("@yoke"):
+        if not note.lower().startswith("@kyron"):
             return {"status": "ignored", "reason": "unrelated_note"}
-        message = note[len("@yoke") :].strip()
+        message = note[len("@kyron") :].strip()
         if not message:
             return {"status": "ignored", "reason": "empty_feedback"}
         try:
