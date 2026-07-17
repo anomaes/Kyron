@@ -69,6 +69,7 @@ control boundaries.
 
 ## Documentation
 
+- [Workflow JSON authoring specification](docs/workflow-json-authoring-spec.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Architecture](docs/architecture.md)
 - [Operations runbook](docs/operations.md)
