@@ -141,6 +141,9 @@ The React operator UI includes:
 
 ## Quick start
 
+For a production VM—including host preparation, Caddy/TLS, OAuth, webhooks,
+storage permissions, backups, and upgrades—follow the [VM deployment guide](SETUP.md).
+
 ### Prerequisites
 
 - Docker Engine with Docker Compose v2
@@ -306,6 +309,7 @@ See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [acceptance check
 
 | Document | Purpose |
 | --- | --- |
+| [VM deployment guide](SETUP.md) | End-to-end single-VM setup, Caddy/TLS, OAuth, webhooks, upgrades, and backups |
 | [Workflow authoring specification](docs/workflow-json-authoring-spec.md) | Complete JSON contract for authors and LLMs |
 | [Architecture](docs/architecture.md) | Runtime components, persistence, execution, and secret boundaries |
 | [API guide](docs/api.md) | HTTP/WebSocket routes, authentication, and state conflicts |
