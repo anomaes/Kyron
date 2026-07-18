@@ -307,8 +307,23 @@ See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [acceptance check
 
 ## Documentation
 
+Kyron now includes a searchable documentation website with onboarding, workflow
+guides, deployment instructions, and exact reference material. Run it locally with:
+
+```bash
+npm --prefix docs ci
+npm --prefix docs run dev
+```
+
+Start at the [documentation home](docs/index.md), or jump directly to a guide:
+
 | Document | Purpose |
 | --- | --- |
+| [Getting started](docs/getting-started/index.md) | Product orientation, quick start, core concepts, and first workflow |
+| [Workflow authoring](docs/workflows/index.md) | Nodes, conditions, composition, review loops, and copyable examples |
+| [Using Kyron](docs/guides/running-workflows.md) | Projects, builder, runs, feedback, and recovery |
+| [Production deployment](docs/deployment/index.md) | Supported topology, configuration, provider setup, security, and troubleshooting |
+| [Reference index](docs/reference/index.md) | Variables, run states, API, architecture, and exact contracts |
 | [VM deployment guide](SETUP.md) | End-to-end single-VM setup, Caddy/TLS, OAuth, webhooks, upgrades, and backups |
 | [Workflow authoring specification](docs/workflow-json-authoring-spec.md) | Complete JSON contract for authors and LLMs |
 | [Architecture](docs/architecture.md) | Runtime components, persistence, execution, and secret boundaries |

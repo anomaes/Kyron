@@ -14,4 +14,8 @@ frontend/node_modules/
 frontend/dist/
 auth-service/node_modules/
 auth-service/dist/
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/.temp/
 *.log

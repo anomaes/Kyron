@@ -27,5 +27,10 @@ if [ -d auth-service/node_modules ]; then
   npm --prefix auth-service audit --audit-level=high
 fi
 
+if [ -d docs/node_modules ]; then
+  npm --prefix docs run build
+  npm --prefix docs audit --audit-level=high
+fi
+
 KYRON_ENV_FILE=.env.example \
     docker compose -f deploy/docker-compose.yml --env-file .env.example config --quiet

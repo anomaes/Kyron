@@ -14,6 +14,8 @@ and delivery status are recorded under `docs/`.
 - Check frontend: `npm --prefix frontend run check`
 - Install auth dependencies: `npm --prefix auth-service ci`
 - Check auth service: `npm --prefix auth-service run check`
+- Install documentation dependencies: `npm --prefix docs ci`
+- Build documentation: `npm --prefix docs run build`
 - Run all local checks: `./scripts/verify.sh`
 - Start the development stack: `docker compose -f deploy/docker-compose.yml up --build`
 
