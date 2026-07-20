@@ -36,3 +36,10 @@ class TaskRegistry:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         return True
+
+    async def wait(self, run_id: uuid.UUID) -> None:
+        async with self._lock:
+            task = self.tasks.get(run_id)
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        await asyncio.gather(task, return_exceptions=True)

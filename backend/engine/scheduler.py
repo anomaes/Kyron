@@ -78,14 +78,15 @@ class DagScheduler:
         )
         if control_nodes:
             return ScheduleDecision([control_nodes[0]], skipped, control_boundary=True)
-        nonterminal = [
+        blocked = [
             node_id
             for node_id in self.nodes
-            if statuses.get(node_id, LogicalStatus.PENDING) not in TERMINAL
+            if statuses.get(node_id, LogicalStatus.PENDING)
+            not in {LogicalStatus.SUCCESS, LogicalStatus.SKIPPED}
         ]
-        if nonterminal and not skipped:
+        if blocked and not skipped:
             raise GraphDeadlockError(
-                f"No nodes are ready while non-terminal nodes remain: {', '.join(nonterminal)}"
+                f"No nodes are ready while incomplete nodes remain: {', '.join(blocked)}"
             )
         return ScheduleDecision([], skipped, control_boundary=False)
 

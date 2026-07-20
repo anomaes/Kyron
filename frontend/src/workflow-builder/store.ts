@@ -1,4 +1,4 @@
-import { addEdge, applyEdgeChanges, applyNodeChanges, type Connection, type Edge, type EdgeChange, type Node, type NodeChange } from "@xyflow/react";
+import { addEdge, applyEdgeChanges, applyNodeChanges, MarkerType, type Connection, type Edge, type EdgeChange, type Node, type NodeChange } from "@xyflow/react";
 import { create } from "zustand";
 import type { NodeType, Workflow, WorkflowNode } from "../types";
 
@@ -49,11 +49,11 @@ function uniqueNodeId(seed: string, nodes: BuilderNode[]): string {
 
 export const useBuilderStore = create<BuilderStore>((set, get) => ({
   workflow: initial, nodes: [], edges: [], selectedNodeId: null,
-  setWorkflow: (workflow) => set({ workflow, nodes: workflow.nodes.map(flowNode), edges: workflow.edges.map((edge) => ({ ...edge, type: "smoothstep", data: { condition: edge.condition } })), selectedNodeId: null }),
+  setWorkflow: (workflow) => set({ workflow, nodes: workflow.nodes.map(flowNode), edges: workflow.edges.map((edge) => ({ ...edge, type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed }, data: { condition: edge.condition } })), selectedNodeId: null }),
   patchWorkflow: (patch) => set((state) => ({ workflow: { ...state.workflow, ...patch } })),
   onNodesChange: (changes) => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
   onEdgesChange: (changes) => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
-  connect: (connection) => set((state) => ({ edges: addEdge({ ...connection, id: `edge_${crypto.randomUUID().slice(0, 8)}`, type: "smoothstep", data: { condition: null } }, state.edges) })),
+  connect: (connection) => set((state) => ({ edges: addEdge({ ...connection, id: `edge_${crypto.randomUUID().slice(0, 8)}`, type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed }, data: { condition: null } }, state.edges) })),
   addNode: (type) => set((state) => {
     const seed = `${type}_${state.nodes.length + 1}`.replaceAll("human_feedback", "feedback").replaceAll("review_loop", "review");
     const id = uniqueNodeId(seed, state.nodes);

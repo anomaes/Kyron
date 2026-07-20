@@ -38,17 +38,19 @@ function MappingFields({
   definitions,
   values,
   valuePlaceholder,
+  help,
   onChange,
 }: {
   title: string;
   definitions: Record<string, { required?: boolean; description?: string }>;
   values: Record<string, string>;
   valuePlaceholder: string;
+  help: string;
   onChange: (values: Record<string, string>) => void;
 }) {
   const names = Array.from(new Set([...Object.keys(definitions), ...Object.keys(values)])).sort();
-  if (!names.length) return <div className="mapping-section"><strong>{title}</strong><p className="field-help">The selected workflow does not declare any fields here.</p></div>;
-  return <div className="mapping-section"><strong>{title}</strong>{names.map((name) => <label key={name}><span>{name}{definitions[name]?.required ? " *" : ""}</span><input value={values[name] ?? ""} placeholder={valuePlaceholder} onChange={(event) => { const next = { ...values }; const value = event.target.value; if (value) next[name] = value; else delete next[name]; onChange(next); }} />{definitions[name]?.description && <span className="field-help">{definitions[name].description}</span>}</label>)}</div>;
+  if (!names.length) return <div className="mapping-section"><strong>{title}</strong><p className="field-help">{help} The selected workflow does not declare any matching fields. Open that workflow and add them under <b>Inputs & outputs</b>.</p></div>;
+  return <div className="mapping-section"><strong>{title}</strong><p className="field-help mapping-help">{help}</p>{names.map((name) => <label key={name}><span>{name}{definitions[name]?.required ? " *" : ""}</span><input value={values[name] ?? ""} placeholder={valuePlaceholder} onChange={(event) => { const next = { ...values }; const value = event.target.value; if (value) next[name] = value; else delete next[name]; onChange(next); }} />{definitions[name]?.description && <span className="field-help">{definitions[name].description}</span>}</label>)}</div>;
 }
 
 export function CompositeNodeConfig({ node, workflows, onChange }: Props) {
@@ -60,8 +62,8 @@ export function CompositeNodeConfig({ node, workflows, onChange }: Props) {
     const child = workflowFor("workflow_id");
     return <div className="structured-config">
       <WorkflowPicker id={`${node.id}-child`} label="Child workflow" value={String(config.workflow_id ?? "")} workflows={workflows} onChange={(value) => set("workflow_id", value)} />
-      <MappingFields title="Input mappings" definitions={child?.inputs ?? {}} values={record(config.inputs)} valuePlaceholder="${PARENT_VARIABLE}" onChange={(value) => set("inputs", value)} />
-      <MappingFields title="Output mappings" definitions={child?.outputs ?? {}} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" onChange={(value) => set("output_mapping", value)} />
+      <MappingFields title="Input mappings" definitions={child?.inputs ?? {}} values={record(config.inputs)} valuePlaceholder="${PARENT_VARIABLE}" help="Each row is a declared child input. Enter the parent value or expression passed into it." onChange={(value) => set("inputs", value)} />
+      <MappingFields title="Output mappings" definitions={child?.outputs ?? {}} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" help="Each row is a declared child output. Enter the variable name it should receive in this parent." onChange={(value) => set("output_mapping", value)} />
       <label className="check-field"><input type="checkbox" checked={Boolean(config.allow_failure)} onChange={(event) => set("allow_failure", event.target.checked)} />Allow failure</label>
     </div>;
   }
@@ -72,10 +74,10 @@ export function CompositeNodeConfig({ node, workflows, onChange }: Props) {
   const outputDefinitions = initial?.outputs ?? revision?.outputs ?? {};
   return <div className="structured-config">
     <WorkflowPicker id={`${node.id}-initial`} label="Initial workflow" value={String(config.initial_workflow_id ?? "")} workflows={workflows} onChange={(value) => set("initial_workflow_id", value)} />
-    <MappingFields title="Initial input mappings" definitions={initial?.inputs ?? {}} values={record(config.inputs)} valuePlaceholder="${PARENT_VARIABLE}" onChange={(value) => set("inputs", value)} />
+    <MappingFields title="Initial input mappings" definitions={initial?.inputs ?? {}} values={record(config.inputs)} valuePlaceholder="${PARENT_VARIABLE}" help="Each row is an initial-workflow input. Enter the parent value or expression used for iteration one." onChange={(value) => set("inputs", value)} />
     <WorkflowPicker id={`${node.id}-revision`} label="Revision workflow" optional value={String(config.revision_workflow_id ?? "")} workflows={workflows} onChange={(value) => set("revision_workflow_id", value || null)} />
-    <MappingFields title="Revision input mappings" definitions={revision?.inputs ?? initial?.inputs ?? {}} values={record(config.revision_inputs)} valuePlaceholder="${FEEDBACK}" onChange={(value) => set("revision_inputs", value)} />
-    <MappingFields title="Output mappings" definitions={outputDefinitions} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" onChange={(value) => set("output_mapping", value)} />
+    <MappingFields title="Revision input mappings" definitions={revision?.inputs ?? initial?.inputs ?? {}} values={record(config.revision_inputs)} valuePlaceholder="${FEEDBACK}" help="Each row is a revision-workflow input. Map feedback or another parent expression for later iterations." onChange={(value) => set("revision_inputs", value)} />
+    <MappingFields title="Output mappings" definitions={outputDefinitions} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" help="Each row is a child output. Enter the variable name it should receive in this parent." onChange={(value) => set("output_mapping", value)} />
     <label>Maximum iterations<input type="number" min={1} value={Number(config.max_iterations ?? 5)} onChange={(event) => set("max_iterations", Number(event.target.value))} /></label>
     <label>Checkpoint commit message<input value={String(config.commit_message ?? "")} onChange={(event) => set("commit_message", event.target.value)} /></label>
     <label>Change request title<input value={String(config.mr_title ?? "")} placeholder="Use workflow default" onChange={(event) => set("mr_title", event.target.value || null)} /></label>

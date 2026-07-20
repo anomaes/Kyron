@@ -109,7 +109,7 @@ Parent node:
       "MODE": "strict"
     },
     "output_mapping": {
-      "VERIFICATION_SUMMARY": "SUMMARY"
+      "SUMMARY": "VERIFICATION_SUMMARY"
     },
     "allow_failure": false
   }

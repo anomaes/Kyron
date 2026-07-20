@@ -127,14 +127,16 @@ Invokes one child workflow from the run's immutable bundle.
       "STRICT": "${STRICT}"
     },
     "output_mapping": {
-      "QUALITY_RESULT": "RESULT"
+      "RESULT": "QUALITY_RESULT"
     },
     "allow_failure": false
   }
 }
 ```
 
-Input mapping keys must exist in the child. Output mapping values identify child outputs; mapping keys become public names in the parent. Definitions are resolved from the same base commit. See [composition](/workflows/composition).
+Input mapping keys identify child inputs and their values are parent expressions. Output mapping
+keys identify child outputs and their values are the new public names in the parent. Definitions
+are resolved from the same base commit. See [composition](/workflows/composition).
 
 ## Review loop
 

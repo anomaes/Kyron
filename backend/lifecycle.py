@@ -63,6 +63,11 @@ class EngineRuntime:
     async def schedule(self, run_id: uuid.UUID) -> None:
         await self.tasks.schedule(run_id, lambda: self._execute(run_id))
 
+    async def reschedule(self, run_id: uuid.UUID) -> None:
+        await self.tasks.wait(run_id)
+        if not await self.tasks.schedule(run_id, lambda: self._execute(run_id)):
+            raise RuntimeError(f"Could not schedule resumed run {run_id}")
+
     async def _execute(self, run_id: uuid.UUID) -> None:
         settings = self.settings
         cipher = SecretCipher(

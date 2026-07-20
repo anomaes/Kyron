@@ -41,8 +41,9 @@ checks profiles while validating, storing, publishing, and triggering workflows.
 
 ## Traceability reports
 
-Every Run Detail page includes a live report. Completed and cancelled runs receive an
-immutable execution report containing the trigger identity, exact workflow and code SHAs,
+Every Run Detail page includes a live report. Completed runs and currently cancelled runs receive
+a frozen execution report containing the trigger identity, exact workflow and code SHAs,
 root and child invocation paths, every gate policy snapshot, all decisions and feedback,
-and administrative events. Merge or close webhooks received later appear as append-only
-post-run lifecycle addenda.
+and administrative events. Resuming a cancellation discards that cancellation snapshot so the
+eventual result can be frozen instead. Merge or close webhooks received later appear as
+append-only post-run lifecycle addenda.

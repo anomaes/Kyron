@@ -19,7 +19,7 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.RESUMING,
 }
 TERMINAL_RUN_STATUSES = {RunStatus.COMPLETED, RunStatus.CANCELLED}
-RESUMABLE_RUN_STATUSES = {RunStatus.FAILED, RunStatus.INTERRUPTED}
+RESUMABLE_RUN_STATUSES = {RunStatus.FAILED, RunStatus.INTERRUPTED, RunStatus.CANCELLED}
 
 
 class InvocationStatus(StrEnum):
@@ -73,5 +73,9 @@ VALID_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.INTERRUPTED: {RunStatus.RESUMING, RunStatus.CANCELLED},
     RunStatus.RESUMING: {RunStatus.RUNNING, RunStatus.INTERRUPTED, RunStatus.CANCELLED},
     RunStatus.COMPLETED: set(),
-    RunStatus.CANCELLED: set(),
+    RunStatus.CANCELLED: {
+        RunStatus.QUEUED,
+        RunStatus.RESUMING,
+        RunStatus.AWAITING_FEEDBACK,
+    },
 }

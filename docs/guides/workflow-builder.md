@@ -26,7 +26,9 @@ Drag a node type from the palette onto the canvas:
 - **Sub-workflow** for one reusable child invocation; or
 - **Review loop** for bounded initial/revision cycles.
 
-Connect nodes from source to target. The builder prevents obvious invalid connections, while server validation remains authoritative.
+Connect nodes from the source handle on the right to the target handle on the left. Arrowheads
+show execution direction. The builder prevents obvious invalid connections, while server
+validation remains authoritative.
 
 ## Configure nodes
 
@@ -37,10 +39,18 @@ Select a node to open the inspector. Common fields include:
 - `and` or `or` join behavior; and
 - type-specific configuration.
 
-Composite nodes expose structured input and output mappings based on the selected child definitions. Advanced JSON remains available for exact configuration where appropriate.
+Prompt nodes expose their prompt, optional Pi overrides, timeout, and failure behavior directly
+in the inspector.
+
+Composite nodes expose structured input and output mappings based on the selected child
+definitions. Use **Inputs & outputs** in the builder header to declare the current workflow's
+interface. An input mapping row passes a parent expression into the named child input; an output
+mapping row publishes the named child output under the entered parent variable. Review loops
+provide separate mapping rows for the initial and revision workflows. Advanced JSON remains
+available for exact configuration where appropriate.
 
 Workflow settings include Pi provider, model, and skill defaults. A prompt node can
-override any of them in its configuration JSON; blank values inherit from the next
+override any of them in its inspector; blank values inherit from the next
 scope. Skill values are repository-relative paths to a skill directory or `SKILL.md`.
 
 ## Reuse node templates

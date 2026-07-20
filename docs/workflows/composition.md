@@ -62,14 +62,14 @@ Create `.workflowEngine/quality_checks.json`:
       "COMMAND": "${TEST_COMMAND}"
     },
     "output_mapping": {
-      "QUALITY_EXIT_CODE": "RESULT"
+      "RESULT": "QUALITY_EXIT_CODE"
     },
     "allow_failure": false
   }
 }
 ```
 
-The `inputs` object maps **child input name → parent template expression**. The `output_mapping` object maps **new parent variable name → child output name**.
+The `inputs` object maps **child input name → parent template expression**. The `output_mapping` object maps **child output name → new parent variable name**.
 
 After the child completes, this example makes `${QUALITY_EXIT_CODE}` available to later nodes in the parent invocation.
 

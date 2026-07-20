@@ -76,3 +76,19 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .report-decision p { grid-column: 2 / -1; margin: 0; }
 .report-decision.superseded { opacity: .55; text-decoration: line-through; }
 .lifecycle-event { padding: 0 17px; color: var(--muted); font-size: 11px; }
+.prompt-editor { min-height: 170px; resize: vertical; font: 11px/1.55 "DM Mono", monospace !important; }
+.mapping-help { display: block; margin: -4px 0 11px; line-height: 1.45; }
+.interface-modal { width: min(900px, calc(100vw - 40px)); max-width: 900px; max-height: calc(100vh - 50px); overflow: auto; }
+.interface-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; }
+.interface-editor > section { min-width: 0; }
+.interface-editor h3 { margin: 0 0 4px; font-size: 13px; }
+.interface-editor section > p { min-height: 34px; margin: 0 0 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.interface-row { margin-bottom: 10px; padding: 11px; background: #f5f4ef; border: 1px solid var(--line); border-radius: 8px; }
+.interface-row-title, .interface-add { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.interface-row-title { margin-bottom: 8px; }
+.interface-row label { margin-bottom: 7px; }
+.interface-add input { flex: 1; }
+.interface-add button { white-space: nowrap; }
+.react-flow__edge-path { stroke-width: 1.7; }
+.react-flow__arrowhead polyline, .react-flow__arrowhead polygon { fill: #596052; stroke: #596052; }
+@media (max-width: 760px) { .interface-editor { grid-template-columns: 1fr; } }

@@ -17,7 +17,7 @@ Kyron stores state at several levels. A run status is the operator-facing summar
 | `failed` | Required work or a control transition failed | Diagnose, then resume when safe |
 | `interrupted` | Active ownership was lost, usually across restart | Inspect, then explicitly resume |
 | `completed` | Workflow execution and finalization succeeded | Review and merge the change request |
-| `cancelled` | User cancellation reached a terminal state | Start a new run if needed |
+| `cancelled` | User cancellation stopped active work at a retained checkpoint | Resume explicitly or start a new run |
 
 State-changing API calls validate the current state. A stale or invalid transition returns HTTP 409 rather than silently doing nothing.
 
@@ -65,7 +65,9 @@ The feedback event is persisted before scheduling continues.
 
 ## Cancellation
 
-Cancellation is run-wide. Kyron cancels the registered task and active process groups, using a grace period before force termination. A cancelled run does not automatically become resumable; cancellation represents deliberate terminal intent.
+Cancellation is run-wide. Kyron cancels the registered task and active process groups, using a
+grace period before force termination. It never resumes automatically, but an authorized operator
+may explicitly resume while the safe worktree checkpoint is still retained.
 
 ## Cleanup lifecycle
 

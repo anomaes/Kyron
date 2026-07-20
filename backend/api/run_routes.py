@@ -64,7 +64,6 @@ from backend.integrations.git_manager import GitManager
 from backend.lifecycle import runtime
 from backend.schemas.admin import GateOverrideRequest
 from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
-from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
 from backend.services.report_service import ReportService
@@ -310,18 +309,6 @@ async def cancel(
         )
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    if run.status == RunStatus.CANCELLED and run.change_request_number is None:
-        await CleanupService(
-            db,
-            GitManager(
-                settings.PROJECT_CLONE_BASE_PATH,
-                settings.WORKTREE_BASE_PATH,
-                settings.RUN_DATA_BASE_PATH,
-            ),
-            process_registry,
-            runtime.tasks,
-            settings.PROCESS_TERMINATION_GRACE_SECONDS,
-        ).cleanup_run(run.id, remove_output=True)
     db.add(
         audit_event(
             user,
@@ -363,7 +350,8 @@ async def resume(
         run = await prepare_resume(db, git, run_id)
     except ResumeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    await runtime.schedule(run.id)
+    if run.status in {RunStatus.QUEUED, RunStatus.RESUMING}:
+        await runtime.reschedule(run.id)
     db.add(
         audit_event(
             user,

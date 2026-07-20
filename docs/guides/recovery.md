@@ -23,7 +23,18 @@ A node with `allow_failure: true` records its failure but does not fail the wave
 
 Before selecting **Resume**, determine whether the underlying cause has changed. Examples include a restored external service, corrected repository code on the pinned base, replaced credential, or deliberately increased resource availability.
 
-Resume restores the failed wave boundary and creates a fresh attempt for **every node in that wave**. It does not retry only the visibly failed sibling, because the successful siblings' filesystem changes were rolled back with the wave.
+Resume waits for the previous coordinator task to release ownership, restores the failed wave
+boundary, resets any enclosing sub-workflow/review-loop control nodes, and creates a fresh attempt
+for **every node in that wave**. It does not retry only the visibly failed sibling, because the
+successful siblings' filesystem changes were rolled back with the wave.
+
+## Resume a cancelled run
+
+Cancellation stops active processes but retains the latest safe checkpoint and run files. Resume
+restarts a cancelled process wave from its start commit. A run cancelled while waiting at a human
+gate returns to that same open gate, and a run cancelled before initial scheduling returns to the
+queue. Resume remains subject to normal worktree-retention cleanup; once the retained worktree has
+expired, starting a new run is required.
 
 ::: info A base ref does not move an existing run
 Updating `main` does not change the run's `base_commit_sha` or snapshot. If the fix must come from a new commit, start a new run against that commit instead of resuming.
@@ -63,6 +74,6 @@ Request cancellation through Kyron first. The process runner owns process groups
 | Base repository code needs a new commit | No; start a new run from that commit |
 | Backend restarted during a process wave | Yes, after inspecting interrupted state |
 | Worktree cannot be restored to wave start | Not until operator repair succeeds |
-| User cancelled intentionally | No automatic resume; normally start a new run |
+| User cancelled intentionally and its checkpoint is retained | Yes, explicitly |
 
 For incident procedures and backup/restore behavior, use the [operations runbook](/operations).

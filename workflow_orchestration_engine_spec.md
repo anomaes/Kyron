@@ -403,6 +403,7 @@ QUEUED -> RUNNING -> COMPLETED
              -> INTERRUPTED -> RESUMING -> RUNNING
 
 QUEUED/RUNNING/RESUMING/AWAITING_FEEDBACK/FAILED/INTERRUPTED -> CANCELLED
+CANCELLED -> QUEUED/RESUMING/AWAITING_FEEDBACK
 ```
 
 Valid values:
@@ -1616,7 +1617,7 @@ No unredacted process output is persisted. The engine must log a command summary
 
 The system provides this guarantee:
 
-> A failed or interrupted run resumes from the clean Git checkpoint at the start of its failed execution wave. The complete wave is re-executed, followed by all downstream work that had not already been durably completed.
+> A failed, interrupted, or explicitly cancelled run resumes from its latest safe Git checkpoint. A process wave is re-executed as a whole, and enclosing control nodes are reset so nested sub-workflows can continue.
 
 The system does not promise exactly-once external side effects. Trusted workflows should avoid irreversible external actions or make them idempotent.
 
@@ -2358,7 +2359,8 @@ Cancelling a run:
 5. Mark active attempts and waves cancelled.
 6. Mark run `CANCELLED`.
 7. If an MR exists, keep worktree until MR closes unless the user explicitly chooses cleanup.
-8. If no MR exists, clean worktree and run data immediately.
+8. Retain the worktree and run data so an authorized operator may explicitly resume. Normal
+   retention cleanup may remove them later.
 
 ## 16.3 Timeout Handling
 
