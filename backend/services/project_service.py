@@ -136,9 +136,14 @@ class ProjectService:
             raise RuntimeError("Project has workflow run history and cannot be deleted")
         async with project_git_locks.for_project(project.id):
             local_path = self.git.assert_beneath(Path(project.local_path), self.git.clone_base_path)
+            changes_path = self.git.assert_beneath(
+                self.settings.RUN_DATA_BASE_PATH / "project_changes" / str(project.id),
+                self.settings.RUN_DATA_BASE_PATH,
+            )
             await self.session.delete(project)
             await self.session.flush()
             shutil.rmtree(local_path, ignore_errors=True)
+            shutil.rmtree(changes_path, ignore_errors=True)
 
 
 def _canonical_git_url(value: str) -> str:

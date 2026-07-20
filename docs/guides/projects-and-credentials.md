@@ -32,6 +32,15 @@ Use **Validate** after changing provider permissions. Validation checks reposito
 
 Replacing a project token is a write-only operation. The old plaintext is not returned by the API or UI.
 
+## Remove a project
+
+Choose **Remove** on a project card and confirm the action. Kyron removes its local
+repository clone and any project-local workflow or node-template changes. The remote
+GitLab or GitHub repository is never deleted.
+
+A project with workflow run history cannot be removed because doing so would break its
+durable audit trail. Keep the project registered when historical runs exist.
+
 ## Create a workflow credential
 
 Open **Credentials**, choose **Add credential**, and provide a name and secret value. The name becomes an environment variable for workflow subprocesses, so use an identifier such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `NPM_TOKEN`.

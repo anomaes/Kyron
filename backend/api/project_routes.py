@@ -28,7 +28,11 @@ async def get_project_service(
         db,
         settings,
         cipher,
-        GitManager(settings.PROJECT_CLONE_BASE_PATH),
+        GitManager(
+            settings.PROJECT_CLONE_BASE_PATH,
+            settings.WORKTREE_BASE_PATH,
+            settings.RUN_DATA_BASE_PATH,
+        ),
     )
 
 

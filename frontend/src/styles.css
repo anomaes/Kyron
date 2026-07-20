@@ -47,3 +47,9 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .inspector-head { margin-bottom: 12px; }
 .store-template-button { width: 100%; margin-bottom: 20px; background: #eeede7; border: 1px solid var(--line); color: var(--ink); }
 .check-field small { display: block; margin-top: 3px; color: var(--muted); font-weight: 500; }
+.confirm-modal { text-align: center; }
+.confirm-modal > p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.confirm-modal footer { justify-content: center; }
+.danger-mark { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 50%; background: #ffe2df; color: #a23d36; font-size: 25px; }
+.project-actions { flex-wrap: wrap; }
+.project-actions > a { flex-basis: 100%; }
