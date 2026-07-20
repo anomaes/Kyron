@@ -14,6 +14,7 @@ from backend.integrations.git_manager import GitManager
 from backend.lifecycle import runtime
 from backend.schemas.run import RunTriggerRequest, RunTriggerResponse
 from backend.schemas.workflow import (
+    NodeTemplate,
     WorkflowDefinition,
     WorkflowValidationRequest,
     WorkflowValidationResponse,
@@ -59,8 +60,10 @@ async def list_workflows(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     sha, definitions = await workflows.list(project)
+    change_status = await workflows.change_status(project)
     return {
         "base_commit_sha": sha,
+        **change_status,
         "items": [
             {
                 **definition.model_dump(mode="json"),
@@ -69,6 +72,96 @@ async def list_workflows(
             for definition in definitions
         ],
     }
+
+
+@router.get("/templates")
+async def list_node_templates(
+    project_id: uuid.UUID,
+    _: CurrentUser,
+    db: DbSession,
+    workflows: WorkflowServiceDependency,
+) -> dict[str, Any]:
+    project = await project_or_404(db, project_id)
+    sha, templates = await workflows.list_templates(project)
+    return {
+        "base_commit_sha": sha,
+        "items": [template.model_dump(mode="json") for template in templates],
+        **await workflows.change_status(project),
+    }
+
+
+@router.post("/templates")
+async def save_node_template(
+    project_id: uuid.UUID,
+    request: dict[str, Any],
+    user: CurrentUser,
+    db: DbSession,
+    workflows: WorkflowServiceDependency,
+) -> dict[str, Any]:
+    project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
+    raw = request.get("template")
+    expected = request.get("expected_base_commit_sha")
+    if not isinstance(raw, dict) or not isinstance(expected, str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid template request")
+    try:
+        template = NodeTemplate.model_validate(raw)
+        return await workflows.save_template(project, template, expected)
+    except WorkflowConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.delete("/templates/{template_id}")
+async def delete_node_template(
+    project_id: uuid.UUID,
+    template_id: str,
+    expected_base_commit_sha: str,
+    user: CurrentUser,
+    db: DbSession,
+    workflows: WorkflowServiceDependency,
+) -> dict[str, Any]:
+    project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
+    try:
+        return await workflows.delete_template(project, template_id, expected_base_commit_sha)
+    except WorkflowConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.get("/changes")
+async def definition_change_status(
+    project_id: uuid.UUID,
+    _: CurrentUser,
+    db: DbSession,
+    workflows: WorkflowServiceDependency,
+) -> dict[str, Any]:
+    project = await project_or_404(db, project_id)
+    return await workflows.change_status(project)
+
+
+@router.post("/changes/review")
+async def publish_definition_changes(
+    project_id: uuid.UUID,
+    request: dict[str, Any],
+    user: CurrentUser,
+    db: DbSession,
+    workflows: WorkflowServiceDependency,
+) -> dict[str, Any]:
+    project = await project_or_404(db, project_id)
+    require_project_provider(user, project.provider)
+    expected = request.get("expected_base_commit_sha")
+    if not isinstance(expected, str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid review request")
+    try:
+        return await workflows.publish_changes(project, user, expected)
+    except WorkflowConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.get("/{workflow_id}")
@@ -84,7 +177,11 @@ async def get_workflow(
         sha, definition = await workflows.get(project, workflow_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    return {"base_commit_sha": sha, "workflow": definition.model_dump(mode="json")}
+    return {
+        "base_commit_sha": sha,
+        "workflow": definition.model_dump(mode="json"),
+        **await workflows.change_status(project),
+    }
 
 
 @router.post("/validate", response_model=WorkflowValidationResponse)
@@ -112,7 +209,12 @@ async def trigger_workflow(
     require_project_provider(user, project.provider)
     try:
         run = await workflows.create_run(
-            project, user, workflow_id, request.base_ref, request.inputs
+            project,
+            user,
+            workflow_id,
+            request.base_ref,
+            request.inputs,
+            use_local_definitions=request.use_local_definitions,
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
@@ -135,7 +237,10 @@ async def save_workflow(
     expected = request.get("expected_base_commit_sha")
     if not isinstance(raw, dict) or not isinstance(expected, str):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid save request")
-    definition = WorkflowDefinition.model_validate(raw)
+    try:
+        definition = WorkflowDefinition.model_validate(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     if definition.id != workflow_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Workflow ID mismatch")
     report = await workflows.validate(project, raw, {})
@@ -145,7 +250,7 @@ async def save_workflow(
             {"code": "VALIDATION_ERROR", "errors": [item.model_dump() for item in report.errors]},
         )
     try:
-        return await workflows.save_definition(project, user, definition, expected)
+        return await workflows.save_draft(project, definition, expected)
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
@@ -180,11 +285,11 @@ async def delete_workflow(
             },
         )
     try:
-        return await workflows.save_definition(
-            project, user, definition, expected_base_commit_sha, delete=True
-        )
+        return await workflows.delete_draft(project, workflow_id, expected_base_commit_sha)
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.get("/{workflow_id}/references")

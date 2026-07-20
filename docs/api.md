@@ -28,8 +28,12 @@ headers and secrets.
 | GET/POST | `/api/credentials` | List metadata or create a write-only credential |
 | PUT/DELETE | `/api/credentials/{credential_id}` | Replace or remove a credential |
 | GET | `/api/projects/{project_id}/workflows` | List tagged definitions at the default-branch SHA for catalog search/grouping and workflow selection |
-| GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or propose a definition change through a change request |
+| GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or store a project-local definition change |
 | POST | `/api/projects/{project_id}/workflows/validate` | Validate one definition and related drafts |
+| GET/POST | `/api/projects/{project_id}/workflows/templates` | List or locally store project node templates |
+| DELETE | `/api/projects/{project_id}/workflows/templates/{template_id}` | Locally stage a template deletion |
+| GET | `/api/projects/{project_id}/workflows/changes` | Read outgoing and in-review definition counts |
+| POST | `/api/projects/{project_id}/workflows/changes/review` | Batch outgoing definitions into one code-host review |
 | GET | `/api/projects/{project_id}/workflows/{workflow_id}/references` | Direct and reverse references |
 | POST | `/api/projects/{project_id}/workflows/{workflow_id}/runs` | Snapshot and queue a run |
 | GET | `/api/runs` | Filtered, paginated run list |
@@ -74,12 +78,14 @@ POST /api/projects/<project-id>/workflows/validate
 ```
 
 Triggering resolves the requested ref to an exact SHA before the run row is
-committed:
+committed. Set `use_local_definitions` only for a local test; Kyron then creates an
+exact local definition commit and disables push/change-request creation for that run:
 
 ```json
 POST /api/projects/<project-id>/workflows/full_review/runs
 {
   "base_ref": "main",
+  "use_local_definitions": false,
   "inputs": { "TASK": "Add validation to the import endpoint" }
 }
 ```

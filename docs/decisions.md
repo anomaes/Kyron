@@ -37,3 +37,14 @@ definitions already returned by the workflow API.
 Accepted. Expanded child workflows and review-loop history are reconstructed from the
 snapshotted definitions, invocation parent links, iteration numbers, node executions,
 and feedback events. The UI does not persist a second visualization-specific history.
+
+## D-007 — Definition authoring uses project-local layers
+
+Accepted. Builder saves are validated project-scoped files, not commits. The catalog
+overlays outgoing and in-review layers on the exact default-branch catalog. An explicit
+review action materializes all outgoing workflows and node templates as one Git commit
+and one code-host change request. This keeps save frequency out of repository history.
+
+Local-definition test runs materialize an exact local Git commit so the workflow bundle
+and run base remain reproducible. They are marked durably and cannot push a run branch
+or create a code-host change request.

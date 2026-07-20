@@ -159,6 +159,19 @@ class GitManager:
             )
             await self.run(["config", "user.name", "Workflow Engine"], cwd=worktree)
             await self.run(["config", "user.email", "workflow-engine@noreply.local"], cwd=worktree)
+            snapshot_refs = await self.run(
+                [
+                    "for-each-ref",
+                    "--format=%(refname:short)",
+                    "--points-at",
+                    base_commit_sha,
+                    "refs/heads/workflow_definition",
+                ],
+                cwd=repository_path,
+            )
+            for snapshot_ref in snapshot_refs.splitlines():
+                if snapshot_ref.startswith("workflow_definition/local_"):
+                    await self.run(["branch", "-D", snapshot_ref], cwd=repository_path)
         except Exception:
             shutil.rmtree(run_data, ignore_errors=True)
             raise
@@ -186,13 +199,23 @@ class GitManager:
             raise GitError("Worktree recovery did not restore the wave start commit")
 
     async def push(
-        self, worktree: Path, branch: str, token: str, *, username: str = "oauth2"
+        self,
+        worktree: Path,
+        branch: str,
+        token: str,
+        *,
+        username: str = "oauth2",
+        force_with_lease: bool = False,
     ) -> None:
         redactor = SecretRedactor([token])
         try:
             with temporary_git_askpass(username, token) as credentials:
+                args = ["push"]
+                if force_with_lease:
+                    args.append("--force-with-lease")
+                args.extend(["origin", branch])
                 await self.run(
-                    ["push", "origin", branch],
+                    args,
                     cwd=worktree,
                     env_patch=credentials,
                     redactor=redactor,

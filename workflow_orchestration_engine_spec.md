@@ -594,10 +594,29 @@ repo-root/
     ├── full_review.json
     ├── implement_changes.json
     ├── revise_from_feedback.json
-    └── test_and_validate.json
+    ├── test_and_validate.json
+    └── templates/
+        └── print_text.json
 ```
 
-Only workflow definitions merged into the selected base ref are runnable.
+Node templates are project-scoped JSON documents. Each template contains an ID,
+display name, description, and one fully validated workflow node. Inserting a
+template clones the node and assigns a unique node ID and canvas position.
+
+The builder maintains project-scoped local definition changes outside the shared
+repository clone. **Store** validates and writes to this local layer without a Git
+commit or remote operation. The workflow catalog overlays local changes on the exact
+default-branch revision and reports outgoing and in-review counts.
+
+**Create review** batches all outgoing workflow and template changes into one branch,
+one commit, and one GitLab merge request or GitHub pull request. The reviewed layer
+remains visible until it matches the default branch after merge. Additional outgoing
+changes update the existing review branch.
+
+Ordinary runs load workflow definitions merged into the selected base ref. An explicit
+local-definition test run materializes the complete local overlay into an exact local
+Git commit and snapshots from that commit. Such a run never pushes its run branch or
+opens a code-host change request; its worktree and results remain on the Kyron host.
 
 ## 5.2 Workflow Identifier Rules
 

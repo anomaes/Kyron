@@ -5,15 +5,15 @@ description: Create and update workflow definitions with Kyron's graph editor.
 
 # Visual workflow builder
 
-Kyron's builder is a structured editor for the same version 2 JSON accepted by the API. It does not create a separate database-only workflow format; every accepted change is proposed back to the repository.
+Kyron's builder is a structured editor for the same version 2 JSON accepted by the API. Stored changes remain project-local until you deliberately create a code-host review.
 
 ![Kyron workflow builder with a multi-node delivery graph](/assets/screenshots/workflow-builder.png)
 
 ## Open a definition
 
-Choose a project, open **Workflows**, and select a merged definition. The catalog is read from the project's default-branch commit and includes complete workflow definitions so child selectors and mappings are based on one coherent revision.
+Choose a project, open **Workflows**, and select a definition. The catalog starts from the project's exact default-branch commit, then overlays locally stored and in-review definitions.
 
-The revision strip shows the commit you are editing. Kyron uses it for optimistic concurrency when you save.
+The revision strip shows the base commit you are editing. It also shows outgoing and in-review counts. Kyron uses the base commit for optimistic concurrency when you store or review changes.
 
 ## Build the graph
 
@@ -39,6 +39,12 @@ Select a node to open the inspector. Common fields include:
 
 Composite nodes expose structured input and output mappings based on the selected child definitions. Advanced JSON remains available for exact configuration where appropriate.
 
+## Reuse node templates
+
+Select a configured node and choose **Store as template**. Give the template a stable ID, name, and optional description. Templates are scoped to the project and follow the same local-store and review lifecycle as workflows.
+
+Open **Templates** in the left palette to browse them. Inserting a template clones its type, label, join, and configuration while assigning a unique node ID and a new canvas position. Later edits do not mutate the source template.
+
 ## Configure edges
 
 Select an edge to make it unconditional or attach one supported condition:
@@ -62,13 +68,17 @@ Validation covers both the root definition and any related drafts being edited t
 - invalid output mappings; and
 - a public template name that cannot exist at that point.
 
-## Save through review
+## Store locally, review deliberately
 
-**Save** sends the workflow plus `expected_base_commit_sha`. Kyron formats stable JSON, creates a branch, commits the definition, pushes it, and opens a GitLab merge request or GitHub pull request.
+**Store** sends the workflow plus `expected_base_commit_sha`. Kyron validates and formats stable JSON in the project's local change layer. It does not commit, push, or open a review.
 
-If the default branch moved since you loaded the editor, saving returns a conflict. Reload the current definition and deliberately reapply the change. Kyron does not silently overwrite a newer revision.
+The workflow catalog shows the number of outgoing changes. **Create review** batches all outgoing workflows and templates into one commit and opens one GitLab merge request or GitHub pull request. New changes can update that review instead of creating save-by-save history.
 
-Deleting a definition follows the same reviewed flow and is blocked while another merged workflow references it.
+If the default branch moved since you loaded the editor, storing or reviewing returns a conflict. Reload the current definition and deliberately reapply the change. Kyron does not silently overwrite a newer revision.
+
+When local changes exist, the Run dialog can use them for a local definition test. Kyron creates an exact local Git snapshot for reproducibility. The run never pushes or creates a code-host review, so its worktree and results stay on the Kyron host.
+
+Deleting a definition follows the same local-store and batch-review flow and is blocked while another visible workflow references it.
 
 ## When to edit JSON directly
 

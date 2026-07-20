@@ -25,6 +25,7 @@ type BuilderStore = {
   onEdgesChange: (changes: EdgeChange[]) => void;
   connect: (connection: Connection) => void;
   addNode: (type: NodeType) => void;
+  addTemplate: (node: WorkflowNode) => void;
   selectNode: (id: string | null) => void;
   updateNode: (id: string, patch: Partial<WorkflowNode>) => void;
   removeSelected: () => void;
@@ -37,6 +38,15 @@ function flowNode(node: WorkflowNode): BuilderNode {
   return { id: node.id, position: node.position, type: "workflow", data: { workflowNode: node, label: node.label, type: node.type } };
 }
 
+function uniqueNodeId(seed: string, nodes: BuilderNode[]): string {
+  const base = seed.replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z]+/, "") || "node";
+  const ids = new Set(nodes.map((node) => node.id));
+  if (!ids.has(base)) return base;
+  let suffix = 2;
+  while (ids.has(`${base}_${suffix}`)) suffix += 1;
+  return `${base}_${suffix}`;
+}
+
 export const useBuilderStore = create<BuilderStore>((set, get) => ({
   workflow: initial, nodes: [], edges: [], selectedNodeId: null,
   setWorkflow: (workflow) => set({ workflow, nodes: workflow.nodes.map(flowNode), edges: workflow.edges.map((edge) => ({ ...edge, type: "smoothstep", data: { condition: edge.condition } })), selectedNodeId: null }),
@@ -45,8 +55,22 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
   onEdgesChange: (changes) => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
   connect: (connection) => set((state) => ({ edges: addEdge({ ...connection, id: `edge_${crypto.randomUUID().slice(0, 8)}`, type: "smoothstep", data: { condition: null } }, state.edges) })),
   addNode: (type) => set((state) => {
-    const id = `${type}_${state.nodes.length + 1}`.replaceAll("human_feedback", "feedback").replaceAll("review_loop", "review");
+    const seed = `${type}_${state.nodes.length + 1}`.replaceAll("human_feedback", "feedback").replaceAll("review_loop", "review");
+    const id = uniqueNodeId(seed, state.nodes);
     const workflowNode: WorkflowNode = { id, type, label: type.split("_").map((word) => word[0]?.toUpperCase() + word.slice(1)).join(" "), join: "and", config: structuredClone(defaults[type]), position: { x: 100 + (state.nodes.length % 3) * 260, y: 100 + Math.floor(state.nodes.length / 3) * 170 } };
+    return { nodes: [...state.nodes, flowNode(workflowNode)], selectedNodeId: id };
+  }),
+  addTemplate: (templateNode) => set((state) => {
+    const id = uniqueNodeId(templateNode.id, state.nodes);
+    const index = state.nodes.length;
+    const workflowNode: WorkflowNode = {
+      ...structuredClone(templateNode),
+      id,
+      position: {
+        x: 100 + (index % 3) * 260,
+        y: 100 + Math.floor(index / 3) * 170,
+      },
+    };
     return { nodes: [...state.nodes, flowNode(workflowNode)], selectedNodeId: id };
   }),
   selectNode: (id) => set({ selectedNodeId: id }),

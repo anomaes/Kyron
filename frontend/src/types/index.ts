@@ -49,6 +49,13 @@ export type WorkflowNode = {
   position: { x: number; y: number };
 };
 
+export type NodeTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  node: WorkflowNode;
+};
+
 export type WorkflowEdge = {
   id: string;
   source: string;
@@ -73,6 +80,12 @@ export type Workflow = {
 
 export type WorkflowListItem = Workflow & { node_count: number };
 
+export type DefinitionChangeStatus = {
+  outgoing_changes: number;
+  in_review_changes: number;
+  change_request_url: string | null;
+};
+
 export type Run = {
   id: string;
   root_workflow_id: string;
@@ -82,6 +95,7 @@ export type Run = {
   status_version: number;
   base_ref: string;
   base_commit_sha: string;
+  local_definition_test: boolean;
   branch_name: string | null;
   current_head_sha: string | null;
   final_commit_sha: string | null;

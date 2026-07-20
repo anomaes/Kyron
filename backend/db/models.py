@@ -124,6 +124,7 @@ class WorkflowRun(Base):
     workflow_bundle_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSON_TYPE, nullable=False, default=dict
     )
+    local_definition_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     public_context: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
     branch_name: Mapped[str | None] = mapped_column(String(255))
     worktree_path: Mapped[str | None] = mapped_column(Text)

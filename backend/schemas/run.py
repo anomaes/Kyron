@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RunTriggerRequest(BaseModel):
     base_ref: str = Field(default="main", min_length=1, max_length=255)
     inputs: dict[str, Any] = Field(default_factory=dict)
+    use_local_definitions: bool = False
 
 
 class RunTriggerResponse(BaseModel):
@@ -27,6 +28,7 @@ class RunResponse(BaseModel):
     status_version: int
     base_ref: str
     base_commit_sha: str
+    local_definition_test: bool
     branch_name: str | None
     current_head_sha: str | None
     final_commit_sha: str | None

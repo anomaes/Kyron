@@ -229,6 +229,15 @@ class WorkflowDefinition(StrictModel):
         return value
 
 
+class NodeTemplate(StrictModel):
+    """A project-scoped, reusable workflow node definition."""
+
+    id: Identifier
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=2000)
+    node: WorkflowNode
+
+
 class ValidationIssue(BaseModel):
     path: str
     code: str

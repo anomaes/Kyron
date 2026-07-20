@@ -132,17 +132,18 @@ class RunCoordinator:
             workflow.settings.final_commit_message_template, run.public_context
         )
         final_sha = await self.git.checkpoint(Path(run.worktree_path), final_message)
-        token = self.cipher.decrypt(project.encrypted_access_token)
-        try:
-            await self.git.push(
-                Path(run.worktree_path),
-                run.branch_name,
-                token,
-                username=git_username(project.provider),
-            )
-            await self._ensure_merge_request(run, project, workflow, token)
-        finally:
-            token = ""
+        if should_publish_run(run):
+            token = self.cipher.decrypt(project.encrypted_access_token)
+            try:
+                await self.git.push(
+                    Path(run.worktree_path),
+                    run.branch_name,
+                    token,
+                    username=git_username(project.provider),
+                )
+                await self._ensure_merge_request(run, project, workflow, token)
+            finally:
+                token = ""
         run.final_commit_sha = final_sha
         run.current_head_sha = final_sha
         run.status = RunStatus.COMPLETED
@@ -389,17 +390,18 @@ class RunCoordinator:
         context = {**run.public_context, "REVIEW_ITERATION": iteration}
         message = expand_public_variables(node.config.commit_message, context)
         head = await self.git.checkpoint(Path(run.worktree_path), message)
-        token = self.cipher.decrypt(project.encrypted_access_token)
-        try:
-            await self.git.push(
-                Path(run.worktree_path),
-                run.branch_name,
-                token,
-                username=git_username(project.provider),
-            )
-            await self._ensure_merge_request(run, project, workflow, token, node=node)
-        finally:
-            token = ""
+        if should_publish_run(run):
+            token = self.cipher.decrypt(project.encrypted_access_token)
+            try:
+                await self.git.push(
+                    Path(run.worktree_path),
+                    run.branch_name,
+                    token,
+                    username=git_username(project.provider),
+                )
+                await self._ensure_merge_request(run, project, workflow, token, node=node)
+            finally:
+                token = ""
         execution.status = NodeStatus.AWAITING_FEEDBACK
         execution.output_values = {
             **execution.output_values,
@@ -591,6 +593,12 @@ class RunCoordinator:
         if user is None:
             raise RunExecutionError("Triggering user does not exist")
         return user
+
+
+def should_publish_run(run: WorkflowRun) -> bool:
+    """Local definition tests must never bypass definition review by pushing."""
+
+    return not run.local_definition_test
 
 
 def _logical_status(status: str) -> LogicalStatus:

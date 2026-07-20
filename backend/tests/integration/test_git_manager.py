@@ -61,6 +61,7 @@ async def test_worktree_checkpoint_and_failed_wave_reset(tmp_path: Path) -> None
     await git("add", "tracked.txt", cwd=repository)
     await git("commit", "-m", "base", cwd=repository)
     base_sha = await git("rev-parse", "HEAD", cwd=repository)
+    await git("branch", "workflow_definition/local_test", base_sha, cwd=repository)
 
     manager = GitManager(tmp_path / "clones", worktrees, run_data)
     run_id = __import__("uuid").uuid4()
@@ -69,6 +70,9 @@ async def test_worktree_checkpoint_and_failed_wave_reset(tmp_path: Path) -> None
     )
     assert branch.startswith("workflow/root_")
     assert data_path.exists()
+    assert not await git(
+        "branch", "--list", "workflow_definition/local_test", cwd=repository
+    )
     await manager.ensure_clean(worktree)
     (worktree / "tracked.txt").write_text("wave one\n")
     checkpoint = await manager.checkpoint(worktree, "wave 1")
