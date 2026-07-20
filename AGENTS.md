@@ -25,7 +25,7 @@ and delivery status are recorded under `docs/`.
 - Resolve and snapshot workflows from the run's exact base commit.
 - Ordinary workflow graphs remain acyclic; repetition belongs to `review_loop`.
 - A failed wave is reset as a whole and retried with new attempt rows.
-- Only the triggering user on the run's code-host provider may control feedback checkpoints.
+- Only identities snapshotted as eligible by the gate's approval policy may control feedback checkpoints.
 - Intermediate provider approval must be consumed before execution continues.
 - Production runs exactly one backend worker.
 

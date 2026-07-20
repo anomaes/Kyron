@@ -48,3 +48,20 @@ and one code-host change request. This keeps save frequency out of repository hi
 Local-definition test runs materialize an exact local Git commit so the workflow bundle
 and run base remain reproducible. They are marked durably and cannot push a run branch
 or create a code-host change request.
+
+## D-008 — Authorization and gate governance are separate
+
+Accepted. A global system administrator bootstraps project access. Project memberships
+receive one or more project-scoped roles made from a fixed permission catalogue; custom
+roles are permitted. Membership controls project visibility and backend authorization is
+enforced independently of frontend controls.
+
+Human gates reference reusable project approval-policy keys rather than environment-bound
+user IDs in workflow JSON. Each gate opening snapshots its policy, eligible provider
+identities, quorum requirements, and exact checkpoint commit. Approval decisions accumulate
+until every requirement is satisfied. Feedback closes that gate, supersedes its approvals,
+and a later revision opens a new gate. Administrative overrides require a reason and are
+append-only audit events.
+
+Terminal execution reports are immutable database snapshots. Provider merge/close events
+arriving after completion are append-only post-run lifecycle addenda.

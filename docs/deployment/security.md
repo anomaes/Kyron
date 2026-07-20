@@ -59,7 +59,11 @@ Workflow saves use optimistic concurrency and provider change requests. A stale 
 
 ## Approval integrity
 
-Only the triggering provider identity may control a checkpoint. Intermediate approval is consumed before execution continues, ensuring it cannot satisfy final protected-branch policy. Configure branches to require fresh approval and grant the Kyron identity the authority to reset or dismiss reviews.
+Only provider identities in the opened gate's immutable policy snapshot may control a
+checkpoint, and their project membership must grant `gate.respond`. Intermediate approvals
+are consumed after the complete quorum is satisfied, ensuring they cannot satisfy final
+protected-branch policy. Configure branches to require fresh approval and grant the Kyron
+identity the authority to reset or dismiss reviews.
 
 ## Durable audit trail
 

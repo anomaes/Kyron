@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
     EdgeEvaluation,
+    GateInstance,
     NodeExecution,
     Project,
     User,
@@ -35,7 +36,9 @@ from backend.schemas.workflow import (
     WorkflowBundle,
     WorkflowDefinition,
 )
+from backend.services.approval_policy_service import ApprovalPolicyError, ApprovalPolicyService
 from backend.services.crypto import SecretCipher
+from backend.services.report_service import ReportService
 
 
 class RunPaused(RuntimeError):
@@ -152,6 +155,7 @@ class RunCoordinator:
         run.current_node_execution_id = None
         run.current_wave_id = None
         await self.session.commit()
+        await ReportService(self.session).get(run)
 
     async def execute_invocation(
         self,
@@ -391,6 +395,36 @@ class RunCoordinator:
         context = {**run.public_context, "REVIEW_ITERATION": iteration}
         message = expand_public_variables(node.config.commit_message, context)
         head = await self.git.checkpoint(Path(run.worktree_path), message)
+        gate = await self.session.scalar(
+            select(GateInstance).where(
+                GateInstance.node_execution_id == execution.id,
+                GateInstance.iteration == iteration,
+            )
+        )
+        if gate is None:
+            try:
+                policy_snapshot, eligible_snapshot = await ApprovalPolicyService(
+                    self.session
+                ).snapshot(
+                    project,
+                    node.config.approval_policy,
+                    triggering_user_id=run.triggered_by,
+                )
+            except ApprovalPolicyError as exc:
+                raise RunExecutionError(str(exc)) from exc
+            gate = GateInstance(
+                run_id=run.id,
+                invocation_id=invocation.id,
+                node_execution_id=execution.id,
+                iteration=iteration,
+                checkpoint_commit_sha=head,
+                policy_key=node.config.approval_policy,
+                policy_snapshot=policy_snapshot,
+                eligible_snapshot=eligible_snapshot,
+            )
+            self.session.add(gate)
+            await self.session.flush()
+        reviewers = _provider_reviewers(gate.eligible_snapshot)
         if should_publish_run(run):
             token = self.cipher.decrypt(project.encrypted_access_token)
             try:
@@ -400,7 +434,9 @@ class RunCoordinator:
                     token,
                     username=git_username(project.provider),
                 )
-                await self._ensure_merge_request(run, project, workflow, token, node=node)
+                await self._ensure_merge_request(
+                    run, project, workflow, token, node=node, reviewers=reviewers
+                )
             finally:
                 token = ""
         execution.status = NodeStatus.AWAITING_FEEDBACK
@@ -424,6 +460,7 @@ class RunCoordinator:
         token: str,
         *,
         node: HumanFeedbackNode | ReviewLoopNode | None = None,
+        reviewers: list[ProviderUser] | None = None,
     ) -> None:
         assert run.branch_name
         title_template = (
@@ -438,12 +475,14 @@ class RunCoordinator:
         )
         title = expand_public_variables(title_template, run.public_context)
         description = expand_public_variables(description_template, run.public_context)
-        reviewer = ProviderUser(
-            id=run.reviewer_provider_user_id,
-            username=run.reviewer_provider_username,
-        )
+        reviewers = reviewers or [
+            ProviderUser(
+                id=run.reviewer_provider_user_id,
+                username=run.reviewer_provider_username,
+            )
+        ]
         if run.change_request_number:
-            await self.code_host.update_change_request_reviewer(
+            await self.code_host.update_change_request_reviewers(
                 repository_locator(
                     project.provider,
                     project.provider_project_id,
@@ -451,7 +490,7 @@ class RunCoordinator:
                 ),
                 run.change_request_number,
                 token,
-                reviewer,
+                reviewers,
             )
             return
         change_request = await self.code_host.create_change_request(
@@ -463,7 +502,7 @@ class RunCoordinator:
             target_branch=run.base_ref,
             title=title,
             description=description,
-            reviewer=reviewer,
+            reviewers=reviewers,
         )
         run.change_request_number = change_request.number
         run.change_request_url = change_request.url
@@ -615,3 +654,12 @@ def _logical_status(status: str) -> LogicalStatus:
         NodeStatus.AWAITING_FEEDBACK: LogicalStatus.RUNNING,
     }
     return mapping[NodeStatus(status)]
+
+
+def _provider_reviewers(snapshot: dict[str, Any]) -> list[ProviderUser]:
+    reviewers: dict[tuple[str, str], ProviderUser] = {}
+    for requirement in snapshot.get("requirements", []):
+        for actor in requirement.get("users", []):
+            key = (str(actor["provider_user_id"]), str(actor["provider_username"]))
+            reviewers[key] = ProviderUser(id=key[0], username=key[1])
+    return list(reviewers.values())

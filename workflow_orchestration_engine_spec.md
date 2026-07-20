@@ -54,8 +54,11 @@ The following assumptions are intentional:
 
 1. The application is reachable only through the internal environment and Caddy-managed OAuth.
 2. Workflow definitions are created and approved by a trusted workflow author.
-3. All authenticated users may view projects, workflows, runs, logs, and workflow status.
-4. A project-membership or role-based authorization model is not required for the initial version.
+3. Project membership and project-scoped permissions control visibility of projects,
+   workflows, runs, logs, reports, and workflow status.
+4. The first authenticated user is bootstrapped as global system administrator. Global
+   administrators and project administrators manage project memberships, roles, approval
+   policies, and governance profiles.
 5. Parallel nodes may share the same worktree. The workflow author is responsible for ensuring that nodes scheduled in parallel do not conflict.
 6. Bash, Python, and Pi nodes are trusted to execute within the backend environment. Container-per-node sandboxing is out of scope for the first version.
 
@@ -88,8 +91,10 @@ When a workflow is triggered, the engine:
 8. Records the Git commit at the start and end of every wave.
 9. Stores engine logs in PostgreSQL and process output on disk.
 10. Pauses at human feedback or review-loop checkpoints.
-11. Creates a GitLab merge request if one does not yet exist and assigns the triggering user as reviewer.
-12. Continues only when the triggering user approves or provides feedback.
+11. Creates a change request if one does not yet exist and requests all eligible provider
+    identities snapshotted for the active approval policy as reviewers.
+12. Continues only when the active gate policy's complete quorum is satisfied, or an
+    authorized project administrator records a reasoned override.
 13. Resets the intermediate GitLab approval before continuing so a new approval is required for final merge.
 14. On completion, commits and pushes final changes and leaves the worktree available until the merge request is merged or closed.
 15. On failure or restart, resumes from the start of the failed or interrupted execution wave.
@@ -97,7 +102,7 @@ When a workflow is triggered, the engine:
 ## 1.4 Key Requirements
 
 - Multi-user authentication through Caddy and an OAuth auth service.
-- Shared visibility of all projects, workflows, runs, and logs.
+- Project-membership-controlled visibility of projects, workflows, runs, logs, and reports.
 - Per-project encrypted GitLab project access tokens.
 - Per-user encrypted AI-provider credentials.
 - Credential values decrypted only immediately before process execution.
@@ -111,8 +116,10 @@ When a workflow is triggered, the engine:
 - Git checkpoint per execution wave.
 - Deterministic resume by resetting the worktree to the failed wave's start commit and rerunning that wave.
 - GitLab merge request creation, reviewer assignment, comments, approval detection, approval reset, and cleanup webhooks.
-- Only the user who triggered the run may approve or provide workflow-controlling GitLab feedback.
-- Frontend approval and feedback alternatives with the same triggering-user restriction.
+- Reusable project approval policies select roles and optionally named users, support one
+  or more quorum requirements, configurable initiator approval, and optionally require
+  distinct approvers across requirements.
+- Frontend and provider gate actions use the same immutable eligibility snapshot.
 - Live process and engine log streaming over WebSocket.
 - Maximum number of concurrent workflow runs.
 - Task and subprocess tracking for cancellation.
@@ -125,7 +132,6 @@ The following are explicitly out of scope:
 
 - Public internet exposure without the OAuth layer.
 - Untrusted workflow execution.
-- Project-level roles and permissions.
 - Separate worker service or distributed job queue.
 - Multi-VM execution.
 - Arbitrary cyclic workflow graphs.
@@ -227,7 +233,8 @@ The following are explicitly out of scope:
 - Maintain the in-process run semaphore, task registry, process registry, and log broadcaster.
 - Start and resume workflow tasks.
 - Store durable state before reporting actions as successful.
-- Enforce that only the triggering user may approve or provide workflow-controlling feedback.
+- Enforce project membership and operation-specific permissions, and accept gate decisions
+  only from provider identities in the active gate's immutable eligibility snapshot.
 
 ### Engine Module
 
@@ -364,7 +371,7 @@ The project token must be a GitLab project access token represented by a bot use
 | `final_commit_sha` | CHAR(40) NULL | Final run commit |
 | `mr_iid` | INTEGER NULL | MR internal ID |
 | `mr_url` | TEXT NULL | MR URL |
-| `reviewer_gitlab_user_id` | BIGINT | Triggering user's GitLab ID |
+| `reviewer_provider*` | Provider identity fields | Triggering identity retained as the default final reviewer; gate snapshots are authoritative for intermediate review |
 | `current_invocation_id` | UUID NULL | Current invocation |
 | `current_node_execution_id` | UUID NULL | Current logical node |
 | `current_wave_id` | UUID NULL | Current wave |
@@ -543,7 +550,8 @@ Constraint:
 | `event_type` | VARCHAR(30) | `approval` or `comment` |
 | `source` | VARCHAR(30) | `gitlab` or `frontend` |
 | `author_user_id` | UUID NULL | Frontend user if known |
-| `author_gitlab_user_id` | BIGINT | Must equal triggering user |
+| `author_provider` | VARCHAR(30) | Authenticated code-host provider |
+| `author_provider_user_id` | VARCHAR(255) | Must be eligible in the gate snapshot |
 | `author_username` | VARCHAR(255) | |
 | `message` | TEXT | Empty for approval |
 | `gitlab_note_id` | BIGINT NULL | |
@@ -581,6 +589,29 @@ Index `(run_id, id)`.
 | `result` | JSONB | Sanitized |
 
 This table prevents duplicate handling across GitLab retries and application restarts.
+
+## 4.13 Authorization, governance, gates, and reports
+
+The authorization and conformance model uses the following durable records:
+
+| Tables | Purpose |
+|---|---|
+| `project_memberships`, `project_roles`, `project_role_permissions`, `project_membership_roles` | Active project membership and composable project-scoped roles from the fixed permission catalog |
+| `approval_policies`, `approval_policy_requirements`, `approval_requirement_roles`, `approval_requirement_users` | Reusable role/user requirements, per-requirement quorum, initiator approval, and cross-requirement distinctness settings |
+| `governance_profiles` | Optional tag-scoped rules requiring named policies, independent approval, and a minimum total quorum |
+| `gate_instances` | Immutable policy and eligibility snapshots tied to the exact invocation, node execution, iteration, and checkpoint commit |
+| `gate_decisions` | Actor snapshots, matched requirements, approval/feedback/override evidence, provider event IDs, and supersession state |
+| `authorization_audit_events` | Append-only actor, action, target, project/run scope, and sanitized details for security-relevant actions |
+| `run_reports` | One versioned frozen report payload for each terminal run |
+| `change_request_lifecycle_events` | Post-run merge/close actor, delivery, and optional merge commit evidence appended to report responses |
+
+The first authenticated user becomes the initial global system administrator. New projects
+seed the built-in roles and assign the registering administrator as project administrator.
+This is bootstrap behavior, not an implicit authorization rule for later users.
+
+A gate snapshot is never recalculated in place. Membership or policy edits affect only later
+gate instances. Revision feedback closes the current gate, supersedes its approvals, and a
+later iteration resolves current membership into a new snapshot at its new checkpoint SHA.
 
 ---
 # 5. Workflow Definition Format
@@ -950,6 +981,7 @@ Pi's working directory is the run worktree, so Pi may read and modify files in t
 {
   "type": "human_feedback",
   "config": {
+    "approval_policy": "production-review",
     "commit_message": "Checkpoint: awaiting review",
     "mr_title": "Workflow: ${WORKFLOW_NAME}",
     "mr_description": "Approve to continue or comment with `@kyron <feedback>`.",
@@ -964,24 +996,27 @@ The node:
 1. Ensures current changes are committed.
 2. Pushes the run branch.
 3. Creates the merge request if needed.
-4. Assigns the triggering user as reviewer.
+4. Resolves the referenced project approval policy, snapshots its eligible identities,
+   requirements, and quorums, and requests those identities as reviewers.
 5. Stores an atomic checkpoint containing node status and run status.
 6. Pauses in `AWAITING_FEEDBACK`.
-7. Continues only after a valid event from the triggering user.
+7. Records eligible approvals without continuing until every quorum requirement is met.
+8. Ties all decisions to the exact checkpoint commit SHA.
 
 On approval:
 
-- Record a feedback event of type `approval`.
-- Reset all MR approvals using the project access token.
-- Mark the human node successful.
-- Resume its outgoing edges.
+- Record an immutable gate decision against the open gate instance.
+- Continue waiting when the complete policy quorum is not yet satisfied.
+- Once satisfied, consume intermediate provider approvals, mark the gate and human node
+  successful, and resume outgoing edges.
 
-On `@kyron` comment:
+On eligible `@kyron` comment:
 
 - Strip the prefix.
 - Store `FEEDBACK`, `FEEDBACK_TYPE=comment`, and feedback-author public variables.
-- Mark the node successful.
-- Resume its outgoing edges.
+- Close the current gate as `CHANGES_REQUESTED`, preserve prior approvals as superseded,
+  and resume the configured revision behavior. A later checkpoint always creates a new
+  gate instance against a new commit and resolves current policy membership again.
 
 A standalone human-feedback node does not itself repeat previous nodes. Iterative revision must use a `review_loop` node.
 
@@ -1029,6 +1064,7 @@ The review loop is the only repeating control construct in version 1.
 {
   "type": "review_loop",
   "config": {
+    "approval_policy": "production-review",
     "initial_workflow_id": "implement_changes",
     "revision_workflow_id": "revise_from_feedback",
     "inputs": {
@@ -1052,12 +1088,12 @@ The review loop is the only repeating control construct in version 1.
 2. Invoke `initial_workflow_id` in a child invocation path such as:
    `root/review_node/initial[1]`.
 3. If the child fails, the review-loop node fails.
-4. Commit current changes, push, create or update the MR, assign the triggering user, and pause.
-5. If the triggering user approves:
+4. Commit current changes, resolve and snapshot the approval policy, push, create or update the change request, request every eligible policy identity as reviewer, and pause.
+5. If eligible approvals satisfy every policy quorum:
    - Reset MR approvals.
    - Mark the review-loop node `SUCCESS`.
    - Continue to the node's outgoing edges.
-6. If the triggering user provides an `@kyron` comment:
+6. If an eligible policy identity provides an `@kyron` comment:
    - Store the feedback event.
    - Increment `REVIEW_ITERATION`.
    - If the new iteration exceeds `max_iterations`, fail the review-loop node with `MAX_REVIEW_ITERATIONS_REACHED`.
@@ -1729,29 +1765,27 @@ async def resolve_current_user(request: Request, session: AsyncSession) -> User:
     )
 ```
 
-## 12.4 Shared Access Model
+## 12.4 Project Authorization Model
 
-All authenticated users can:
+A global system administrator manages user activation and system-administrator assignment.
+Every non-system operation is authorized through active project membership and one or more
+project-scoped roles. Built-in roles cover project administration, workflow authoring,
+operation, approval, and read-only access; project administrators may also create custom
+roles from the fixed permission catalog.
 
-- View all projects and workflows.
-- View all runs and logs.
-- Trigger workflows.
-- Manage credentials associated with their own account.
-- Use general project-management actions exposed by the UI.
-
-No project membership table is required.
-
-The only user-specific workflow-control restriction is:
-
-> Only the user who triggered a run may approve its human checkpoint or submit workflow-controlling feedback.
-
-The backend enforces this for frontend requests and GitLab webhook events.
+Workflow gates add a second authorization condition: the actor must have `gate.respond`
+and must appear in the open gate's immutable eligibility snapshot. The snapshot comes from
+the selected reusable approval policy and may include roles, named users, multiple
+requirements, and per-requirement quorums. Whether the initiator may approve and whether
+approvers must be distinct across requirements are policy settings.
 
 ## 12.5 WebSocket Authentication
 
 Caddy authenticates the initial upgrade request. FastAPI reads the same trusted headers and verifies that the user exists.
 
-Since run visibility is shared, no additional run-level authorization check is needed.
+The backend resolves the run's project and requires `run.view` before accepting the
+WebSocket upgrade. Project membership therefore controls live-output visibility as well as
+the REST run and report endpoints.
 
 ## 12.6 Webhook Authentication
 
@@ -2261,13 +2295,14 @@ On successful root invocation:
 1. Commit final changes if any.
 2. Push the run branch.
 3. Create the MR if it does not exist.
-4. Ensure the triggering user is assigned as reviewer.
+4. Ensure the triggering user is assigned as the default final reviewer when no active gate supplies a reviewer set.
 5. Store final HEAD SHA.
 6. Mark run `COMPLETED`.
 7. Publish terminal status event.
 8. Keep worktree and run output until MR merge/close cleanup.
 
-The final MR remains unapproved. The triggering user must perform a new GitLab approval for merge.
+The final change request remains unapproved. Repository branch-protection policy determines
+which fresh provider approvals are required for merge.
 
 ---
 # 16. Subprocess Execution, Cancellation, and Logging
@@ -2446,9 +2481,10 @@ The reset-approvals endpoint is available to bot users with valid project or gro
 
 ## 17.2 User Identity
 
-Do not resolve the triggering user by searching for their email for every MR.
+Do not resolve reviewers by searching for email addresses.
 
-The auth service obtains and passes the GitLab user ID during OAuth. Store it on `users.gitlab_user_id` and use it directly in `reviewer_ids`.
+The auth service obtains immutable provider user IDs during OAuth. Store provider identities
+and use the snapshotted eligible identities directly in `reviewer_ids`.
 
 This avoids failures when email addresses are private or not searchable by the project token.
 
@@ -2473,17 +2509,19 @@ Request fields:
 }
 ```
 
-The reviewer ID must always be the triggering user's GitLab user ID.
+For an intermediate gate, the reviewer IDs are all eligible GitLab identities in the gate
+snapshot. For the final change request, the triggering identity is a default when no gate
+reviewer set is supplied.
 
 After creation, store:
 
 - `mr_iid`
 - `mr_url`
-- `reviewer_gitlab_user_id`
+- the provider-neutral triggering reviewer fields used as the final-review default
 
 ## 17.4 Ensure Reviewer Assignment
 
-When an MR already exists, verify the triggering user remains a reviewer. If necessary, update the MR through:
+When an MR already exists, replace its reviewer list with the complete intended gate reviewer set. If necessary, update the MR through:
 
 ```text
 PUT /api/v4/projects/:id/merge_requests/:merge_request_iid
@@ -2509,10 +2547,11 @@ GitLab merge-request webhooks distinguish:
 - `action: "approval"` — one user added an approval.
 - `action: "approved"` — all required approval rules are satisfied.
 
-The workflow requirement is that the user who triggered the workflow may continue it when that user approves. Therefore the engine handles `action: "approval"` and checks:
+The engine handles `action: "approval"` and checks the actor's immutable provider identity
+against the current gate eligibility snapshot:
 
 ```text
-payload.user.id == run.reviewer_gitlab_user_id
+payload.user.id in gate.eligible_provider_user_ids
 ```
 
 The `approved` event may also arrive. It must be treated as a possible duplicate and ignored if the checkpoint already transitioned.
@@ -2523,9 +2562,9 @@ For a valid approval event:
 
 1. Locate the run by `(project.id, object_attributes.iid)`.
 2. Verify run is `AWAITING_FEEDBACK`.
-3. Verify `payload.user.id` equals the triggering user's GitLab user ID.
-4. Atomically reserve the checkpoint transition.
-5. Reset approvals:
+3. Verify `payload.user.id` is eligible for at least one unsatisfied policy requirement.
+4. Record the approval without continuing if the complete policy quorum is not yet met.
+5. Once the quorum is met, atomically reserve the checkpoint transition and reset approvals:
 
 ```text
 PUT /api/v4/projects/:id/merge_requests/:merge_request_iid/reset_approvals
@@ -2546,7 +2585,7 @@ GitLab note webhook requirements:
 - `merge_request` exists.
 - `object_attributes.system` is not true.
 - `object_attributes.note.strip()` begins with `@kyron`, case-insensitive.
-- Top-level `user.id` equals the triggering user's GitLab user ID.
+- Top-level `user.id` is eligible in the current gate snapshot.
 
 The actor is read from:
 
@@ -2567,7 +2606,7 @@ Empty feedback after `@kyron` is rejected or ignored with a clear result.
 
 ## 17.9 Frontend Feedback Traceability
 
-When the triggering user uses the frontend:
+When an eligible approver uses the frontend:
 
 - Frontend approval posts:
 
@@ -3130,20 +3169,19 @@ Features:
 
 Visible when `AWAITING_FEEDBACK`.
 
-For all users:
+For project members with run visibility:
 
 - Show MR link.
-- Show triggering reviewer.
+- Show the policy, requirements, eligible reviewers, and quorum progress.
 - Show previous feedback events.
 
-For the triggering user only:
+For users with `gate.respond` who are eligible in the current snapshot:
 
 - Approve button.
 - Feedback textarea and send button.
 
-For other users:
-
-- Disable controls and display: `Only the user who triggered this run can continue it.`
+For other users, hide or disable controls and explain that the active approval policy does
+not select their identity.
 
 ### Actions
 
@@ -3708,7 +3746,7 @@ If reset fails:
 - Do not continue execution.
 - Leave or restore run state as `AWAITING_FEEDBACK`.
 - Show an actionable error.
-- Permit the triggering user to try approval again after the token or GitLab issue is fixed.
+- Permit eligible approvers to try approval again after the token or provider issue is fixed.
 
 ---
 
@@ -3841,7 +3879,7 @@ Test:
 - Multiple feedback iterations.
 - Fallback to initial workflow when revision workflow is omitted.
 - Maximum iterations reached.
-- Only triggering user approval accepted.
+- Only snapshotted eligible identities are accepted and every configured quorum is enforced.
 - Other-user approval ignored.
 - Only triggering-user `@kyron` comment accepted.
 - Approval reset failure leaves run waiting.
@@ -3924,7 +3962,7 @@ Mock HTTP endpoints and verify:
 - Workflow validation and save.
 - Trigger with typed inputs.
 - Run retrieval and pagination.
-- Triggering-user-only feedback controls.
+- Permission- and policy-eligible feedback controls.
 - Atomic duplicate action rejection.
 - Output path safety.
 - WebSocket authentication and replay.
@@ -3939,10 +3977,10 @@ Mock HTTP endpoints and verify:
 ### E2E 2 — Review loop
 
 - Initial child changes file.
-- MR created with triggering reviewer.
-- Triggering user comments `@kyron update docs`.
+- MR created with all reviewers selected by the gate policy.
+- An eligible reviewer comments `@kyron update docs`.
 - Revision child receives feedback and changes docs.
-- Triggering user approves.
+- The required eligible reviewers satisfy the policy quorum.
 - Approval resets.
 - Workflow completes.
 - Final merge requires fresh approval.
@@ -3977,7 +4015,8 @@ The initial release is accepted when:
 - Failed parallel wave resumes correctly.
 - No decrypted credential appears in database dumps, snapshots, logs, or output metadata.
 - Exact base SHA is visible and matches worktree ancestry.
-- Only the triggering user can continue a checkpoint.
+- Only eligible gate identities can decide a checkpoint; authorized project administrators
+  may use a reasoned, audited override.
 - Final MR requires a new approval after intermediate approval.
 - Backend runs with one worker.
 - Caddy routes HTTP and WebSocket traffic correctly.
@@ -4118,15 +4157,15 @@ The coding assistant should implement in the following order. Do not begin with 
 ## Phase 11 — GitLab MR and Webhooks
 
 - [ ] Implement shared GitLab HTTP client.
-- [ ] Create MR with triggering user's reviewer ID.
-- [ ] Update reviewer on existing MR.
+- [ ] Create MR with every provider reviewer selected by the gate policy.
+- [ ] Replace reviewers on an existing MR when a new gate snapshot opens.
 - [ ] Post notes.
 - [ ] Reset approvals using project token.
 - [ ] Implement webhook auth.
 - [ ] Implement delivery deduplication.
 - [ ] Correctly parse note actors from top-level `user`.
 - [ ] Correctly handle individual `approval` events.
-- [ ] Match only the triggering user's actions.
+- [ ] Match approval and feedback actors against the current gate eligibility snapshot.
 - [ ] Implement merge/close cancellation and cleanup.
 
 **Exit condition:** GitLab comments and approvals cause exactly one correct state transition.
@@ -4224,7 +4263,7 @@ The coding assistant implementing this system should follow these rules:
 7. Do not overwrite attempt history.
 8. Do not mark a run completed while reachable nodes remain non-terminal.
 9. Do not continue after an intermediate approval unless approval reset succeeds.
-10. Do not accept workflow-controlling feedback from anyone other than the triggering user.
+10. Do not accept workflow-controlling feedback from identities outside the current gate's eligibility snapshot.
 11. Do not expose backend, database, or auth-service ports to the host.
 12. Keep Uvicorn at one worker until a durable worker architecture is intentionally introduced.
 13. Commit implementation work in small, reviewable units.
@@ -4272,7 +4311,8 @@ Official references:
 
 1. The system is internal and trusted, behind OAuth.
 2. No project-membership authorization model is required.
-3. Only the triggering user controls workflow approval and feedback checkpoints.
+3. Project approval policies control workflow approval and feedback checkpoints using
+   snapshotted identities, quorum requirements, and configurable initiator participation.
 4. Every run pins an exact repository commit SHA.
 5. The root workflow and all child workflows are snapshotted from that same commit.
 6. Ordinary workflow graphs are DAGs.

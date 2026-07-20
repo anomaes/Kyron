@@ -111,7 +111,7 @@ class GitHubClient:
         target_branch: str,
         title: str,
         description: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> ChangeRequest:
         path = self._repository_path(repository)
         data = await self.request(
@@ -130,28 +130,26 @@ class GitHubClient:
         )
         assert isinstance(data, dict)
         number = int(data["number"])
-        await self.update_change_request_reviewer(repository, number, token, reviewer)
+        await self.update_change_request_reviewers(repository, number, token, reviewers)
         return ChangeRequest(number=number, url=str(data["html_url"]), state=str(data["state"]))
 
-    async def update_change_request_reviewer(
+    async def update_change_request_reviewers(
         self,
         repository: str,
         number: int,
         token: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> None:
         await self.request(
             "POST",
             f"/repos/{self._repository_path(repository)}/pulls/{number}/requested_reviewers",
             token,
             category="pull request reviewer update",
-            json={"reviewers": [reviewer.username]},
+            json={"reviewers": sorted({reviewer.username for reviewer in reviewers})},
             retry_get=False,
         )
 
-    async def get_change_request(
-        self, repository: str, number: int, token: str
-    ) -> ChangeRequest:
+    async def get_change_request(self, repository: str, number: int, token: str) -> ChangeRequest:
         data = await self.request(
             "GET",
             f"/repos/{self._repository_path(repository)}/pulls/{number}",
@@ -184,8 +182,10 @@ class GitHubClient:
         reviewer: ProviderUser,
         review_id: str | None = None,
     ) -> None:
-        review_ids = [review_id] if review_id else await self._active_review_ids(
-            repository, number, token, reviewer
+        review_ids = (
+            [review_id]
+            if review_id
+            else await self._active_review_ids(repository, number, token, reviewer)
         )
         for active_review_id in review_ids:
             if active_review_id is None:

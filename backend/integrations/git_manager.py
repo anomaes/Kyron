@@ -88,9 +88,7 @@ class GitManager:
         finally:
             redactor.clear()
 
-    async def fetch(
-        self, local_path: Path, token: str, *, username: str = "oauth2"
-    ) -> None:
+    async def fetch(self, local_path: Path, token: str, *, username: str = "oauth2") -> None:
         self.assert_beneath(local_path, self.clone_base_path)
         redactor = SecretRedactor([token])
         try:

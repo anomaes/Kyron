@@ -40,3 +40,14 @@ boundaries reject cross-provider mutations. Provider-specific REST payloads and
 webhook shapes are normalized before they reach orchestration services. The full
 contract, migration rules, and acceptance criteria are defined in
 `docs/code-host-provider-spec.md`.
+
+Authorization uses a global system-administrator flag plus project memberships. Each
+membership may hold multiple built-in or custom project roles; roles contain fixed,
+server-recognized permission keys. All project API and WebSocket reads require membership
+and all mutations require their operation-specific permission.
+
+Approval policies are project database state referenced by stable keys from workflow
+definitions. An opened gate snapshots the resolved policy and provider identities so later
+membership changes cannot rewrite an in-flight decision boundary. Gate decisions and
+authorization audit events are append-only. Run reports combine this state with durable
+invocation paths, so child-workflow gates retain their execution hierarchy.

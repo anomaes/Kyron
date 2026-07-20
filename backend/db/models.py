@@ -37,6 +37,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_system_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -104,6 +106,155 @@ class Project(Base):
     )
 
 
+class ProjectMembership(Base):
+    __tablename__ = "project_memberships"
+    __table_args__ = (UniqueConstraint("project_id", "user_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ProjectRole(Base):
+    __tablename__ = "project_roles"
+    __table_args__ = (UniqueConstraint("project_id", "key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ProjectRolePermission(Base):
+    __tablename__ = "project_role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_roles.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    permission: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class ProjectMembershipRole(Base):
+    __tablename__ = "project_membership_roles"
+    __table_args__ = (UniqueConstraint("membership_id", "role_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_memberships.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_roles.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+
+
+class ApprovalPolicy(Base):
+    __tablename__ = "approval_policies"
+    __table_args__ = (UniqueConstraint("project_id", "key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    initiator_may_approve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    distinct_approvers_across_requirements: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    eligible_approvers_may_give_feedback: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ApprovalPolicyRequirement(Base):
+    __tablename__ = "approval_policy_requirements"
+    __table_args__ = (UniqueConstraint("policy_id", "key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    policy_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approval_policies.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    quorum: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ApprovalRequirementRole(Base):
+    __tablename__ = "approval_requirement_roles"
+    __table_args__ = (UniqueConstraint("requirement_id", "role_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    requirement_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approval_policy_requirements.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_roles.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+
+
+class ApprovalRequirementUser(Base):
+    __tablename__ = "approval_requirement_users"
+    __table_args__ = (UniqueConstraint("requirement_id", "user_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    requirement_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("approval_policy_requirements.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+
+
+class GovernanceProfile(Base):
+    __tablename__ = "governance_profiles"
+    __table_args__ = (UniqueConstraint("project_id", "key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    applies_to_tags: Mapped[list[str]] = mapped_column(JSON_TYPE, nullable=False, default=list)
+    required_policy_keys: Mapped[list[str]] = mapped_column(JSON_TYPE, nullable=False, default=list)
+    prohibit_self_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_total_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (
@@ -127,6 +278,9 @@ class WorkflowRun(Base):
     )
     local_definition_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     public_context: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    trigger_actor_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
     branch_name: Mapped[str | None] = mapped_column(String(255))
     worktree_path: Mapped[str | None] = mapped_column(Text)
     run_data_path: Mapped[str | None] = mapped_column(Text)
@@ -266,6 +420,99 @@ class FeedbackEvent(Base):
     author_username: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, default="", nullable=False)
     provider_comment_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GateInstance(Base):
+    __tablename__ = "gate_instances"
+    __table_args__ = (UniqueConstraint("node_execution_id", "iteration"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    invocation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_invocations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    node_execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("node_executions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    iteration: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    checkpoint_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    policy_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    policy_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False)
+    eligible_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="OPEN")
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GateDecision(Base):
+    __tablename__ = "gate_decisions"
+    __table_args__ = (Index("ix_gate_decisions_gate_created", "gate_instance_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    gate_instance_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("gate_instances.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    actor_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False)
+    requirement_keys: Mapped[list[str]] = mapped_column(JSON_TYPE, nullable=False, default=list)
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    provider_event_id: Mapped[str | None] = mapped_column(String(255))
+    superseded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuthorizationAuditEvent(Base):
+    __tablename__ = "authorization_audit_events"
+    __table_args__ = (
+        Index("ix_authorization_audit_project_created", "project_id", "created_at"),
+        Index("ix_authorization_audit_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    actor_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(255))
+    details: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RunReport(Base):
+    __tablename__ = "run_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ChangeRequestLifecycleEvent(Base):
+    __tablename__ = "change_request_lifecycle_events"
+    __table_args__ = (Index("ix_change_request_lifecycle_run_created", "run_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_username: Mapped[str] = mapped_column(String(255), nullable=False)
+    merge_commit_sha: Mapped[str | None] = mapped_column(String(64))
+    provider_delivery_id: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

@@ -232,7 +232,9 @@ async def test_long_open_change_request_warning_is_deduplicated(
     await db_session.commit()
 
     count = await db_session.scalar(
-        select(func.count()).select_from(RunLog).where(
+        select(func.count())
+        .select_from(RunLog)
+        .where(
             RunLog.run_id == run.id,
             RunLog.event_type == "LONG_OPEN_CHANGE_REQUEST",
         )

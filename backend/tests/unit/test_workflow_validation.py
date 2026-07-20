@@ -215,7 +215,7 @@ def test_child_inputs_outputs_and_review_checkpoint_are_validated() -> None:
                     "id": "wait",
                     "type": "human_feedback",
                     "label": "wait",
-                    "config": {},
+                    "config": {"approval_policy": "review"},
                 }
             ],
         )
@@ -227,7 +227,10 @@ def test_child_inputs_outputs_and_review_checkpoint_are_validated() -> None:
                     "id": "review",
                     "type": "review_loop",
                     "label": "review",
-                    "config": {"initial_workflow_id": "child"},
+                    "config": {
+                        "approval_policy": "review",
+                        "initial_workflow_id": "child",
+                    },
                 }
             ]
         )

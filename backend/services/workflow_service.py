@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.authorization import actor_snapshot
 from backend.auth.dependencies import AuthenticatedUser
 from backend.config import Settings
 from backend.db.models import Project, WorkflowRun
@@ -34,6 +35,7 @@ from backend.schemas.workflow import (
     WorkflowDefinition,
     WorkflowValidationResponse,
 )
+from backend.services.approval_policy_service import ApprovalPolicyService
 from backend.services.crypto import SecretCipher
 
 
@@ -71,9 +73,7 @@ class WorkflowService:
             raise LookupError("Workflow does not exist")
         return sha, definitions[workflow_id]
 
-    async def list_templates(
-        self, project: Project
-    ) -> tuple[str, builtins.list[NodeTemplate]]:
+    async def list_templates(self, project: Project) -> tuple[str, builtins.list[NodeTemplate]]:
         sha, _definitions, templates = await self._load_all(project)
         return sha, [templates[key] for key in sorted(templates)]
 
@@ -217,8 +217,7 @@ class WorkflowService:
         metadata = await self._read_json(changes_root / "publication.json")
         existing = metadata if isinstance(metadata, dict) else {}
         branch = str(
-            existing.get("branch_name")
-            or f"workflow_definition/review_{operation_id.hex[:8]}"
+            existing.get("branch_name") or f"workflow_definition/review_{operation_id.hex[:8]}"
         )
         try:
             async with project_git_locks.for_project(project.id):
@@ -266,10 +265,12 @@ class WorkflowService:
                             description=(
                                 "Project-local workflow and node-template changes created by Kyron."
                             ),
-                            reviewer=ProviderUser(
-                                id=user.provider_user_id,
-                                username=user.provider_username,
-                            ),
+                            reviewers=[
+                                ProviderUser(
+                                    id=user.provider_user_id,
+                                    username=user.provider_username,
+                                )
+                            ],
                         )
                     result = {
                         "branch_name": branch,
@@ -353,6 +354,7 @@ class WorkflowService:
             use_local_definitions=use_local_definitions,
         )
         workflow = bundle.workflows[workflow_id]
+        await ApprovalPolicyService(self.session).validate_bundle(project, bundle)
         validated_inputs = validate_trigger_inputs(workflow, inputs)
         run = WorkflowRun(
             root_workflow_id=workflow_id,
@@ -365,6 +367,7 @@ class WorkflowService:
             workflow_bundle_snapshot=bundle.model_dump(mode="json"),
             local_definition_test=use_local_definitions,
             public_context={**workflow.variables, **validated_inputs},
+            trigger_actor_snapshot=actor_snapshot(user),
             reviewer_provider=user.provider,
             reviewer_provider_user_id=user.provider_user_id,
             reviewer_provider_username=user.provider_username,
@@ -445,9 +448,7 @@ class WorkflowService:
                 if definition is not None and not errors and path.stem == definition.id:
                     definitions[definition.id] = definition
 
-    async def _overlay_templates(
-        self, templates: dict[str, NodeTemplate], layer: Path
-    ) -> None:
+    async def _overlay_templates(self, templates: dict[str, NodeTemplate], layer: Path) -> None:
         for marker in await self._files(layer / "deleted_templates"):
             templates.pop(marker.name, None)
         for path in await self._files(layer / "templates", suffix=".json"):
@@ -526,9 +527,7 @@ class WorkflowService:
 
     async def _configure_definition_worktree(self, worktree: Path) -> None:
         await self.git.run(["config", "user.name", "Workflow Engine"], cwd=worktree)
-        await self.git.run(
-            ["config", "user.email", "workflow-engine@noreply.local"], cwd=worktree
-        )
+        await self.git.run(["config", "user.email", "workflow-engine@noreply.local"], cwd=worktree)
 
     def _changes_root(self, project: Project) -> Path:
         root = self.settings.RUN_DATA_BASE_PATH / "project_changes" / str(project.id)
@@ -540,16 +539,12 @@ class WorkflowService:
             raise ValueError("Definition ID is invalid")
 
     @staticmethod
-    async def _files(
-        directory: Path, *, suffix: str | None = None
-    ) -> builtins.list[Path]:
+    async def _files(directory: Path, *, suffix: str | None = None) -> builtins.list[Path]:
         if not await asyncio.to_thread(directory.is_dir):
             return []
         paths = await asyncio.to_thread(lambda: sorted(directory.iterdir()))
         return [
-            path
-            for path in paths
-            if path.is_file() and (suffix is None or path.suffix == suffix)
+            path for path in paths if path.is_file() and (suffix is None or path.suffix == suffix)
         ]
 
     async def _entry_count(self, layer: Path) -> int:

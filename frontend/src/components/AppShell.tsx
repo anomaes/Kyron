@@ -16,6 +16,7 @@ export function AppShell() {
           <NavLink to="/projects">Projects</NavLink>
           <NavLink to="/runs">Runs</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
+          {user.data?.is_system_admin && <NavLink to="/admin">Administration</NavLink>}
         </nav>
         <div className="trust-note">Trusted internal execution</div>
         <div className="user-card">

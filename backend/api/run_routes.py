@@ -17,19 +17,40 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 
-from backend.auth.dependencies import CurrentUser, DbSession, websocket_identity
+from backend.auth.authorization import (
+    GATE_OVERRIDE,
+    GATE_RESPOND,
+    REPORT_VIEW,
+    RUN_CONTROL_ANY,
+    RUN_CONTROL_OWN,
+    RUN_VIEW,
+    accessible_project_ids,
+    actor_snapshot,
+    audit_event,
+    authorize_project,
+    project_permissions,
+)
+from backend.auth.dependencies import (
+    AuthenticatedUser,
+    CurrentUser,
+    DbSession,
+    websocket_identity,
+)
 from backend.config import Settings, get_settings
 from backend.db.database import session_factory
 from backend.db.models import (
     EdgeEvaluation,
     ExecutionWave,
     FeedbackEvent,
+    GateDecision,
+    GateInstance,
     NodeAttempt,
     NodeExecution,
     ProviderIdentity,
     RunLog,
+    User,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -41,10 +62,12 @@ from backend.engine.resume import ResumeError, prepare_resume
 from backend.integrations.code_host import create_code_host_client, provider_display_name
 from backend.integrations.git_manager import GitManager
 from backend.lifecycle import runtime
+from backend.schemas.admin import GateOverrideRequest
 from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
+from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 websocket_router = APIRouter(tags=["run logs"])
@@ -52,7 +75,7 @@ websocket_router = APIRouter(tags=["run logs"])
 
 @router.get("", response_model=PaginatedRuns)
 async def list_runs(
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -63,7 +86,12 @@ async def list_runs(
     created_after: datetime | None = None,
     created_before: datetime | None = None,
 ) -> PaginatedRuns:
-    filters = []
+    filters: list[ColumnElement[bool]] = []
+    allowed_projects = await accessible_project_ids(db, user)
+    if allowed_projects is not None:
+        if not allowed_projects:
+            return PaginatedRuns(items=[], page=page, page_size=page_size, total=0)
+        filters.append(WorkflowRun.project_id.in_(allowed_projects))
     if project_id:
         filters.append(WorkflowRun.project_id == project_id)
     if root_workflow_id:
@@ -95,18 +123,20 @@ async def list_runs(
 
 
 @router.get("/{run_id}", response_model=RunResponse)
-async def get_run(run_id: uuid.UUID, _: CurrentUser, db: DbSession) -> RunResponse:
+async def get_run(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> RunResponse:
     run = await db.get(WorkflowRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
     return RunResponse.model_validate(run)
 
 
 @router.get("/{run_id}/graph")
-async def run_graph(run_id: uuid.UUID, _: CurrentUser, db: DbSession) -> dict[str, Any]:
+async def run_graph(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict[str, Any]:
     run = await db.get(WorkflowRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
     invocations = list(
         await db.scalars(select(WorkflowInvocation).where(WorkflowInvocation.run_id == run_id))
     )
@@ -125,6 +155,18 @@ async def run_graph(run_id: uuid.UUID, _: CurrentUser, db: DbSession) -> dict[st
     )
     edges = list(await db.scalars(select(EdgeEvaluation).where(EdgeEvaluation.run_id == run_id)))
     feedback = list(await db.scalars(select(FeedbackEvent).where(FeedbackEvent.run_id == run_id)))
+    gates = list(await db.scalars(select(GateInstance).where(GateInstance.run_id == run_id)))
+    decisions = (
+        list(
+            await db.scalars(
+                select(GateDecision).where(
+                    GateDecision.gate_instance_id.in_([item.id for item in gates])
+                )
+            )
+        )
+        if gates
+        else []
+    )
     return {
         "snapshot": run.workflow_bundle_snapshot,
         "invocations": [_model(item) for item in invocations],
@@ -133,17 +175,32 @@ async def run_graph(run_id: uuid.UUID, _: CurrentUser, db: DbSession) -> dict[st
         "attempts": [_model(item) for item in attempts],
         "edge_evaluations": [_model(item) for item in edges],
         "feedback": [_model(item) for item in feedback],
+        "gates": [_model(item) for item in gates],
+        "gate_decisions": [_model(item) for item in decisions],
     }
+
+
+@router.get("/{run_id}/report")
+async def run_report(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, REPORT_VIEW)
+    return await ReportService(db).get(run)
 
 
 @router.get("/{run_id}/logs")
 async def run_logs(
     run_id: uuid.UUID,
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
     after_id: int = 0,
     limit: Annotated[int, Query(ge=1, le=5000)] = 1000,
 ) -> list[dict[str, Any]]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
     logs = list(
         await db.scalars(
             select(RunLog)
@@ -159,9 +216,13 @@ async def run_logs(
 async def node_detail(
     run_id: uuid.UUID,
     node_execution_id: uuid.UUID,
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
 ) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
     node = await db.scalar(
         select(NodeExecution).where(
             NodeExecution.id == node_execution_id, NodeExecution.run_id == run_id
@@ -183,7 +244,7 @@ async def node_detail(
 async def node_output(
     run_id: uuid.UUID,
     node_execution_id: uuid.UUID,
-    _: CurrentUser,
+    user: CurrentUser,
     db: DbSession,
     stream: str = "stdout",
     attempt: int | None = None,
@@ -199,6 +260,7 @@ async def node_output(
     )
     if run is None or node is None or not run.run_data_path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
     selected_attempt = attempt or node.current_attempt
     if selected_attempt < 1:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
@@ -231,6 +293,8 @@ async def cancel(
 ) -> RunResponse:
     try:
         existing = await db.get(WorkflowRun, run_id)
+        if existing is not None:
+            await _authorize_control(db, user, existing)
         if existing is not None and existing.reviewer_provider != user.provider:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
@@ -258,6 +322,19 @@ async def cancel(
             runtime.tasks,
             settings.PROCESS_TERMINATION_GRACE_SECONDS,
         ).cleanup_run(run.id, remove_output=True)
+    db.add(
+        audit_event(
+            user,
+            "RUN_CANCELLED",
+            "workflow_run",
+            project_id=run.project_id,
+            run_id=run.id,
+            target_id=str(run.id),
+        )
+    )
+    await db.commit()
+    if run.status == RunStatus.CANCELLED:
+        await ReportService(db).get(run)
     return RunResponse.model_validate(run)
 
 
@@ -275,6 +352,8 @@ async def resume(
     )
     try:
         existing = await db.get(WorkflowRun, run_id)
+        if existing is not None:
+            await _authorize_control(db, user, existing)
         if existing is not None and existing.reviewer_provider != user.provider:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
@@ -285,6 +364,17 @@ async def resume(
     except ResumeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     await runtime.schedule(run.id)
+    db.add(
+        audit_event(
+            user,
+            "RUN_RESUMED",
+            "workflow_run",
+            project_id=run.project_id,
+            run_id=run.id,
+            target_id=str(run.id),
+        )
+    )
+    await db.commit()
     return RunResponse.model_validate(run)
 
 
@@ -311,8 +401,13 @@ FeedbackDependency = Annotated[FeedbackService, Depends(feedback_service)]
 async def approve(
     run_id: uuid.UUID,
     user: CurrentUser,
+    db: DbSession,
     feedback: FeedbackDependency,
 ) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, GATE_RESPOND)
     try:
         event = await feedback.accept(
             run_id,
@@ -335,8 +430,13 @@ async def submit_feedback(
     run_id: uuid.UUID,
     request: FeedbackRequest,
     user: CurrentUser,
+    db: DbSession,
     feedback: FeedbackDependency,
 ) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, GATE_RESPOND)
     try:
         event = await feedback.accept(
             run_id,
@@ -350,6 +450,30 @@ async def submit_feedback(
         )
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return _model(event)
+
+
+@router.post("/{run_id}/override-gate")
+async def override_gate(
+    run_id: uuid.UUID,
+    request: GateOverrideRequest,
+    user: CurrentUser,
+    db: DbSession,
+    feedback: FeedbackDependency,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, GATE_OVERRIDE)
+    try:
+        event = await feedback.override(
+            run_id,
+            reason=request.reason,
+            actor_user_id=user.id,
+            actor_snapshot=actor_snapshot(user),
+        )
     except FeedbackError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     return _model(event)
@@ -371,6 +495,23 @@ async def websocket_logs(websocket: WebSocket, run_id: uuid.UUID, after_id: int 
         run = await session.get(WorkflowRun, run_id)
         if identity is None or run is None:
             await websocket.close(code=4401 if identity is None else 4404)
+            return
+        user_row = await session.get(User, identity.user_id)
+        if user_row is None or not user_row.is_active:
+            await websocket.close(code=4403)
+            return
+        auth_user = AuthenticatedUser(
+            id=user_row.id,
+            email=user_row.email,
+            display_name=user_row.display_name,
+            avatar_url=user_row.avatar_url,
+            provider=identity.provider,
+            provider_user_id=identity.provider_user_id,
+            provider_username=identity.username,
+            is_system_admin=user_row.is_system_admin,
+        )
+        if RUN_VIEW not in await project_permissions(session, auth_user, run.project_id):
+            await websocket.close(code=4403)
             return
         subscription = log_broadcaster.subscribe(run_id)
         await websocket.accept()
@@ -421,3 +562,12 @@ def _log_event(log: RunLog) -> dict[str, Any]:
         "message": log.message,
         "metadata": log.log_metadata,
     }
+
+
+async def _authorize_control(db: DbSession, user: CurrentUser, run: WorkflowRun) -> None:
+    permissions = await project_permissions(db, user, run.project_id)
+    if RUN_CONTROL_ANY in permissions:
+        return
+    if RUN_CONTROL_OWN in permissions and run.triggered_by == user.id:
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "You may only control runs you triggered")

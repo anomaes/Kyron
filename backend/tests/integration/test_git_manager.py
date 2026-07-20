@@ -70,9 +70,7 @@ async def test_worktree_checkpoint_and_failed_wave_reset(tmp_path: Path) -> None
     )
     assert branch.startswith("workflow/root_")
     assert data_path.exists()
-    assert not await git(
-        "branch", "--list", "workflow_definition/local_test", cwd=repository
-    )
+    assert not await git("branch", "--list", "workflow_definition/local_test", cwd=repository)
     await manager.ensure_clean(worktree)
     (worktree / "tracked.txt").write_text("wave one\n")
     checkpoint = await manager.checkpoint(worktree, "wave 1")

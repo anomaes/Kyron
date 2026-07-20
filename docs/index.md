@@ -60,7 +60,7 @@ Kyron is an orchestration engine, not a sandbox. Bash, Python, and Pi prompt nod
 2. Kyron resolves the selected base ref to an exact commit and snapshots the complete workflow bundle from that revision.
 3. One isolated branch and worktree are created for the run.
 4. Ready process nodes execute in deterministic waves; each successful wave becomes a Git checkpoint.
-5. Feedback and review-loop nodes pause behind the triggering user's provider identity.
+5. Feedback and review-loop nodes pause behind a snapshotted project approval policy.
 6. Kyron pushes the finished branch and preserves enough state to inspect, resume, or clean up the run later.
 
 [Learn why these rules matter →](/getting-started/concepts)

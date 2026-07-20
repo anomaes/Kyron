@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.authorization import seed_project_roles
 from backend.config import Settings
 from backend.db.models import Project, WorkflowRun
 from backend.integrations.code_host import code_host_client, git_username, repository_locator
@@ -73,6 +74,7 @@ class ProjectService:
             )
             self.session.add(project)
             await self.session.flush()
+            await seed_project_roles(self.session, project.id, user_id)
             return project
         except Exception:
             shutil.rmtree(local_path, ignore_errors=True)

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from backend.api.admin_routes import router as admin_router
 from backend.api.auth_routes import router as auth_router
 from backend.api.credential_routes import router as credential_router
 from backend.api.health_routes import router as health_router
@@ -23,7 +24,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings.validate_runtime_secrets()
     try:
         await runtime.start()
-    except SQLAlchemyError:
+    except (SQLAlchemyError, OSError):
         if settings.is_production:
             raise
     try:
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(metrics_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
+    app.include_router(admin_router, prefix="/api")
     app.include_router(project_router, prefix="/api")
     app.include_router(credential_router, prefix="/api")
     app.include_router(workflow_router, prefix="/api")

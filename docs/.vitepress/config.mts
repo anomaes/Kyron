@@ -75,6 +75,7 @@ export default defineConfig({
           text: "Use Kyron",
           items: [
             { text: "Projects and credentials", link: "/guides/projects-and-credentials" },
+            { text: "Access and governance", link: "/guides/access-and-governance" },
             { text: "Visual workflow builder", link: "/guides/workflow-builder" },
             { text: "Run workflows", link: "/guides/running-workflows" },
             { text: "Reviews and feedback", link: "/guides/review-and-feedback" },

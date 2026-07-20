@@ -19,6 +19,20 @@ def test_complete_domain_tables_are_declared() -> None:
         "run_logs",
         "webhook_deliveries",
         "resource_audit_logs",
+        "project_memberships",
+        "project_roles",
+        "project_role_permissions",
+        "project_membership_roles",
+        "approval_policies",
+        "approval_policy_requirements",
+        "approval_requirement_roles",
+        "approval_requirement_users",
+        "governance_profiles",
+        "gate_instances",
+        "gate_decisions",
+        "authorization_audit_events",
+        "run_reports",
+        "change_request_lifecycle_events",
     }
 
 

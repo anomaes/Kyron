@@ -13,3 +13,4 @@ class UserResponse(BaseModel):
     provider: str
     provider_user_id: str
     provider_username: str
+    is_system_admin: bool

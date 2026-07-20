@@ -67,9 +67,7 @@ class ReconciliationService:
     async def reconcile(self) -> None:
         now = datetime.now(UTC)
         stale_before = now - timedelta(days=self.settings.STALE_FAILED_RUN_DAYS)
-        terminal_before = now - timedelta(
-            days=self.settings.TERMINAL_WORKTREE_RETENTION_DAYS
-        )
+        terminal_before = now - timedelta(days=self.settings.TERMINAL_WORKTREE_RETENTION_DAYS)
         output_before = now - timedelta(days=self.settings.RUN_OUTPUT_RETENTION_DAYS)
         runs = list(
             await self.session.scalars(
@@ -79,10 +77,7 @@ class ReconciliationService:
                 )
             )
         )
-        projects = {
-            project.id: project
-            for project in await self.session.scalars(select(Project))
-        }
+        projects = {project.id: project for project in await self.session.scalars(select(Project))}
 
         for run in runs:
             project = projects.get(run.project_id)
@@ -163,9 +158,7 @@ class ReconciliationService:
         await self.session.commit()
         await self._prune_projects(projects.values())
 
-    async def _change_request_state(
-        self, run: WorkflowRun, project: Project
-    ) -> str | None:
+    async def _change_request_state(self, run: WorkflowRun, project: Project) -> str | None:
         if run.change_request_number is None or run.worktree_path is None:
             return None
         if self.cipher is None:
@@ -191,12 +184,8 @@ class ReconciliationService:
             token = ""
         return change_request.state
 
-    async def _warn_long_open_change_request(
-        self, run: WorkflowRun, now: datetime
-    ) -> None:
-        opened_at = _as_utc(
-            run.change_request_created_at or run.finished_at or run.created_at
-        )
+    async def _warn_long_open_change_request(self, run: WorkflowRun, now: datetime) -> None:
+        opened_at = _as_utc(run.change_request_created_at or run.finished_at or run.created_at)
         warning_age = timedelta(days=self.settings.LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS)
         if now - opened_at < warning_age:
             return
@@ -206,15 +195,11 @@ class ReconciliationService:
                 RunLog.event_type == "LONG_OPEN_CHANGE_REQUEST",
             )
         )
-        repeat_after = timedelta(
-            days=self.settings.LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS
-        )
+        repeat_after = timedelta(days=self.settings.LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS)
         if last_warning is not None and now - _as_utc(last_warning) < repeat_after:
             return
         age_days = (now - opened_at).days
-        message = (
-            f"Change request has remained open for {age_days} days; its worktree is retained"
-        )
+        message = f"Change request has remained open for {age_days} days; its worktree is retained"
         self.session.add(
             RunLog(
                 run_id=run.id,
@@ -242,9 +227,7 @@ class ReconciliationService:
         resolved_root = root.resolve()
         referenced = await asyncio.to_thread(
             lambda: {
-                Path(run.worktree_path).resolve()
-                for run in runs
-                if run.worktree_path is not None
+                Path(run.worktree_path).resolve() for run in runs if run.worktree_path is not None
             }
         )
         registered = await self._registered_worktrees(projects)
@@ -326,18 +309,14 @@ class ReconciliationService:
             )
             logger.info("Deleted orphan worktree after grace period: %s", resolved)
 
-    async def _registered_worktrees(
-        self, projects: Iterable[Project]
-    ) -> dict[Path, Project]:
+    async def _registered_worktrees(self, projects: Iterable[Project]) -> dict[Path, Project]:
         registered: dict[Path, Project] = {}
         for project in projects:
             repository = Path(project.local_path)
             if not await asyncio.to_thread(repository.is_dir):
                 continue
             try:
-                output = await self.git.run(
-                    ["worktree", "list", "--porcelain"], cwd=repository
-                )
+                output = await self.git.run(["worktree", "list", "--porcelain"], cwd=repository)
             except GitError as exc:
                 logger.warning("Could not list worktrees for project %s: %s", project.id, exc)
                 continue
@@ -347,9 +326,7 @@ class ReconciliationService:
                     registered[await asyncio.to_thread(path.resolve)] = project
         return registered
 
-    async def _latest_orphan_event(
-        self, resource_path: str
-    ) -> ResourceAuditLog | None:
+    async def _latest_orphan_event(self, resource_path: str) -> ResourceAuditLog | None:
         return cast(
             ResourceAuditLog | None,
             await self.session.scalar(

@@ -75,7 +75,7 @@ The script runs backend lint, typing, and tests; installed Node package checks; 
 - Resolve and snapshot every workflow from the run's exact base commit.
 - Keep ordinary graphs acyclic; repetition belongs in `review_loop`.
 - Reset and retry a failed wave as a whole with fresh attempt rows.
-- Only the triggering provider user may control run feedback checkpoints.
+- Only identities snapshotted as eligible by the gate policy may control feedback checkpoints.
 - Consume intermediate provider approval before execution continues.
 - Run exactly one backend worker in production.
 

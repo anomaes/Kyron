@@ -105,7 +105,7 @@ class GitLabClient:
         target_branch: str,
         title: str,
         description: str,
-        reviewer_id: int,
+        reviewer_ids: list[int],
     ) -> dict[str, Any]:
         return await self.request(
             "POST",
@@ -117,7 +117,7 @@ class GitLabClient:
                 "target_branch": target_branch,
                 "title": title,
                 "description": description,
-                "reviewer_ids": [reviewer_id],
+                "reviewer_ids": reviewer_ids,
                 "remove_source_branch": True,
             },
             retry_get=False,
@@ -128,14 +128,14 @@ class GitLabClient:
         project_id: int,
         mr_iid: int,
         token: str,
-        reviewer_id: int,
+        reviewer_ids: list[int],
     ) -> dict[str, Any]:
         return await self.request(
             "PUT",
             f"/projects/{project_id}/merge_requests/{mr_iid}",
             token,
             category="merge request reviewer update",
-            json={"reviewer_ids": [reviewer_id]},
+            json={"reviewer_ids": reviewer_ids},
             retry_get=False,
         )
 
@@ -197,7 +197,7 @@ class GitLabClient:
         target_branch: str,
         title: str,
         description: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> ChangeRequest:
         data = await self.create_merge_request(
             int(repository),
@@ -206,26 +206,24 @@ class GitLabClient:
             target_branch=target_branch,
             title=title,
             description=description,
-            reviewer_id=int(reviewer.id),
+            reviewer_ids=sorted({int(reviewer.id) for reviewer in reviewers}),
         )
         return ChangeRequest(
             number=int(data["iid"]), url=str(data["web_url"]), state=str(data["state"])
         )
 
-    async def update_change_request_reviewer(
+    async def update_change_request_reviewers(
         self,
         repository: str,
         number: int,
         token: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> None:
         await self.update_merge_request_reviewers(
-            int(repository), number, token, int(reviewer.id)
+            int(repository), number, token, sorted({int(reviewer.id) for reviewer in reviewers})
         )
 
-    async def get_change_request(
-        self, repository: str, number: int, token: str
-    ) -> ChangeRequest:
+    async def get_change_request(self, repository: str, number: int, token: str) -> ChangeRequest:
         data = await self.get_merge_request(int(repository), number, token)
         return ChangeRequest(
             number=int(data["iid"]),

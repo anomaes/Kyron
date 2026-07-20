@@ -35,9 +35,7 @@ def repository_locator(provider: str, project_id: str, project_path: str) -> str
 
 
 class CodeHostError(RuntimeError):
-    def __init__(
-        self, provider: str, category: str, status_code: int | None = None
-    ) -> None:
+    def __init__(self, provider: str, category: str, status_code: int | None = None) -> None:
         suffix = f" (HTTP {status_code})" if status_code else ""
         super().__init__(f"{provider_display_name(provider)} {category} request failed{suffix}")
         self.provider = provider
@@ -76,9 +74,7 @@ class CodeHostClient(Protocol):
 
     async def close(self) -> None: ...
 
-    async def get_repository(
-        self, repository: str, token: str
-    ) -> RepositoryMetadata: ...
+    async def get_repository(self, repository: str, token: str) -> RepositoryMetadata: ...
 
     async def create_change_request(
         self,
@@ -89,15 +85,15 @@ class CodeHostClient(Protocol):
         target_branch: str,
         title: str,
         description: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> ChangeRequest: ...
 
-    async def update_change_request_reviewer(
+    async def update_change_request_reviewers(
         self,
         repository: str,
         number: int,
         token: str,
-        reviewer: ProviderUser,
+        reviewers: list[ProviderUser],
     ) -> None: ...
 
     async def get_change_request(

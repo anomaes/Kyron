@@ -85,7 +85,9 @@ flowchart LR
 2. Kyron resolves that ref to an exact SHA and snapshots the root workflow plus every transitive child from the same revision.
 3. The engine creates an isolated branch and worktree, then schedules ready nodes in deterministic waves.
 4. Successful waves become Git checkpoints. If one node fails, the whole wave rolls back before a new attempt can start.
-5. Human-feedback and review-loop nodes pause execution behind provider review. Only the triggering user on that provider can continue the checkpoint.
+5. Human-feedback and review-loop nodes pause execution behind reusable project approval
+   policies. Eligible provider identities are snapshotted per checkpoint and execution
+   continues only after all configured quorum requirements are satisfied.
 6. Kyron persists the final state, commit, logs, attempts, and change-request metadata for later inspection or recovery.
 
 Workflow definitions live in the repository at `.workflowEngine/<workflow_id>.json`, so orchestration logic is versioned and reviewed alongside the code it changes.

@@ -5,7 +5,8 @@ description: Add human checkpoints and control them through Kyron or the code ho
 
 # Reviews and feedback
 
-Human control in Kyron is not an informal pause. It is a durable checkpoint tied to the run's triggering provider identity and active change request.
+Human control in Kyron is not an informal pause. It is a durable checkpoint tied to an
+exact commit, a snapshotted project approval policy, and the active change request.
 
 ## Human feedback node
 
@@ -18,6 +19,7 @@ Use `human_feedback` when the workflow should stop once, present the current bra
   "label": "Review implementation",
   "join": "and",
   "config": {
+    "approval_policy": "production-review",
     "commit_message": "Checkpoint: implementation ready for review",
     "mr_title": "Review ${WORKFLOW_NAME}",
     "mr_description": "Inspect run ${RUN_ID} at ${BASE_COMMIT_SHA}.",
@@ -28,17 +30,20 @@ Use `human_feedback` when the workflow should stop once, present the current bra
 }
 ```
 
-When reached, Kyron commits pending work, pushes the branch, creates or updates the change request, ensures the triggering user is a reviewer, and sets the run to `awaiting_feedback`.
+When reached, Kyron commits pending work, resolves the selected approval policy, snapshots
+eligible users and requirements, requests their provider identities as reviewers, and sets
+the run to `awaiting_feedback`.
 
 ## Who may continue the run
 
-The provider user ID captured when the run was triggered is authoritative. Matching by email or username is not enough. The same person using another provider account cannot control the checkpoint.
+Provider user IDs in the gate eligibility snapshot are authoritative. Matching by email or
+username is not enough. Role changes do not alter an already-open gate.
 
-Frontend actions also require the active session provider to match the run provider. Webhooks authenticate their raw request, normalize the provider event, verify project identity, and compare the actor to the run's reviewer snapshot.
+Frontend actions also require the active session provider to match the run provider. Webhooks authenticate their raw request, normalize the provider event, verify project identity, and compare the actor to the open gate's eligibility snapshot.
 
 ## Approval
 
-Approval says “continue without revision.” It can arrive from Kyron's run detail or a provider approval event.
+Approval says “continue without revision.” It can arrive from Kyron's run detail or a provider approval event. Kyron records partial approvals and remains paused until every policy requirement reaches quorum.
 
 Before execution continues, Kyron consumes the intermediate provider approval:
 

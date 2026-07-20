@@ -130,6 +130,7 @@ class PromptConfig(StrictModel):
 
 
 class HumanFeedbackConfig(StrictModel):
+    approval_policy: Identifier
     commit_message: str = "Checkpoint: awaiting review"
     mr_title: str | None = None
     mr_description: str | None = None
@@ -145,6 +146,7 @@ class SubworkflowConfig(StrictModel):
 
 
 class ReviewLoopConfig(StrictModel):
+    approval_policy: Identifier
     initial_workflow_id: Identifier
     revision_workflow_id: Identifier | None = None
     inputs: dict[Identifier, str] = Field(default_factory=dict)

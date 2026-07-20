@@ -108,7 +108,7 @@ Ensure the VM can resolve and reach the provider over HTTPS and that the provide
 - [ ] A session cannot mutate a project on the other provider.
 - [ ] Repository validation returns canonical metadata.
 - [ ] Clone, fetch, branch push, and change-request creation succeed.
-- [ ] Reviewer assignment succeeds for the triggering user.
+- [ ] Reviewer assignment succeeds for every identity selected by an approval policy.
 - [ ] Signed webhooks are accepted and altered bodies are rejected.
 - [ ] Duplicate delivery IDs are ignored.
 - [ ] An intermediate approval is consumed successfully.

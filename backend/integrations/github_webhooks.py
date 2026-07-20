@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Project, WorkflowRun
+from backend.db.models import ChangeRequestLifecycleEvent, Project, WorkflowRun
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 
@@ -93,9 +93,25 @@ async def route_github_event(
         return {"status": "processed", "action": "comment"}
 
     if event_name == "pull_request" and action == "closed":
+        lifecycle_action = "merge" if pull_request.get("merged") is True else "close"
+        session.add(
+            ChangeRequestLifecycleEvent(
+                run_id=run.id,
+                event_type=lifecycle_action,
+                provider="github",
+                actor_provider_user_id=str(actor_id),
+                actor_username=actor_username,
+                merge_commit_sha=(
+                    str(pull_request["merge_commit_sha"])
+                    if pull_request.get("merge_commit_sha")
+                    else None
+                ),
+            )
+        )
+        await session.commit()
         await cleanup.cleanup_run(run.id)
         return {
             "status": "processed",
-            "action": "merge" if pull_request.get("merged") is True else "close",
+            "action": lifecycle_action,
         }
     return {"status": "ignored", "reason": "unhandled_event"}

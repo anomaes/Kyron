@@ -43,7 +43,7 @@ The log WebSocket accepts `after_id`. On reconnect, the server first replays dur
 
 | Outcome | What to do |
 | --- | --- |
-| `awaiting_feedback` | The triggering provider user should approve or comment at the active checkpoint. |
+| `awaiting_feedback` | Eligible reviewers should satisfy the active policy quorum or provide revision feedback. |
 | `failed` | Inspect the failed wave and attempt, correct the cause, then resume if safe. |
 | `interrupted` | The backend restarted or lost ownership; inspect and explicitly resume. |
 | `completed` | Review the final branch/change request and obtain fresh provider approval before merge. |

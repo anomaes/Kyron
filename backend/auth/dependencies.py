@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, WebSocket, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
@@ -26,6 +26,7 @@ class AuthenticatedUser:
     provider: str
     provider_user_id: str
     provider_username: str
+    is_system_admin: bool = False
 
 
 async def upsert_user(
@@ -49,11 +50,13 @@ async def upsert_user(
     )
     now = datetime.now(UTC)
     if identity is None:
+        user_count = await session.scalar(select(func.count()).select_from(User))
         user = User(
             email=email,
             display_name=display_name,
             avatar_url=avatar_url,
             last_login_at=now,
+            is_system_admin=(user_count or 0) == 0,
         )
         session.add(user)
         await session.flush()
@@ -69,6 +72,8 @@ async def upsert_user(
         if existing_user is None:
             raise RuntimeError("Provider identity has no user")
         user = existing_user
+        if not user.is_active:
+            raise PermissionError("This Kyron user has been disabled")
         user.email = email
         user.display_name = display_name
         user.avatar_url = avatar_url
@@ -87,6 +92,7 @@ async def upsert_user(
         provider=identity.provider,
         provider_user_id=identity.provider_user_id,
         provider_username=identity.username,
+        is_system_admin=user.is_system_admin,
     )
 
 
@@ -119,7 +125,7 @@ async def resolve_current_user(
             provider_user_id=x_token_provider_user_id,
             provider_username=x_token_provider_username,
         )
-    except ValueError as exc:
+    except (ValueError, PermissionError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
 

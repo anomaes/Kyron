@@ -13,7 +13,7 @@ Kyron stores state at several levels. A run status is the operator-facing summar
 | --- | --- | --- |
 | `queued` | Snapshot exists and run awaits coordinator ownership | Automatic scheduling |
 | `running` | Engine is scheduling or executing work | Observe or cancel |
-| `awaiting_feedback` | Active human or review-loop checkpoint | Triggering user approves or comments |
+| `awaiting_feedback` | Active human or review-loop checkpoint | Eligible reviewers satisfy the policy quorum or give feedback |
 | `failed` | Required work or a control transition failed | Diagnose, then resume when safe |
 | `interrupted` | Active ownership was lost, usually across restart | Inspect, then explicitly resume |
 | `completed` | Workflow execution and finalization succeeded | Review and merge the change request |
@@ -56,7 +56,7 @@ A node becomes skipped when its incoming edge decisions and join mode prove that
 At a checkpoint, feedback is accepted only when:
 
 - the run is waiting at the matching execution;
-- the actor is the triggering provider identity;
+- the actor is an eligible provider identity in the active gate snapshot;
 - the event type is allowed by node configuration;
 - the provider delivery has not already been consumed; and
 - intermediate approval can be reset/dismissed when required.

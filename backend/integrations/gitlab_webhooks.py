@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Project, WorkflowRun
+from backend.db.models import ChangeRequestLifecycleEvent, Project, WorkflowRun
 from backend.db.statuses import RunStatus
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
@@ -93,6 +93,21 @@ async def route_gitlab_event(
         return {"status": "processed", "action": "comment"}
 
     if object_kind == "merge_request" and action in {"merge", "close"}:
+        session.add(
+            ChangeRequestLifecycleEvent(
+                run_id=run.id,
+                event_type=action,
+                provider="gitlab",
+                actor_provider_user_id=str(actor_id),
+                actor_username=actor_username,
+                merge_commit_sha=(
+                    str(attributes["merge_commit_sha"])
+                    if attributes.get("merge_commit_sha")
+                    else None
+                ),
+            )
+        )
+        await session.commit()
         await cleanup.cleanup_run(run.id)
         return {"status": "processed", "action": action}
     return {"status": "ignored", "reason": "unhandled_event"}

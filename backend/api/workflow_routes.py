@@ -5,6 +5,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from backend.auth.authorization import (
+    RUN_TRIGGER,
+    WORKFLOW_EDIT,
+    WORKFLOW_PUBLISH,
+    WORKFLOW_VIEW,
+    audit_event,
+    authorize_project,
+)
 from backend.auth.dependencies import CurrentUser, DbSession, require_project_provider
 from backend.config import Settings, get_settings
 from backend.db.models import Project
@@ -15,10 +23,12 @@ from backend.lifecycle import runtime
 from backend.schemas.run import RunTriggerRequest, RunTriggerResponse
 from backend.schemas.workflow import (
     NodeTemplate,
+    ValidationIssue,
     WorkflowDefinition,
     WorkflowValidationRequest,
     WorkflowValidationResponse,
 )
+from backend.services.approval_policy_service import ApprovalPolicyService
 from backend.services.workflow_service import WorkflowConflictError, WorkflowService
 
 router = APIRouter(prefix="/projects/{project_id}/workflows", tags=["workflows"])
@@ -59,6 +69,7 @@ async def list_workflows(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     sha, definitions = await workflows.list(project)
     change_status = await workflows.change_status(project)
     return {
@@ -82,6 +93,7 @@ async def list_node_templates(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     sha, templates = await workflows.list_templates(project)
     return {
         "base_commit_sha": sha,
@@ -100,13 +112,25 @@ async def save_node_template(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, WORKFLOW_EDIT)
     raw = request.get("template")
     expected = request.get("expected_base_commit_sha")
     if not isinstance(raw, dict) or not isinstance(expected, str):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid template request")
     try:
         template = NodeTemplate.model_validate(raw)
-        return await workflows.save_template(project, template, expected)
+        result = await workflows.save_template(project, template, expected)
+        db.add(
+            audit_event(
+                user,
+                "NODE_TEMPLATE_SAVED",
+                "node_template",
+                project_id=project_id,
+                target_id=template.id,
+            )
+        )
+        await db.commit()
+        return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
@@ -124,8 +148,22 @@ async def delete_node_template(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, WORKFLOW_EDIT)
     try:
-        return await workflows.delete_template(project, template_id, expected_base_commit_sha)
+        result = await workflows.delete_template(
+            project, template_id, expected_base_commit_sha
+        )
+        db.add(
+            audit_event(
+                user,
+                "NODE_TEMPLATE_DELETED",
+                "node_template",
+                project_id=project_id,
+                target_id=template_id,
+            )
+        )
+        await db.commit()
+        return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
@@ -140,6 +178,7 @@ async def definition_change_status(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     return await workflows.change_status(project)
 
 
@@ -153,11 +192,26 @@ async def publish_definition_changes(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, WORKFLOW_PUBLISH)
     expected = request.get("expected_base_commit_sha")
     if not isinstance(expected, str):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid review request")
     try:
-        return await workflows.publish_changes(project, user, expected)
+        _, definitions = await workflows.list(project)
+        for definition in definitions:
+            await ApprovalPolicyService(db).validate_definition(project, definition)
+        result = await workflows.publish_changes(project, user, expected)
+        db.add(
+            audit_event(
+                user,
+                "WORKFLOW_CHANGES_PUBLISHED",
+                "workflow_change_set",
+                project_id=project_id,
+                details={"change_request_url": result.get("change_request_url")},
+            )
+        )
+        await db.commit()
+        return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
@@ -173,6 +227,7 @@ async def get_workflow(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     try:
         sha, definition = await workflows.get(project, workflow_id)
     except LookupError as exc:
@@ -193,7 +248,18 @@ async def validate_workflow(
     workflows: WorkflowServiceDependency,
 ) -> WorkflowValidationResponse:
     project = await project_or_404(db, project_id)
-    return await workflows.validate(project, request.workflow, request.proposed_related_workflows)
+    await authorize_project(db, _, project_id, WORKFLOW_EDIT)
+    report = await workflows.validate(project, request.workflow, request.proposed_related_workflows)
+    if report.valid:
+        try:
+            definition = WorkflowDefinition.model_validate(request.workflow)
+            await ApprovalPolicyService(db).validate_definition(project, definition)
+        except ValueError as exc:
+            report.valid = False
+            report.errors.append(
+                ValidationIssue(path="workflow", code="GOVERNANCE_ERROR", message=str(exc))
+            )
+    return report
 
 
 @router.post("/{workflow_id}/runs", response_model=RunTriggerResponse)
@@ -207,6 +273,7 @@ async def trigger_workflow(
 ) -> RunTriggerResponse:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, RUN_TRIGGER)
     try:
         run = await workflows.create_run(
             project,
@@ -219,6 +286,18 @@ async def trigger_workflow(
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     await runtime.schedule(run.id)
+    db.add(
+        audit_event(
+            user,
+            "RUN_TRIGGERED",
+            "workflow_run",
+            project_id=project_id,
+            run_id=run.id,
+            target_id=str(run.id),
+            details={"workflow_id": workflow_id, "base_commit_sha": run.base_commit_sha},
+        )
+    )
+    await db.commit()
     return RunTriggerResponse(run_id=run.id, status=run.status, base_commit_sha=run.base_commit_sha)
 
 
@@ -233,6 +312,7 @@ async def save_workflow(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, WORKFLOW_EDIT)
     raw = request.get("workflow")
     expected = request.get("expected_base_commit_sha")
     if not isinstance(raw, dict) or not isinstance(expected, str):
@@ -243,6 +323,10 @@ async def save_workflow(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     if definition.id != workflow_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Workflow ID mismatch")
+    try:
+        await ApprovalPolicyService(db).validate_definition(project, definition)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     report = await workflows.validate(project, raw, {})
     if not report.valid:
         raise HTTPException(
@@ -250,7 +334,18 @@ async def save_workflow(
             {"code": "VALIDATION_ERROR", "errors": [item.model_dump() for item in report.errors]},
         )
     try:
-        return await workflows.save_draft(project, definition, expected)
+        result = await workflows.save_draft(project, definition, expected)
+        db.add(
+            audit_event(
+                user,
+                "WORKFLOW_SAVED",
+                "workflow_definition",
+                project_id=project_id,
+                target_id=workflow_id,
+            )
+        )
+        await db.commit()
+        return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
@@ -266,6 +361,7 @@ async def delete_workflow(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     require_project_provider(user, project.provider)
+    await authorize_project(db, user, project_id, WORKFLOW_EDIT)
     _, definitions = await workflows.list(project)
     definition = next((item for item in definitions if item.id == workflow_id), None)
     if definition is None:
@@ -285,7 +381,20 @@ async def delete_workflow(
             },
         )
     try:
-        return await workflows.delete_draft(project, workflow_id, expected_base_commit_sha)
+        result = await workflows.delete_draft(
+            project, workflow_id, expected_base_commit_sha
+        )
+        db.add(
+            audit_event(
+                user,
+                "WORKFLOW_DELETED",
+                "workflow_definition",
+                project_id=project_id,
+                target_id=workflow_id,
+            )
+        )
+        await db.commit()
+        return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
@@ -301,6 +410,7 @@ async def workflow_references(
     workflows: WorkflowServiceDependency,
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
+    await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     _base_sha, definitions = await workflows.list(project)
     direct = next(
         (definition for definition in definitions if definition.id == workflow_id),

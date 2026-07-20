@@ -53,3 +53,26 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .danger-mark { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 50%; background: #ffe2df; color: #a23d36; font-size: 25px; }
 .project-actions { flex-wrap: wrap; }
 .project-actions > a { flex-basis: 100%; }
+.admin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.admin-panel { min-height: 180px; }
+.admin-panel-wide { grid-column: 1 / -1; overflow-x: auto; }
+.admin-panel .panel-title button { padding: 7px 10px; }
+.admin-list-item { padding: 15px 17px; border-bottom: 1px solid var(--line); }
+.admin-list-item:last-child { border-bottom: 0; }
+.admin-list-item strong, .admin-list-item code { display: block; }
+.admin-list-item code { margin-top: 4px; color: var(--muted); }
+.admin-list-item p, .admin-list-item small { color: var(--muted); font-size: 11px; }
+.modal select { width: 100%; border: 1px solid #d5d7cc; border-radius: 7px; background: white; padding: 10px 11px; color: var(--ink); font: 13px Manrope; }
+.report-panel { margin-top: 16px; }
+.report-summary { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+.report-summary > div { display: grid; gap: 5px; padding: 15px 17px; border-right: 1px solid var(--line); }
+.report-summary span, .report-gate small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; }
+.report-gate { padding: 18px; border-bottom: 1px solid var(--line); }
+.report-gate header { display: flex; justify-content: space-between; align-items: center; }
+.report-gate h3 { margin: 4px 0; font-size: 14px; }
+.report-gate > p { color: var(--muted); font-size: 11px; }
+.report-requirement, .report-decision { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 8px; padding: 9px 11px; background: #f2f1eb; border-radius: 7px; font-size: 11px; }
+.report-decision { grid-template-columns: 90px 1fr auto; }
+.report-decision p { grid-column: 2 / -1; margin: 0; }
+.report-decision.superseded { opacity: .55; text-decoration: line-through; }
+.lifecycle-event { padding: 0 17px; color: var(--muted); font-size: 11px; }

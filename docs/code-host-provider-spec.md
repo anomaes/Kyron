@@ -45,15 +45,15 @@ contract normalizes these operations:
 
 1. validate repository metadata;
 2. create a merge request or pull request;
-3. request or refresh the triggering user as reviewer;
+3. request or refresh the complete gate reviewer set;
 4. inspect change-request lifecycle state;
 5. post a traceability comment;
 6. consume an intermediate approval so final merge requires a fresh approval.
 
 GitLab implements approval consumption with approval synchronization followed by
 `reset_approvals`. GitHub dismisses the submitted approving review. For a frontend
-approval, GitHub looks up and dismisses any active approval from the triggering
-reviewer; if none exists, there is no provider approval to consume. Repository
+approval, GitHub looks up and dismisses active reviews that satisfied the gate;
+if none exist, there is no provider approval to consume. Repository
 policy must require approving reviews for the fresh-final-approval guarantee.
 
 Provider responses are converted immediately into `RepositoryMetadata`,

@@ -6,6 +6,7 @@ export type User = {
   provider: "gitlab" | "github";
   provider_user_id: string;
   provider_username: string;
+  is_system_admin: boolean;
 };
 
 export type PiSettings = {
@@ -143,6 +144,61 @@ export type RunGraph = {
   attempts: Array<Record<string, unknown>>;
   edge_evaluations: Array<Record<string, unknown>>;
   feedback: Array<{ node_execution_id: string; iteration: number; message: string; event_type: string }>;
+  gates: GateInstance[];
+  gate_decisions: GateDecision[];
+};
+
+export type ProjectAccess = { permissions: string[]; is_system_admin: boolean };
+
+export type ProjectRole = {
+  id: string; project_id: string; key: string; name: string; description: string;
+  is_builtin: boolean; permissions: string[];
+};
+
+export type ProjectMembership = {
+  id: string; project_id: string; user_id: string; display_name: string; email: string;
+  is_active: boolean; role_keys: string[];
+};
+
+export type ApprovalRequirement = {
+  key: string; name: string; quorum: number; role_keys: string[]; user_ids: string[];
+};
+
+export type ApprovalPolicy = {
+  id: string; project_id: string; key: string; name: string; description: string; enabled: boolean;
+  initiator_may_approve: boolean; distinct_approvers_across_requirements: boolean;
+  eligible_approvers_may_give_feedback: boolean; requirements: ApprovalRequirement[];
+};
+
+export type GateInstance = {
+  id: string; run_id: string; invocation_id: string; node_execution_id: string; iteration: number;
+  checkpoint_commit_sha: string; policy_key: string; status: string; opened_at: string;
+  resolved_at: string | null;
+  policy_snapshot: {
+    name: string; distinct_approvers_across_requirements: boolean;
+    requirements: Array<{ key: string; name: string; quorum: number }>;
+  };
+  eligible_snapshot: {
+    requirements: Array<{ key: string; name: string; quorum: number; users: Array<{
+      user_id: string; provider: string; provider_user_id: string; provider_username: string;
+      display_name: string; email: string;
+    }> }>;
+  };
+};
+
+export type GateDecision = {
+  id: string; gate_instance_id: string; event_type: string; source: string;
+  actor_user_id: string | null; actor_snapshot: Record<string, string>;
+  requirement_keys: string[]; message: string; superseded: boolean; created_at: string;
+};
+
+export type RunReport = {
+  schema_version: number; frozen: boolean; generated_at: string;
+  run: Record<string, unknown> & { id: string; status: string; root_workflow_id: string; project_name: string };
+  invocations: Array<Record<string, unknown>>;
+  gates: Array<GateInstance & { workflow_id: string; invocation_path: string; node_id: string; node_path: string; decisions: GateDecision[] }>;
+  audit_events: Array<Record<string, unknown>>;
+  post_run_lifecycle: Array<Record<string, unknown>>;
 };
 
 export type LogEvent = {

@@ -49,14 +49,14 @@ export function ProjectsPage() {
   }
   return (
     <section>
-      <header className="page-header"><div><p className="eyebrow">Repository registry</p><h1>Projects</h1><p>Connect GitLab and GitHub repositories and manage their workflow catalog.</p></div><button onClick={() => setOpen(true)}>Add project</button></header>
+      <header className="page-header"><div><p className="eyebrow">Repository registry</p><h1>Projects</h1><p>Connect GitLab and GitHub repositories and manage their workflow catalog.</p></div>{user.data?.is_system_admin && <button onClick={() => setOpen(true)}>Add project</button>}</header>
       {projects.isLoading ? <div className="skeleton tall" /> : projects.data?.length ? (
         <div className="card-grid">{projects.data.map((project) => (
           <article className="card project-card" key={project.id}>
             <div className="card-top"><span className="repo-icon">⌘</span><span className="badge success">{project.provider.toUpperCase()} · TOKEN READY</span></div>
             <h2>{project.name}</h2><p className="mono muted truncate">{project.git_url}</p>
             <dl><div><dt>Repository</dt><dd>{project.provider_project_path}</dd></div><div><dt>Default branch</dt><dd>{project.default_branch}</dd></div><div><dt>Pi model</dt><dd>{project.pi.model ?? "Pi default"}</dd></div></dl>
-            <div className="card-actions project-actions"><Link className="button" to={`/projects/${project.id}/workflows`}>View workflows</Link><button className="secondary" disabled={user.data?.provider !== project.provider} onClick={() => setPiTarget(project)}>Pi defaults</button><button className="secondary" disabled={user.data?.provider !== project.provider} title={user.data?.provider !== project.provider ? `Sign in with ${project.provider} to fetch` : undefined} onClick={() => api(`/projects/${project.id}/fetch`, { method: "POST" })}>Fetch</button><button className="danger" disabled={user.data?.provider !== project.provider} title={user.data?.provider !== project.provider ? `Sign in with ${project.provider} to remove` : "Remove project"} onClick={() => { remove.reset(); setDeleteTarget(project); }}>Remove</button></div>
+            <div className="card-actions project-actions"><Link className="button" to={`/projects/${project.id}/workflows`}>View workflows</Link><Link className="button secondary" to={`/projects/${project.id}/admin`}>Access & governance</Link>{user.data?.is_system_admin && <><button className="secondary" disabled={user.data?.provider !== project.provider} onClick={() => setPiTarget(project)}>Pi defaults</button><button className="secondary" disabled={user.data?.provider !== project.provider} title={user.data?.provider !== project.provider ? `Sign in with ${project.provider} to fetch` : undefined} onClick={() => api(`/projects/${project.id}/fetch`, { method: "POST" })}>Fetch</button><button className="danger" disabled={user.data?.provider !== project.provider} title={user.data?.provider !== project.provider ? `Sign in with ${project.provider} to remove` : "Remove project"} onClick={() => { remove.reset(); setDeleteTarget(project); }}>Remove</button></>}</div>
           </article>
         ))}</div>
       ) : <EmptyState title="No projects connected">Register a repository to begin creating workflows.</EmptyState>}

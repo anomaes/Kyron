@@ -57,7 +57,7 @@ async def test_pull_request_creation_requests_triggering_user_as_reviewer() -> N
             target_branch="main",
             title="Run",
             description="Review",
-            reviewer=ProviderUser(id="7", username="alice"),
+            reviewers=[ProviderUser(id="7", username="alice")],
         )
     assert change_request.number == 17
     assert requests[1] == (

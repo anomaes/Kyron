@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
+    GateInstance,
     NodeExecution,
     Project,
     User,
@@ -52,14 +53,18 @@ async def waiting_run(
             "id": "review",
             "type": "review_loop",
             "label": "review",
-            "config": {"initial_workflow_id": "child", "max_iterations": 3},
+            "config": {
+                "approval_policy": "review",
+                "initial_workflow_id": "child",
+                "max_iterations": 3,
+            },
         }
         if review_loop
         else {
             "id": "wait",
             "type": "human_feedback",
             "label": "wait",
-            "config": {},
+            "config": {"approval_policy": "review"},
         }
     )
     root_definition = WorkflowDefinition.model_validate(workflow(nodes=[node]))
@@ -111,12 +116,48 @@ async def waiting_run(
     )
     run.current_invocation_id = invocation.id
     run.current_node_execution_id = execution.id
-    session.add_all([user, project, run, invocation, execution])
+    gate = GateInstance(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        node_execution_id=execution.id,
+        iteration=1,
+        checkpoint_commit_sha="b" * 40,
+        policy_key="review",
+        policy_snapshot={
+            "key": "review",
+            "name": "Review",
+            "distinct_approvers_across_requirements": True,
+            "eligible_approvers_may_give_feedback": True,
+            "requirements": [{"key": "review", "name": "Review", "quorum": 1}],
+        },
+        eligible_snapshot={
+            "requirements": [
+                {
+                    "key": "review",
+                    "name": "Review",
+                    "quorum": 1,
+                    "users": [
+                        {
+                            "user_id": str(user.id),
+                            "display_name": user.display_name,
+                            "email": user.email,
+                            "provider": "gitlab",
+                            "provider_user_id": "777",
+                            "provider_username": "reviewer",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    session.add_all([user, project, run, invocation, execution, gate])
     await session.commit()
     return run, user, execution
 
 
-async def test_only_triggering_user_is_accepted(db_session: AsyncSession, tmp_path: Path) -> None:
+async def test_only_policy_eligible_user_is_accepted(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     cipher = SecretCipher(Fernet.generate_key())
     run, _, _ = await waiting_run(db_session, tmp_path, cipher)
     async with httpx.AsyncClient(
@@ -162,7 +203,7 @@ async def test_review_comment_creates_next_iteration_and_schedules(
             author_username="reviewer",
             message="update docs",
         )
-    assert event.iteration == 1
+    assert event.event_type == "comment"
     assert execution.status == NodeStatus.PENDING
     assert execution.output_values["review_iteration"] == 2
     assert run.public_context["FEEDBACK"] == "update docs"

@@ -21,6 +21,12 @@ headers and secrets.
 | GET | `/api/health` | Worker and database health |
 | GET | `/api/metrics` | Authenticated Prometheus-format storage metrics |
 | GET | `/api/auth/me` | Current user and active provider identity |
+| GET/PATCH | `/api/admin/users[/{user_id}]` | System-administrator user activation and global-admin management |
+| GET | `/api/projects/{project_id}/access` | Current project permissions |
+| GET/POST/PUT | `/api/projects/{project_id}/roles[...]` | Project role management |
+| GET/PUT | `/api/projects/{project_id}/memberships[...]` | Project membership and role assignment |
+| GET/PUT | `/api/projects/{project_id}/approval-policies[...]` | Reusable quorum approval policies |
+| GET/PUT | `/api/projects/{project_id}/governance-profiles[...]` | Workflow conformance profiles |
 | GET/POST | `/api/projects` | List or register repositories |
 | GET/DELETE | `/api/projects/{project_id}` | Inspect or remove a project |
 | PUT | `/api/projects/{project_id}/token` | Replace the write-only project token |
@@ -41,6 +47,7 @@ headers and secrets.
 | GET | `/api/runs` | Filtered, paginated run list |
 | GET | `/api/runs/{run_id}` | Durable run state |
 | GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, waves, nodes, attempts, edges, feedback |
+| GET | `/api/runs/{run_id}/report` | Live or immutable terminal traceability report plus post-run lifecycle addenda |
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}` | Node and attempt history |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}/output` | Safe stdout/stderr/Pi event retrieval |
@@ -48,6 +55,7 @@ headers and secrets.
 | POST | `/api/runs/{run_id}/resume` | Restore the failed wave as a new attempt |
 | POST | `/api/runs/{run_id}/approve` | Continue the current human checkpoint |
 | POST | `/api/runs/{run_id}/feedback` | Submit revision feedback and continue |
+| POST | `/api/runs/{run_id}/override-gate` | Audited project-administrator gate override with reason |
 | POST | `/api/webhook/gitlab` | Authenticated, idempotent GitLab events |
 | POST | `/api/webhook/github` | Authenticated, idempotent GitHub events |
 | WS | `/api/ws/runs/{run_id}/logs?after_id=N` | Replayed then live run events |

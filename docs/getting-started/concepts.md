@@ -73,7 +73,11 @@ Secrets are never valid `${...}` template variables. They are decrypted just in 
 
 ## Human checkpoint
 
-A human checkpoint pauses execution while a change request is ready for the triggering user. Feedback can enter through Kyron or an authenticated provider webhook. The event is deduplicated, its actor is verified, any intermediate provider approval is consumed, and the run continues from durable state.
+A human checkpoint pauses execution while a change request is ready for the identities
+selected by its reusable project approval policy. Decisions can enter through Kyron or an
+authenticated provider webhook. Events are deduplicated, eligibility and quorum are
+verified, intermediate approvals are consumed when the gate resolves, and the run continues
+from durable state.
 
 ## Change request
 

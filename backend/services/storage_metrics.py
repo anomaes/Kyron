@@ -44,8 +44,7 @@ def prometheus_storage_metrics(usages: list[StorageRootUsage]) -> str:
         "# TYPE kyron_storage_root_bytes gauge",
     ]
     lines.extend(
-        f'kyron_storage_root_bytes{{root="{usage.name}"}} {usage.bytes}'
-        for usage in usages
+        f'kyron_storage_root_bytes{{root="{usage.name}"}} {usage.bytes}' for usage in usages
     )
     lines.extend(
         [
@@ -54,8 +53,7 @@ def prometheus_storage_metrics(usages: list[StorageRootUsage]) -> str:
         ]
     )
     lines.extend(
-        f'kyron_storage_root_files{{root="{usage.name}"}} {usage.files}'
-        for usage in usages
+        f'kyron_storage_root_files{{root="{usage.name}"}} {usage.files}' for usage in usages
     )
     for metric, help_text, attribute in (
         ("filesystem_capacity_bytes", "Filesystem capacity in bytes.", "filesystem_capacity_bytes"),
@@ -95,8 +93,7 @@ def prometheus_storage_metrics(usages: list[StorageRootUsage]) -> str:
         ]
     )
     lines.extend(
-        f'kyron_storage_filesystem_warning{{root="{usage.name}"}} '
-        f"{int(usage.filesystem_warning)}"
+        f'kyron_storage_filesystem_warning{{root="{usage.name}"}} {int(usage.filesystem_warning)}'
         for usage in usages
     )
     return "\n".join(lines) + "\n"

@@ -16,6 +16,7 @@ Ordinary Kyron graphs are acyclic. A `review_loop` is the one deliberate repetit
   "label": "Implement until approved",
   "join": "and",
   "config": {
+    "approval_policy": "production-review",
     "initial_workflow_id": "implement_change",
     "revision_workflow_id": "revise_change",
     "inputs": {
@@ -41,9 +42,9 @@ Ordinary Kyron graphs are acyclic. A `review_loop` is the one deliberate repetit
 1. Set `REVIEW_ITERATION` to `1`.
 2. Invoke `initial_workflow_id` with `inputs`.
 3. Commit and push the iteration checkpoint.
-4. Create or update the run change request and wait for the triggering user.
-5. On approval, consume the intermediate provider approval and complete the loop.
-6. On comment feedback, persist the event, increment the iteration, and invoke the revision workflow with `revision_inputs`.
+4. Resolve and snapshot the policy, create or update the run change request, and wait for eligible reviewers.
+5. Once every approval requirement reaches quorum, consume the intermediate provider approvals and complete the loop.
+6. On eligible comment feedback, supersede prior approvals, persist the event, increment the iteration, and invoke the revision workflow with `revision_inputs`.
 7. Repeat until approval or the iteration bound is reached.
 
 Each iteration is a separate durable child invocation. Run detail therefore shows the exact graph, attempts, and outputs for every round.

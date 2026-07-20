@@ -439,6 +439,7 @@ already used by the repository; otherwise omit them.
   "label": "Await review",
   "join": "and",
   "config": {
+    "approval_policy": "production-review",
     "commit_message": "Checkpoint: awaiting review",
     "mr_title": "Review ${WORKFLOW_NAME}",
     "mr_description": "Approve to continue or submit feedback.",
@@ -451,6 +452,7 @@ already used by the repository; otherwise omit them.
 
 | Config field | Type | Required | Default |
 |---|---|---:|---|
+| `approval_policy` | project policy key | yes | none |
 | `commit_message` | string | no | `Checkpoint: awaiting review` |
 | `mr_title` | string or `null` | no | Workflow MR title template. |
 | `mr_description` | string or `null` | no | Workflow MR description template. |
@@ -458,8 +460,9 @@ already used by the repository; otherwise omit them.
 | `allow_approval` | boolean | no | `true` |
 
 This node checkpoints, pushes, opens or updates the provider change request, and pauses.
-Approval or feedback from the triggering provider user completes it. It does not repeat prior
-nodes; use `review_loop` for revision cycles.
+Eligible reviewers are resolved from the selected policy. Approvals continue only after every
+requirement reaches quorum; eligible feedback completes this standalone node. It does not repeat
+prior nodes, so use `review_loop` for revision cycles.
 
 ### 6.5 Sub-workflow
 
@@ -510,6 +513,7 @@ the same run worktree and branch.
   "label": "Implement and review",
   "join": "and",
   "config": {
+    "approval_policy": "production-review",
     "initial_workflow_id": "implement_change",
     "revision_workflow_id": "revise_change",
     "inputs": {
@@ -533,6 +537,7 @@ the same run worktree and branch.
 
 | Config field | Type | Required | Default / meaning |
 |---|---|---:|---|
+| `approval_policy` | project policy key | yes | none |
 | `initial_workflow_id` | identifier | yes | Child used for iteration 1. |
 | `revision_workflow_id` | identifier or `null` | no | Reuses initial child when omitted. |
 | `inputs` | identifier-to-string object | no | `{}`; mappings for iteration 1. |
