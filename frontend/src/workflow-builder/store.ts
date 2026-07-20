@@ -8,7 +8,7 @@ export type BuilderNode = Node<BuilderData>;
 const defaults: Record<NodeType, Record<string, unknown>> = {
   bash: { command: "echo 'Hello from Kyron'", timeout: 1800, allow_failure: false, shell: "/bin/bash" },
   script: { script: "scripts/task.py", python: "python3", args: [], timeout: 1800, allow_failure: false },
-  prompt: { prompt: "Implement: ${TASK}", provider: "anthropic", model: "", timeout: 1800, allow_failure: false, project_trust: "never" },
+  prompt: { prompt: "Implement: ${TASK}", provider: null, model: null, skill: null, timeout: 1800, allow_failure: false, project_trust: "never" },
   human_feedback: { commit_message: "Checkpoint: awaiting review", mr_title: "Workflow: ${WORKFLOW_NAME}", mr_description: "Approve or comment with @kyron feedback.", allow_comment_feedback: true, allow_approval: true },
   subworkflow: { workflow_id: "child_workflow", inputs: {}, output_mapping: {}, allow_failure: false },
   review_loop: { initial_workflow_id: "implement_changes", revision_workflow_id: "revise_from_feedback", inputs: {}, revision_inputs: { FEEDBACK: "${FEEDBACK}" }, commit_message: "Checkpoint: review iteration ${REVIEW_ITERATION}", max_iterations: 5, output_mapping: {} },

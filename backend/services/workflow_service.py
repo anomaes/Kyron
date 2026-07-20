@@ -27,6 +27,7 @@ from backend.integrations.code_host import (
     repository_locator,
 )
 from backend.integrations.git_manager import GitManager, project_git_locks
+from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import (
     NodeTemplate,
     WorkflowBundle,
@@ -324,6 +325,7 @@ class WorkflowService:
                     max_timeout=self.settings.MAX_NODE_TIMEOUT_SECONDS,
                     max_review_iterations=self.settings.MAX_REVIEW_ITERATIONS,
                     max_subworkflow_depth=self.settings.MAX_SUBWORKFLOW_DEPTH,
+                    project_pi=PiSettings.model_validate(project.pi),
                 )
                 return sha, bundle
         finally:

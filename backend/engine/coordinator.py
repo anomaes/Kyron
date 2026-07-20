@@ -218,6 +218,7 @@ class RunCoordinator:
                     invocation,
                     workflow,
                     process_nodes,  # type: ignore[arg-type]
+                    bundle.project_pi,
                 )
                 continue
             node = decision.nodes[0]

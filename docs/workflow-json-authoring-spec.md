@@ -82,7 +82,7 @@ The root object has this shape. Fields marked required must be present.
 | `variables` | object | no | `{}`; identifier keys and template values. |
 | `nodes` | node array | yes | Must contain at least one node after semantic validation. |
 | `edges` | edge array | no | `[]` |
-| `settings` | settings object | no | `{}` applies all defaults. |
+| `settings` | settings object | no | `{}` applies project and engine defaults. |
 
 Minimal valid workflow:
 
@@ -115,6 +115,42 @@ Minimal valid workflow:
   "settings": {}
 }
 ```
+
+### 3.1 Pi defaults and inheritance
+
+Pi provider, model, and skill selection is resolved independently for every prompt
+node. Each non-null field is taken from the most specific scope that defines it:
+
+```text
+prompt node config -> workflow settings.pi -> project pi defaults -> Pi default
+```
+
+Because resolution is field-by-field, a node may override only `model` while retaining
+the workflow's `provider` and the project's `skill`. `null` and omitted fields inherit
+from the next scope. Project defaults are stored in the Kyron project registry and are
+copied into the immutable run snapshot when a run is created.
+
+The same Pi settings shape is used at project and workflow scope:
+
+```json
+{
+  "provider": "anthropic",
+  "model": "anthropic/claude-sonnet-4-5",
+  "skill": ".agents/skills/implementation/SKILL.md"
+}
+```
+
+All fields are optional. `provider` and `model` are passed to Pi as `--provider` and
+`--model`. `skill` names a Markdown skill manifest or skill directory relative to the
+repository root. A directory must contain `SKILL.md`; a direct manifest must declare a
+Pi-compatible `name` in its YAML frontmatter. The resolved file must remain inside the
+run worktree. Kyron loads that one skill explicitly and invokes its `/skill:<name>`
+command. This works with Pi's project trust disabled and ties the skill contents to
+the run's exact base commit.
+
+Configure project defaults through `PUT /projects/<project_uuid>/pi`. Configure
+workflow defaults under `settings.pi`; configure a prompt-node override with its
+`config.provider`, `config.model`, and `config.skill` fields.
 
 ## 4. Inputs, variables, templates, and outputs
 
@@ -193,7 +229,7 @@ Templates are expanded in these locations:
 - Checkpoint, wave, final-commit, and merge-request templates.
 
 Templates are not expanded in IDs, labels, paths, `script`, `python`, `shell`,
-`provider`, or `model`.
+`provider`, `model`, or `skill`.
 
 Secrets are injected only into subprocess environments. In a Bash command use the
 shell's native `$SECRET_NAME` form for a credential. `${SECRET_NAME}` asks Kyron for
@@ -367,6 +403,7 @@ worktree.
     "prompt": "Implement this task and run relevant tests: ${TASK}",
     "provider": "anthropic",
     "model": "anthropic/claude-sonnet-4-5",
+    "skill": ".agents/skills/implementation/SKILL.md",
     "timeout": 1800,
     "allow_failure": false,
     "project_trust": "never"
@@ -380,12 +417,18 @@ worktree.
 | `prompt` | non-empty string | yes | Public templates are expanded. |
 | `provider` | string or `null` | no | `null`; omitted from Pi command. |
 | `model` | string or `null` | no | `null`; omitted from Pi command. |
+| `skill` | string or `null` | no | `null`; repository-relative skill file or directory. |
 | `timeout` | positive integer or `null` | no | Workflow default timeout. |
 | `allow_failure` | boolean | no | `false` |
 | `project_trust` | `never` | no | Must be `never`. |
 
-Do not invent provider or model names. Use values supplied by the user or already used
-by the repository; otherwise omit both fields.
+Each null or omitted Pi field inherits from `settings.pi`, then from the project. If
+no scope supplies a provider or model, Pi selects its configured default. If `skill`
+resolves to a value, the path must exist at the run's pinned commit; a missing,
+escaping, or malformed skill fails the node before Pi starts.
+
+Do not invent provider, model, or skill values. Use values supplied by the user or
+already used by the repository; otherwise omit them.
 
 ### 6.4 Human feedback
 
@@ -636,6 +679,7 @@ All settings are optional. These are the accepted fields and model defaults:
 
 | Field | Type | Default | Constraint / use |
 |---|---|---|---|
+| `pi` | Pi settings object | `{}` | Workflow-wide provider, model, and skill defaults. |
 | `auto_commit_after_wave` | boolean | `true` | Commit after every successful process wave. |
 | `wave_commit_message_template` | string | `workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}` | Public template. |
 | `final_commit_message_template` | string | `workflow(${WORKFLOW_ID}): complete run ${RUN_ID}` | Public template. |
@@ -651,6 +695,11 @@ Canonical explicit settings object:
 
 ```json
 {
+  "pi": {
+    "provider": "anthropic",
+    "model": "anthropic/claude-sonnet-4-5",
+    "skill": ".agents/skills/implementation/SKILL.md"
+  },
   "auto_commit_after_wave": true,
   "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
   "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}",
@@ -703,18 +752,20 @@ Use this deterministic procedure:
    writing JSON. Check each against the identifier regex.
 3. Declare root trigger inputs and non-secret variables.
 4. Define child workflow inputs and outputs before defining parent mappings.
-5. Add nodes with complete type-specific `config` objects.
-6. Add only forward DAG edges. Use `review_loop` for repeated work.
-7. For each `${NAME}`, prove that `NAME` exists before that field is expanded on every
+5. Select project, workflow, and node Pi defaults; verify every configured skill path
+   against the repository tree.
+6. Add nodes with complete type-specific `config` objects.
+7. Add only forward DAG edges. Use `review_loop` for repeated work.
+8. For each `${NAME}`, prove that `NAME` exists before that field is expanded on every
    reachable path.
-8. For each sub-workflow and review-loop node, check required child inputs and output
+9. For each sub-workflow and review-loop node, check required child inputs and output
    mapping direction.
-9. Check unique IDs, valid edge endpoints, reachability, absence of isolated nodes,
+10. Check unique IDs, valid edge endpoints, reachability, absence of isolated nodes,
    graph acyclicity, and workflow-reference acyclicity.
-10. Check timeouts and review limits against deployment caps.
-11. Serialize each file as UTF-8 JSON with two-space indentation and a trailing
+11. Check timeouts and review limits against deployment caps.
+12. Serialize each file as UTF-8 JSON with two-space indentation and a trailing
     newline.
-12. Run server validation before saving or triggering.
+13. Run server validation before saving or triggering.
 
 ## 13. Server validation API
 
@@ -743,3 +794,13 @@ children are resolved from the project's current default branch.
 Success is `{"valid": true, "errors": [], "warnings": []}`. A `valid: false`
 response contains stable `path`, `code`, and `message` fields. Schema validation,
 bundle validation, and exact-commit run-time validation are authoritative.
+
+Project-wide Pi defaults use this endpoint:
+
+```text
+PUT /projects/<project_uuid>/pi
+```
+
+The request body is the Pi settings object shown in section 3.1. Send `{}` to return
+all fields to Pi's own defaults. Updating project defaults does not rewrite workflow
+files; each new run snapshots the project values that apply when it is created.

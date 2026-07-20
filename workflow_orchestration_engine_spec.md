@@ -335,6 +335,7 @@ Credential values are never copied into another database table.
 | `token_key_version` | INTEGER | Encryption-key version |
 | `local_path` | TEXT UNIQUE | Bare/shared clone path |
 | `default_branch` | VARCHAR(255) | Cached project default branch |
+| `pi` | JSONB | Project-wide Pi provider, model, and repository skill defaults |
 | `added_by` | UUID FK | References `users.id` |
 | `created_at` | TIMESTAMPTZ | Generated |
 | `updated_at` | TIMESTAMPTZ | Generated |
@@ -668,6 +669,11 @@ resolution.
   "edges": [],
 
   "settings": {
+    "pi": {
+      "provider": "anthropic",
+      "model": "anthropic/claude-sonnet-4-5",
+      "skill": ".agents/skills/implementation/SKILL.md"
+    },
     "auto_commit_after_wave": true,
     "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
     "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}",
@@ -896,6 +902,7 @@ Behavior:
     "prompt": "Implement the following task: ${TASK}",
     "provider": "anthropic",
     "model": "anthropic/claude-sonnet-4-5",
+    "skill": ".agents/skills/implementation/SKILL.md",
     "timeout": 1800,
     "allow_failure": false,
     "project_trust": "never"
@@ -911,13 +918,22 @@ Normative command:
 pi --mode json --no-session --no-approve \
   --provider anthropic \
   --model anthropic/claude-sonnet-4-5 \
-  "<expanded prompt>"
+  --no-skills \
+  --skill /absolute/worktree/.agents/skills/implementation/SKILL.md \
+  "/skill:implementation <expanded prompt>"
 ```
 
 Rules:
 
 - `--provider` is omitted when not configured.
 - `--model` is omitted when not configured.
+- `provider`, `model`, and `skill` resolve field-by-field from the prompt node,
+  workflow `settings.pi`, project defaults, and finally Pi's own defaults.
+- A configured `skill` is a repository-relative file or directory. Resolve it against
+  the worktree, reject escapes and missing files, read the skill name from
+  `SKILL.md` frontmatter, load it with `--skill`, and force it with `/skill:<name>`.
+- `--no-skills` accompanies an explicit skill so the invocation loads exactly the
+  snapshotted skill selected by the workflow configuration.
 - `--no-session` prevents durable Pi session state from becoming the workflow state source.
 - `--no-approve` prevents non-interactive execution from automatically trusting repository-local Pi configuration and extensions.
 - The engine parses each JSONL record from stdout.
@@ -1336,6 +1352,11 @@ The snapshot is a JSON object:
   "snapshot_version": 1,
   "base_commit_sha": "012345...",
   "root_workflow_id": "implement_and_review",
+  "project_pi": {
+    "provider": "anthropic",
+    "model": "anthropic/claude-sonnet-4-5",
+    "skill": ".agents/skills/implementation/SKILL.md"
+  },
   "workflows": {
     "implement_and_review": { "...": "full workflow JSON" },
     "implement_changes": { "...": "full workflow JSON" },
@@ -1352,7 +1373,9 @@ The snapshot is a JSON object:
 }
 ```
 
-The snapshot contains no credentials or access tokens.
+The snapshot contains no credentials or access tokens. It includes the project Pi
+defaults in effect at trigger time so later project configuration changes cannot alter
+queued, resumed, or feedback-continuation behavior.
 
 Resume and feedback continuation always use this snapshot, never live repository workflow files.
 
@@ -1865,6 +1888,7 @@ POST   /api/projects
 GET    /api/projects/{project_id}
 DELETE /api/projects/{project_id}
 PUT    /api/projects/{project_id}/token
+PUT    /api/projects/{project_id}/pi
 POST   /api/projects/{project_id}/fetch
 POST   /api/projects/{project_id}/validate
 GET    /api/projects/{project_id}/workflows
@@ -1878,7 +1902,12 @@ GET    /api/projects/{project_id}/workflows
   "git_url": "https://code.example.com/group/repo.git",
   "gitlab_project_id": 123,
   "access_token": "glpat-...",
-  "default_branch": "main"
+  "default_branch": "main",
+  "pi": {
+    "provider": "anthropic",
+    "model": "anthropic/claude-sonnet-4-5",
+    "skill": ".agents/skills/implementation/SKILL.md"
+  }
 }
 ```
 
@@ -2862,6 +2891,7 @@ Display:
 - Token configured indicator.
 - Added by.
 - Last fetch result.
+- Project-wide Pi provider, model, and skill defaults.
 
 Actions:
 
@@ -2869,6 +2899,7 @@ Actions:
 - Validate project and token.
 - Fetch latest.
 - Update token.
+- Update Pi defaults.
 - View workflows.
 - Remove project.
 

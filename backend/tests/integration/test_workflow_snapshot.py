@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend.engine.snapshot import WorkflowSnapshotLoader
 from backend.integrations.git_manager import GitManager
+from backend.schemas.pi import PiSettings
 from backend.tests.fixtures.workflows import workflow
 
 
@@ -57,8 +58,10 @@ async def test_bundle_is_loaded_transitively_from_one_exact_commit(tmp_path: Pat
         max_timeout=14400,
         max_review_iterations=10,
         max_subworkflow_depth=8,
+        project_pi=PiSettings(model="project-model"),
     )
     assert bundle.base_commit_sha == sha
     assert set(bundle.workflows) == {"root", "child"}
     assert bundle.reference_graph == {"root": ["child"], "child": []}
     assert bundle.workflows["child"].tags == ["implementation"]
+    assert bundle.project_pi.model == "project-model"

@@ -20,3 +20,19 @@ def test_clone_url_comparison_ignores_git_suffix_and_host_case() -> None:
     assert _canonical_git_url("https://GITHUB.test/acme/widget.git") == _canonical_git_url(
         "https://github.test/acme/widget"
     )
+
+
+def test_project_accepts_pi_defaults() -> None:
+    project = ProjectCreate(
+        name="Widget",
+        provider="github",
+        provider_project="acme/widget",
+        git_url="https://github.test/acme/widget.git",
+        access_token="separate-token",
+        pi={
+            "provider": "anthropic",
+            "model": "anthropic/claude-sonnet-4-5",
+            "skill": ".agents/skills/implementation/SKILL.md",
+        },
+    )
+    assert project.pi.model == "anthropic/claude-sonnet-4-5"

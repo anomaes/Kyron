@@ -51,6 +51,7 @@ It is designed for trusted internal engineering teams that want the speed of cod
 
 - **Visual workflow builder** for Bash, Python script, prompt, human-feedback, sub-workflow, and review-loop nodes.
 - **Composable DAGs** with conditional edges, `AND`/`OR` joins, typed inputs, public variables, declared outputs, and reusable child workflows.
+- **Hierarchical Pi configuration** with project and workflow defaults plus per-prompt provider, model, and repository skill overrides.
 - **Durable execution history** covering invocations, waves, node executions, attempts, edge evaluations, feedback, and engine logs.
 - **Live operations UI** with expanded run graphs, nested review iterations, WebSocket logs, Git checkpoint boundaries, and resume/cancel controls.
 - **GitLab and GitHub delivery** with provider-bound OAuth identity, repository registration, workflow-definition reviews, run change requests, and authenticated webhooks.

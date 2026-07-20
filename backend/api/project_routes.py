@@ -8,6 +8,7 @@ from backend.config import Settings, get_settings
 from backend.dependencies import Cipher
 from backend.integrations.code_host import CodeHostError, provider_display_name
 from backend.integrations.git_manager import GitManager
+from backend.schemas.pi import PiSettings
 from backend.schemas.project import (
     ProjectCreate,
     ProjectResponse,
@@ -93,6 +94,24 @@ async def replace_project_token(
         existing = await project_service.get(project_id)
         require_project_provider(user, existing.provider)
         project = await project_service.replace_token(project_id, request.access_token)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    await db.commit()
+    return ProjectResponse.model_validate(project)
+
+
+@router.put("/{project_id}/pi", response_model=ProjectResponse)
+async def update_project_pi(
+    project_id: uuid.UUID,
+    request: PiSettings,
+    user: CurrentUser,
+    db: DbSession,
+    project_service: ProjectServiceDependency,
+) -> ProjectResponse:
+    try:
+        existing = await project_service.get(project_id)
+        require_project_provider(user, existing.provider)
+        project = await project_service.update_pi(project_id, request)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     await db.commit()

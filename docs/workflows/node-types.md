@@ -74,6 +74,7 @@ Runs the Pi coding agent non-interactively in the worktree.
     "prompt": "Implement ${TASK}. Keep the change scoped and run relevant tests.",
     "provider": null,
     "model": null,
+    "skill": null,
     "timeout": 3600,
     "allow_failure": false,
     "project_trust": "never"
@@ -81,7 +82,11 @@ Runs the Pi coding agent non-interactively in the worktree.
 }
 ```
 
-`prompt` supports public templates. `provider` and `model` are passed as configuration, not template-expanded fields. `project_trust` is fixed to `never` in the current schema.
+`prompt` supports public templates. `provider`, `model`, and `skill` are passed as
+configuration, not template-expanded fields. Each omitted value inherits from the
+workflow and then the project. A skill is a repository-relative Markdown manifest or
+directory containing `SKILL.md`; Kyron loads the exact file from the pinned worktree
+and explicitly invokes the skill. `project_trust` remains fixed to `never`.
 
 Prompt stdout contains Pi's raw JSONL event stream. Kyron also parses events into readable live logs and uses the terminal result event to determine success.
 

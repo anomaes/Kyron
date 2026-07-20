@@ -8,6 +8,12 @@ export type User = {
   provider_username: string;
 };
 
+export type PiSettings = {
+  provider?: string | null;
+  model?: string | null;
+  skill?: string | null;
+};
+
 export type Project = {
   id: string;
   name: string;
@@ -17,6 +23,7 @@ export type Project = {
   provider_project_path: string;
   local_path: string;
   default_branch: string;
+  pi: PiSettings;
   added_by: string;
   created_at: string;
   updated_at: string;
@@ -75,7 +82,7 @@ export type Workflow = {
   variables: Record<string, string | number | boolean>;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
-  settings: Record<string, unknown>;
+  settings: Record<string, unknown> & { pi?: PiSettings };
 };
 
 export type WorkflowListItem = Workflow & { node_count: number };

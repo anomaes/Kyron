@@ -96,6 +96,7 @@ class Project(Base):
     token_key_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     local_path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     default_branch: Mapped[str] = mapped_column(String(255), nullable=False)
+    pi: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
     added_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

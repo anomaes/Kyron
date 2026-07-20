@@ -17,6 +17,7 @@ Open **Projects** and choose **Add project**. Supply:
 | Provider project | GitLab project ID/path or GitHub `owner/repository` |
 | Clone URL | HTTPS repository URL without username, token, or embedded credentials |
 | Access token | Write-only token used for Git and provider API operations |
+| Pi defaults | Optional provider, model, and repository-relative skill used by prompt nodes |
 
 Kyron asks the provider for canonical repository metadata. It does not trust a user-provided display name or project identity when the provider can supply one.
 
@@ -31,6 +32,19 @@ Never paste `https://user:token@host/repository.git`. Kyron constructs authentic
 Use **Validate** after changing provider permissions. Validation checks repository identity and the operations Kyron needs. **Fetch** updates and prunes the local clone; it does not alter an existing run's pinned commit or workflow snapshot.
 
 Replacing a project token is a write-only operation. The old plaintext is not returned by the API or UI.
+
+## Configure Pi defaults
+
+Use **Pi defaults** on a project card to select the provider, model, and skill shared
+by its prompt nodes. Workflow defaults override project values, and prompt-node values
+override workflow values. Resolution happens per field, so a workflow can select a
+model while continuing to use the project's skill.
+
+Skill paths are relative to the repository root, such as
+`.agents/skills/implementation/SKILL.md`. Kyron resolves the path inside the pinned run
+worktree, loads it explicitly with Pi, and invokes the name declared by the skill's
+frontmatter. The skill therefore follows the same reviewed Git history as the code and
+workflow definitions it operates on.
 
 ## Remove a project
 

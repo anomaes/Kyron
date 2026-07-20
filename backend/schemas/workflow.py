@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.schemas.pi import PiSettings
+
 IDENTIFIER_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
 TAG_PATTERN = r"^[a-z0-9][a-z0-9._-]*$"
 Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN, min_length=1, max_length=255)]
@@ -114,11 +116,17 @@ class ScriptConfig(StrictModel):
 
 class PromptConfig(StrictModel):
     prompt: str = Field(min_length=1)
-    provider: str | None = None
-    model: str | None = None
+    provider: str | None = Field(default=None, min_length=1, max_length=255)
+    model: str | None = Field(default=None, min_length=1, max_length=512)
+    skill: str | None = Field(default=None, min_length=1, max_length=1024)
     timeout: int | None = Field(default=None, gt=0)
     allow_failure: bool = False
     project_trust: Literal["never"] = "never"
+
+    @field_validator("skill")
+    @classmethod
+    def skill_must_be_relative(cls, value: str | None) -> str | None:
+        return PiSettings.skill_must_be_relative(value)
 
 
 class HumanFeedbackConfig(StrictModel):
@@ -192,6 +200,7 @@ WorkflowNode = Annotated[
 
 
 class WorkflowSettings(StrictModel):
+    pi: PiSettings = Field(default_factory=PiSettings)
     auto_commit_after_wave: bool = True
     wave_commit_message_template: str = "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}"
     final_commit_message_template: str = "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}"
@@ -259,5 +268,6 @@ class WorkflowBundle(BaseModel):
     snapshot_version: Literal[1] = 1
     base_commit_sha: str = Field(min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$")
     root_workflow_id: Identifier
+    project_pi: PiSettings = Field(default_factory=PiSettings)
     workflows: dict[Identifier, WorkflowDefinition]
     reference_graph: dict[Identifier, list[Identifier]]

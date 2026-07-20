@@ -25,6 +25,7 @@ headers and secrets.
 | PUT | `/api/projects/{project_id}/token` | Replace the write-only project token |
 | POST | `/api/projects/{project_id}/fetch` | Fetch/prune the local clone |
 | POST | `/api/projects/{project_id}/validate` | Validate provider and repository access |
+| PUT | `/api/projects/{project_id}/pi` | Replace project-wide Pi provider, model, and skill defaults |
 | GET/POST | `/api/credentials` | List metadata or create a write-only credential |
 | PUT/DELETE | `/api/credentials/{credential_id}` | Replace or remove a credential |
 | GET | `/api/projects/{project_id}/workflows` | List tagged definitions at the default-branch SHA for catalog search/grouping and workflow selection |

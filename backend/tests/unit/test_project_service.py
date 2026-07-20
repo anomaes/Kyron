@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import Settings
 from backend.db.models import Project, User
 from backend.integrations.git_manager import GitManager
+from backend.schemas.pi import PiSettings
 from backend.services.crypto import SecretCipher
 from backend.services.project_service import ProjectService
 
@@ -61,6 +62,15 @@ async def test_delete_removes_clone_and_local_definition_changes(
         SecretCipher(key),
         GitManager(clone_root, worktree_root, run_data_root),
     )
+
+    updated = await service.update_pi(
+        project_id,
+        PiSettings(model="anthropic/model", skill=".agents/skills/release/SKILL.md"),
+    )
+    assert updated.pi == {
+        "model": "anthropic/model",
+        "skill": ".agents/skills/release/SKILL.md",
+    }
 
     await service.delete(project_id)
     await db_session.commit()

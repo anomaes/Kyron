@@ -12,6 +12,7 @@ from backend.config import Settings
 from backend.db.models import Project, WorkflowRun
 from backend.integrations.code_host import code_host_client, git_username, repository_locator
 from backend.integrations.git_manager import GitManager, project_git_locks
+from backend.schemas.pi import PiSettings
 from backend.schemas.project import ProjectCreate
 from backend.services.crypto import SecretCipher
 
@@ -67,6 +68,7 @@ class ProjectService:
                 token_key_version=self.cipher.key_version,
                 local_path=str(local_path),
                 default_branch=default_branch,
+                pi=request.pi.model_dump(mode="json", exclude_none=True),
                 added_by=user_id,
             )
             self.session.add(project)
@@ -87,6 +89,12 @@ class ProjectService:
             )
         project.encrypted_access_token = self.cipher.encrypt(token)
         project.token_key_version = self.cipher.key_version
+        await self.session.flush()
+        return project
+
+    async def update_pi(self, project_id: uuid.UUID, settings: PiSettings) -> Project:
+        project = await self.get(project_id)
+        project.pi = settings.model_dump(mode="json", exclude_none=True)
         await self.session.flush()
         return project
 

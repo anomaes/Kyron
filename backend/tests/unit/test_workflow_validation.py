@@ -34,6 +34,43 @@ def test_workflow_tags_are_validated_and_preserved() -> None:
     assert any(issue.path == "workflow.tags" for issue in errors)
 
 
+def test_pi_defaults_and_prompt_overrides_are_parsed() -> None:
+    data = workflow(
+        nodes=[
+            {
+                "id": "agent",
+                "type": "prompt",
+                "label": "agent",
+                "config": {
+                    "prompt": "Ship it",
+                    "model": "node-model",
+                    "skill": ".agents/skills/node/SKILL.md",
+                },
+            }
+        ]
+    )
+    data["settings"] = {
+        "pi": {
+            "provider": "anthropic",
+            "model": "workflow-model",
+            "skill": ".agents/skills/workflow/SKILL.md",
+        }
+    }
+    definition = parsed(data)
+    assert definition.settings.pi.model == "workflow-model"
+    node = definition.nodes[0]
+    assert node.type == "prompt"
+    assert node.config.skill == ".agents/skills/node/SKILL.md"
+
+
+@pytest.mark.parametrize("skill", ["../outside/SKILL.md", "/absolute/SKILL.md"])
+def test_pi_skill_paths_cannot_escape_repository(skill: str) -> None:
+    data = workflow()
+    data["settings"] = {"pi": {"skill": skill}}
+    _, errors = parse_workflow(data)
+    assert any("inside the repository" in issue.message for issue in errors)
+
+
 def codes(report: WorkflowValidationResponse) -> set[str]:
     return {issue.code for issue in report.errors}
 

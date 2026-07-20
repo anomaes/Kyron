@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from backend.schemas.pi import PiSettings
+
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -12,6 +14,7 @@ class ProjectCreate(BaseModel):
     provider_project: str = Field(min_length=1, max_length=1024)
     access_token: str = Field(min_length=1)
     default_branch: str = Field(default="main", min_length=1, max_length=255)
+    pi: PiSettings = Field(default_factory=PiSettings)
 
     @field_validator("git_url")
     @classmethod
@@ -38,6 +41,7 @@ class ProjectResponse(BaseModel):
     provider_project_path: str
     local_path: str
     default_branch: str
+    pi: PiSettings
     added_by: uuid.UUID
     created_at: datetime
     updated_at: datetime

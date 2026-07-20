@@ -39,6 +39,10 @@ Select a node to open the inspector. Common fields include:
 
 Composite nodes expose structured input and output mappings based on the selected child definitions. Advanced JSON remains available for exact configuration where appropriate.
 
+Workflow settings include Pi provider, model, and skill defaults. A prompt node can
+override any of them in its configuration JSON; blank values inherit from the next
+scope. Skill values are repository-relative paths to a skill directory or `SKILL.md`.
+
 ## Reuse node templates
 
 Select a configured node and choose **Store as template**. Give the template a stable ID, name, and optional description. Templates are scoped to the project and follow the same local-store and review lifecycle as workflows.

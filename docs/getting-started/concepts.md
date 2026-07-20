@@ -9,7 +9,7 @@ Kyron's behavior becomes much easier to predict once you separate the **workflow
 
 ## Project
 
-A project is a registered GitLab or GitHub repository. It stores provider-neutral repository metadata and an encrypted project access token. The token performs Git and provider API operations; the signed-in user's provider identity determines who may trigger and control a run.
+A project is a registered GitLab or GitHub repository. It stores provider-neutral repository metadata, an encrypted project access token, and optional Pi defaults for prompt nodes. The token performs Git and provider API operations; the signed-in user's provider identity determines who may trigger and control a run.
 
 Project and browser providers must match for mutations. A GitHub session cannot trigger a GitLab project, even if both accounts share the same email address.
 

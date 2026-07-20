@@ -21,8 +21,10 @@ from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
 from backend.engine.conditions import evaluate_condition
 from backend.engine.context import expand_public_variables, output_variables
 from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNodeExecutor
+from backend.engine.pi.command import resolve_pi_settings
 from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
+from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import BashNode, PromptNode, ScriptNode, WorkflowDefinition
 
 ProcessWorkflowNode = BashNode | ScriptNode | PromptNode
@@ -61,6 +63,7 @@ class WaveExecutor:
         invocation: WorkflowInvocation,
         workflow: WorkflowDefinition,
         nodes: list[ProcessWorkflowNode],
+        project_pi: PiSettings | None = None,
     ) -> ExecutionWave:
         if not run.worktree_path or not run.run_data_path:
             raise WaveExecutionError(uuid.uuid4(), "Run filesystem paths are not configured")
@@ -127,6 +130,15 @@ class WaveExecutor:
             execution = executions[node.id]
             attempt = attempts[node.id]
             secrets = await self.credential_loader(run.triggered_by)
+            node_pi = (
+                PiSettings(
+                    provider=node.config.provider,
+                    model=node.config.model,
+                    skill=node.config.skill,
+                )
+                if isinstance(node, PromptNode)
+                else PiSettings()
+            )
             result = await self.node_executor.execute(
                 node,
                 NodeExecutionRequest(
@@ -144,6 +156,9 @@ class WaveExecutor:
                     secrets=secrets,
                     default_timeout=workflow.settings.timeout_per_node_seconds,
                     max_preview_bytes=workflow.settings.max_output_variable_bytes,
+                    pi=resolve_pi_settings(
+                        project_pi or PiSettings(), workflow.settings.pi, node_pi
+                    ),
                 ),
             )
             allow_failure = bool(getattr(node.config, "allow_failure", False))

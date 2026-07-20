@@ -71,7 +71,7 @@ Expand public values with exact `${NAME}` syntax in supported fields:
 "command": "${TEST_COMMAND}"
 ```
 
-An unknown name fails execution; it is not left as literal text. Templates are intentionally not expanded in IDs, labels, executable paths, providers, models, or interpreter names.
+An unknown name fails execution; it is not left as literal text. Templates are intentionally not expanded in IDs, labels, executable paths, providers, models, skills, or interpreter names.
 
 Secrets use native environment syntax such as `$NPM_TOKEN`, never `${NPM_TOKEN}`. See [variables and outputs](/reference/variables) for the full built-in list and precedence.
 
@@ -108,6 +108,7 @@ Workflow settings control checkpoint and safety limits:
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
+| `pi` | `{}` | Workflow-wide provider, model, and repository skill defaults |
 | `auto_commit_after_wave` | `true` | Commit every successful process wave |
 | `wave_commit_message_template` | `workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}` | Per-wave Git message |
 | `final_commit_message_template` | `workflow(${WORKFLOW_ID}): complete run ${RUN_ID}` | Final Git message |

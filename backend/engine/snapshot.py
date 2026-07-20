@@ -6,6 +6,7 @@ from typing import Any
 
 from backend.engine.validation import direct_references, parse_workflow, validate_workflow_bundle
 from backend.integrations.git_manager import GitManager
+from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
 
 
@@ -26,6 +27,7 @@ class WorkflowSnapshotLoader:
         max_timeout: int,
         max_review_iterations: int,
         max_subworkflow_depth: int,
+        project_pi: PiSettings | None = None,
     ) -> WorkflowBundle:
         workflows: dict[str, WorkflowDefinition] = {}
         pending = [root_workflow_id]
@@ -69,6 +71,7 @@ class WorkflowSnapshotLoader:
         return WorkflowBundle(
             base_commit_sha=commit_sha,
             root_workflow_id=root_workflow_id,
+            project_pi=project_pi or PiSettings(),
             workflows=workflows,
             reference_graph={key: direct_references(value) for key, value in workflows.items()},
         )
