@@ -467,6 +467,7 @@ class RunCoordinator:
         )
         run.change_request_number = change_request.number
         run.change_request_url = change_request.url
+        run.change_request_created_at = datetime.now(UTC)
         await self.session.commit()
 
     async def _node_execution(

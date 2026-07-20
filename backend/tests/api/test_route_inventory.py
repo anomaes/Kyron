@@ -10,6 +10,7 @@ def test_required_http_and_websocket_routes_are_registered() -> None:
 
     required = {
         "/api/health",
+        "/api/metrics",
         "/api/auth/me",
         "/api/projects",
         "/api/projects/{project_id}/pi",

@@ -42,11 +42,30 @@ jobs:
           DOCS_BASE: /Kyron/
           DOCS_HOSTNAME: https://anomaes.github.io/Kyron/
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Configure existing GitHub Pages site
+        id: configure-pages
+        continue-on-error: true
+        uses: actions/configure-pages@v6
+
+      - name: Verify Pages bootstrap token
+        if: steps.configure-pages.outcome == 'failure'
+        env:
+          PAGES_ENABLEMENT_TOKEN: ${{ secrets.PAGES_ENABLEMENT_TOKEN }}
+        run: |
+          if [ -z "$PAGES_ENABLEMENT_TOKEN" ]; then
+            echo "::error::Pages is not enabled. Add a PAGES_ENABLEMENT_TOKEN repository secret with Pages write permission, then rerun this workflow."
+            exit 1
+          fi
+
+      - name: Enable and configure GitHub Pages
+        if: steps.configure-pages.outcome == 'failure'
+        uses: actions/configure-pages@v6
+        with:
+          enablement: true
+          token: ${{ secrets.PAGES_ENABLEMENT_TOKEN }}
 
       - name: Upload documentation artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/.vitepress/dist
 
@@ -59,4 +78,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

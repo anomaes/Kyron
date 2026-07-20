@@ -84,3 +84,19 @@ async def test_worktree_checkpoint_and_failed_wave_reset(tmp_path: Path) -> None
     assert not (worktree / "untracked.txt").exists()
     await manager.remove_worktree(repository, worktree, branch)
     assert not worktree.exists()
+
+
+async def test_worktree_removal_failure_is_not_ignored(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    worktrees = tmp_path / "worktrees"
+    repository.mkdir()
+    worktrees.mkdir()
+    await git("init", "-b", "main", cwd=repository)
+    unregistered = worktrees / "unregistered"
+    unregistered.mkdir()
+    manager = GitManager(tmp_path / "clones", worktrees, tmp_path / "run-data")
+
+    with pytest.raises(GitError, match="Git operation failed"):
+        await manager.remove_worktree(repository, unregistered)
+
+    assert unregistered.exists()

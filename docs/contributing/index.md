@@ -52,6 +52,15 @@ npm --prefix docs run build
 
 Page source lives under `docs/`. Navigation and theme configuration live under `docs/.vitepress/`. Keep task-oriented guides approachable and link to exact reference contracts rather than duplicating every schema field.
 
+The documentation workflow publishes through GitHub Pages and can bootstrap a
+new Pages site automatically. For the first deployment, add a repository Actions
+secret named `PAGES_ENABLEMENT_TOKEN` containing a fine-grained token limited to
+this repository with Pages write permission. After Pages has been enabled, remove
+the bootstrap secret; subsequent deployments use the standard workflow
+`GITHUB_TOKEN`. Keep its permissions at `contents: read`, `pages: write`, and
+`id-token: write`. GitHub does not allow the built-in token to perform initial
+Pages enablement.
+
 ## Full local verification
 
 ```bash

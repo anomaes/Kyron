@@ -8,6 +8,9 @@ def test_default_configuration_is_development() -> None:
     settings = Settings(_env_file=None)
     assert settings.APP_ENV == "development"
     assert settings.MAX_NODE_TIMEOUT_SECONDS >= settings.DEFAULT_NODE_TIMEOUT_SECONDS
+    assert settings.TERMINAL_WORKTREE_RETENTION_DAYS == 1
+    assert settings.ORPHAN_WORKTREE_GRACE_HOURS == 24
+    assert settings.LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS == 14
 
 
 def test_production_requires_runtime_secrets() -> None:

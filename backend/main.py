@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.api.auth_routes import router as auth_router
 from backend.api.credential_routes import router as credential_router
 from backend.api.health_routes import router as health_router
+from backend.api.metrics_routes import router as metrics_router
 from backend.api.project_routes import router as project_router
 from backend.api.run_routes import router as run_router
 from backend.api.run_routes import websocket_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router, prefix="/api")
+    app.include_router(metrics_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(project_router, prefix="/api")
     app.include_router(credential_router, prefix="/api")

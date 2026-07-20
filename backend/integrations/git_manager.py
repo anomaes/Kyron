@@ -227,14 +227,22 @@ class GitManager:
         self, repository_path: Path, worktree: Path, branch: str | None = None
     ) -> None:
         self.assert_beneath(worktree, self.worktree_base_path)
-        await self.run(
-            ["worktree", "remove", "--force", str(worktree)],
-            cwd=repository_path,
-            check=False,
-        )
+        if await asyncio.to_thread(os.path.lexists, worktree):
+            await self.run(
+                ["worktree", "remove", "--force", str(worktree)],
+                cwd=repository_path,
+            )
         await self.run(["worktree", "prune"], cwd=repository_path)
+        if await asyncio.to_thread(os.path.lexists, worktree):
+            raise GitError(f"Worktree still exists after removal: {worktree}")
         if branch:
-            await self.run(["branch", "-D", branch], cwd=repository_path, check=False)
+            local_ref = await self.run(
+                ["show-ref", "--verify", f"refs/heads/{branch}"],
+                cwd=repository_path,
+                check=False,
+            )
+            if local_ref:
+                await self.run(["branch", "-D", branch], cwd=repository_path)
 
     @staticmethod
     def assert_beneath(path: Path, root: Path) -> Path:

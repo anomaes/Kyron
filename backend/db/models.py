@@ -134,6 +134,7 @@ class WorkflowRun(Base):
     final_commit_sha: Mapped[str | None] = mapped_column(String(40))
     change_request_number: Mapped[int | None] = mapped_column(Integer)
     change_request_url: Mapped[str | None] = mapped_column(Text)
+    change_request_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewer_provider: Mapped[str] = mapped_column(String(30), nullable=False)
     reviewer_provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     reviewer_provider_username: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -299,3 +300,23 @@ class WebhookDelivery(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(30), default="RECEIVED", nullable=False)
     result: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+
+
+class ResourceAuditLog(Base):
+    __tablename__ = "resource_audit_logs"
+    __table_args__ = (
+        Index("ix_resource_audit_logs_event_timestamp", "event_type", "timestamp"),
+        Index("ix_resource_audit_logs_resource_path", "resource_path"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    level: Mapped[str] = mapped_column(String(20), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    resource_path: Mapped[str | None] = mapped_column(Text)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict, nullable=False)

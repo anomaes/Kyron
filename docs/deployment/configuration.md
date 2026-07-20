@@ -83,9 +83,21 @@ All paths must be explicit, durable, writable by UID/GID `10001`, and dedicated 
 | `QUEUE_RECONCILIATION_INTERVAL_SECONDS` | `60` | Detect queued work requiring scheduling |
 | `STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS` | `3600` | Repair missed cleanup and inspect orphans |
 | `STALE_FAILED_RUN_DAYS` | `7` | Failed-run cleanup age policy |
+| `TERMINAL_WORKTREE_RETENTION_DAYS` | `1` | Retain terminal worktrees that have no change request |
+| `ORPHAN_WORKTREE_GRACE_HOURS` | `24` | Minimum time after orphan detection and last activity before deletion |
 | `RUN_OUTPUT_RETENTION_DAYS` | `30` | Attempt output retention |
+| `LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS` | `14` | Age at which an open PR/MR emits a run warning |
+| `LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS` | `7` | Minimum interval between repeated open-PR/MR warnings |
+| `WORKTREE_USAGE_WARNING_BYTES` | `53687091200` | Worktree-root byte threshold; `0` disables it |
+| `RUN_DATA_USAGE_WARNING_BYTES` | `53687091200` | Run-data-root byte threshold; `0` disables it |
+| `FILESYSTEM_USAGE_WARNING_PERCENT` | `85` | Filesystem utilization warning threshold |
 
 Database metadata and durable engine logs are not automatically governed by the output-file retention value.
+
+Authenticated operators can scrape `/api/metrics` in Prometheus text format. It
+reports bytes and file counts beneath both managed roots, filesystem capacity and
+utilization, and threshold-state gauges. Threshold transitions and orphan cleanup
+events are also persisted in `resource_audit_logs`.
 
 ## Pi version
 

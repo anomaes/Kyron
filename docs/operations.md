@@ -64,8 +64,15 @@ recovery can classify interrupted work.
 Worktrees remain while a change request is open. Merge/close events trigger worktree and
 local-branch cleanup. Run output is retained independently for the configured
 number of days; database metadata and engine logs remain until an explicit
-policy is introduced. Hourly reconciliation repairs missed webhook cleanup and
-reports orphan paths before deletion.
+policy is introduced. Terminal runs without a change request are cleaned after
+`TERMINAL_WORKTREE_RETENTION_DAYS`; failed and interrupted runs retain their
+separate resumability window. Hourly reconciliation repairs missed webhook
+cleanup, warns about long-open change requests, and deletes only Kyron-shaped
+orphans that have passed both the detection and filesystem-activity grace period.
+
+Monitor the authenticated `/api/metrics` endpoint. Root-byte and filesystem-use
+threshold transitions are written to `resource_audit_logs` and emitted through
+the backend logger for alert routing.
 
 ## Release verification
 

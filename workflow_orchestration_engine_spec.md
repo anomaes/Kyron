@@ -3327,7 +3327,14 @@ PROCESS_TERMINATION_GRACE_SECONDS=10
 QUEUE_RECONCILIATION_INTERVAL_SECONDS=60
 STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS=3600
 STALE_FAILED_RUN_DAYS=7
+TERMINAL_WORKTREE_RETENTION_DAYS=1
+ORPHAN_WORKTREE_GRACE_HOURS=24
 RUN_OUTPUT_RETENTION_DAYS=30
+LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS=14
+LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS=7
+WORKTREE_USAGE_WARNING_BYTES=53687091200
+RUN_DATA_USAGE_WARNING_BYTES=53687091200
+FILESYSTEM_USAGE_WARNING_PERCENT=85
 
 # Auth service
 OAUTH_CLIENT_ID=<gitlab-oauth-client-id>
@@ -3573,6 +3580,7 @@ Cleanup triggers:
 - MR merged.
 - MR closed.
 - Cancelled run without MR.
+- Completed run without MR after the terminal-worktree retention deadline.
 - Failed run without MR after stale-resource deadline.
 - Manual operator cleanup.
 
@@ -3618,6 +3626,8 @@ Do not automatically delete logs at the same moment as the worktree.
 Default policy:
 
 - Worktree: remove on MR merge/close.
+- Terminal worktree without an MR: remove after
+  `TERMINAL_WORKTREE_RETENTION_DAYS`.
 - Run output: retain for `RUN_OUTPUT_RETENTION_DAYS`.
 - Engine logs and database metadata: retain indefinitely unless a separate policy is configured.
 - Credential records: until user deletion.
@@ -3632,7 +3642,13 @@ Every hour:
 4. Delete expired run output.
 5. Run `git worktree prune` on project clones.
 6. Detect missing worktrees for resumable runs and mark them non-resumable with a clear error.
-7. Detect orphan worktree directories not referenced by the database and log them for operator review before deletion.
+7. Detect orphan worktree directories not referenced by the database; delete only
+   direct-child Kyron-shaped paths after both a durable detection grace period and
+   an inactivity grace period, with durable audit events.
+8. Warn on open change requests older than the configured threshold, with a
+   configured repeat interval.
+9. Measure worktree/run-output root usage, emit Prometheus gauges, and persist
+   threshold warning/recovery transitions.
 
 ---
 

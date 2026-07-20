@@ -18,6 +18,7 @@ def test_complete_domain_tables_are_declared() -> None:
         "feedback_events",
         "run_logs",
         "webhook_deliveries",
+        "resource_audit_logs",
     }
 
 

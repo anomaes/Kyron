@@ -19,6 +19,7 @@ headers and secrets.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Worker and database health |
+| GET | `/api/metrics` | Authenticated Prometheus-format storage metrics |
 | GET | `/api/auth/me` | Current user and active provider identity |
 | GET/POST | `/api/projects` | List or register repositories |
 | GET/DELETE | `/api/projects/{project_id}` | Inspect or remove a project |
