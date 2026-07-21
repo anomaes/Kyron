@@ -231,10 +231,17 @@ Templates are expanded in these locations:
 Templates are not expanded in IDs, labels, paths, `script`, `python`, `shell`,
 `provider`, `model`, or `skill`.
 
-Secrets are injected only into subprocess environments. In a Bash command use the
-shell's native `$SECRET_NAME` form for a credential. `${SECRET_NAME}` asks Kyron for
-a public variable and fails if only a secret exists. Script and prompt templates
-cannot expand secrets.
+Kyron also copies the complete public context into the environment of every Bash,
+Script, and Prompt process. Bash can read `$TASK`; a Python script can read
+`os.environ["TASK"]`; and Script `args` can use `${TASK}`. Prompt text must use
+`${TASK}` when the value should be inserted into the prompt. Prompt nodes are not
+launched through a shell, so `$TASK` in prompt text remains literal.
+
+Secrets are injected only into subprocess environments. Every Bash, Script, and Prompt
+process receives all credentials owned by the user who triggered the run. In a Bash
+command use the shell's native `$SECRET_NAME` form for a credential.
+`${SECRET_NAME}` asks Kyron for a public variable and fails if only a secret exists.
+Script and prompt templates cannot expand secrets.
 
 Public built-ins available during a normal run are:
 
@@ -287,6 +294,12 @@ NODE_<node_id>_STDERR_PATH
 For a node with ID `tests`, use `${NODE_tests_EXIT_CODE}`. Output text is a bounded
 preview; use the path variable when the full file is needed. Prompt stdout is Pi's raw
 JSONL event stream.
+
+These values become available only after the producing wave completes. A downstream
+node connected through the graph can use `${NODE_choose_STDOUT}` in a supported template
+or `$NODE_choose_STDOUT` from its process environment. Siblings running concurrently in
+the same wave cannot consume one another's outputs. Shell `export` statements do not
+persist into later nodes because every node starts in a new subprocess.
 
 ### 4.5 Declared outputs
 
@@ -672,6 +685,8 @@ Every individual workflow graph must satisfy all of these rules:
 
 Ready Bash, Script, and Prompt nodes execute concurrently in a wave. Sub-workflow,
 human-feedback, and review-loop nodes execute one at a time as control boundaries.
+Process output variables are published after the wave completes, so data dependencies
+between process nodes must be represented by graph edges rather than parallel siblings.
 
 Join semantics are intentionally branch-merging semantics rather than boolean
 all/any semantics:

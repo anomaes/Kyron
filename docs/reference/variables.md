@@ -22,9 +22,20 @@ Supported locations include:
 
 Templates do not expand in IDs, labels, paths, `script`, `python`, `shell`, `provider`, or `model`.
 
+Public context is also copied into the environment of every Bash, Script, and Prompt
+process. Bash may therefore read `$TARGET_DIR`, and a repository script may read
+`os.environ["TARGET_DIR"]`. Script arguments and prompt text use Kyron's `${TARGET_DIR}`
+template syntax instead. Prompt nodes are launched without a shell, so `$TARGET_DIR` in
+the prompt remains literal text; use `${TARGET_DIR}` when the value should become part of
+the prompt.
+
 ## Context precedence
 
 More specific runtime values override definition defaults. Conceptually, context is assembled from workflow variables, invocation inputs, Kyron built-ins, mapped parent values, and later node/feedback outputs. Validation prevents ambiguous or impossible mappings where it can.
+
+For example, a root trigger input overrides a workflow variable with the same name, and
+a mapped child input overrides the child's default. Prefer workflow variables for fixed,
+non-secret defaults and inputs for values the caller is allowed to choose.
 
 Do not reuse a name for unrelated meanings across these layers.
 
@@ -90,6 +101,17 @@ NODE_<node_id>_STDERR_PATH
 
 For node ID `tests`, use `${NODE_tests_EXIT_CODE}`. Text values are bounded previews controlled by output limits. Use path variables inside trusted repository code when complete output is required.
 
+A downstream node can consume these values after an edge has made it depend on the
+producer. For example, if `choose_environment` prints only `staging`, a later Prompt node
+may use `${NODE_choose_environment_STDOUT}`, and a later process may read
+`$NODE_choose_environment_STDOUT`. Ready process nodes in the same wave start from the
+same context and cannot consume one another's outputs.
+
+Each node runs in a new subprocess. An `export TARGET_ENV=staging` in Bash applies only
+to that process and its children; it does not modify later node environments. Publish a
+value through the standard node outputs, or declare a child workflow output and map it to
+a parent name with `output_mapping`.
+
 Prompt stdout is Pi's raw JSONL event stream; readable engine events are separately available in run logs.
 
 ## Workflow outputs
@@ -108,10 +130,17 @@ Sources expand at invocation completion. A parent's `output_mapping` can expose 
 
 ## Credentials are not variables
 
-Credentials are injected into subprocess environments. Use native process syntax:
+Every Bash, Script, and Prompt process receives all credentials owned by the user who
+triggered the run. The control nodes do not have subprocess environments, although
+process nodes inside their child workflows receive the same triggering user's
+credentials. Use native process syntax:
 
 ```bash
 curl -H "Authorization: Bearer $INTERNAL_API_TOKEN" https://service.example/api
 ```
 
 `${INTERNAL_API_TOKEN}` asks for a public variable and fails if only a credential exists. Secret values must never be stored in workflow `variables`, trigger inputs, output mappings, prompts, or change-request templates.
+
+Credential names share the subprocess namespace with public and operating-system
+variables. Avoid Kyron built-in names such as `RUN_ID` and `USER_EMAIL`, along with base
+environment names such as `PATH` and `HOME`.

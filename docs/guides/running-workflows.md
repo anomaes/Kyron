@@ -18,6 +18,12 @@ From the workflow catalog:
 
 Kyron type-checks inputs, rejects unknown names, fetches the project, resolves the base ref to an exact SHA, snapshots the workflow bundle from that SHA, and then queues the run.
 
+Trigger inputs become public context for the run. Nodes may use them through Kyron
+templates such as `${TASK}` or through the environment of a Bash, Script, or Prompt
+process. Workflow `variables` provide non-secret definition defaults; trigger and mapped
+invocation inputs provide the runtime values. See [variables and outputs](/reference/variables)
+for precedence and cross-node output behavior.
+
 The requested ref is useful context; `base_commit_sha` is the reproducibility boundary.
 
 ## Read the run list

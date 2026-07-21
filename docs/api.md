@@ -82,7 +82,7 @@ Validate a draft before proposing its change request:
 ```json
 POST /api/projects/<project-id>/workflows/validate
 {
-  "workflow": { "id": "full_review", "version": 1, "nodes": [], "edges": [] },
+  "workflow": { "id": "full_review", "version": 2, "nodes": [], "edges": [] },
   "proposed_related_workflows": {}
 }
 ```

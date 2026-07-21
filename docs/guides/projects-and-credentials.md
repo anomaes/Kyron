@@ -61,6 +61,12 @@ Open **Credentials**, choose **Add credential**, and provide a name and secret v
 
 Kyron stores Fernet ciphertext plus safe metadata. Read endpoints never return the secret value.
 
+At each Bash, Script, or Prompt attempt, Kyron loads all credentials owned by the user
+who triggered the run. The same rule applies to process nodes in sub-workflows and review
+iterations. Human-feedback, sub-workflow, and review-loop control operations do not
+receive a subprocess environment themselves. The project's repository access token is
+separate and is used only for Git and code-host operations.
+
 Use the shell's environment syntax in a Bash node:
 
 ```json
@@ -77,6 +83,10 @@ Use the shell's environment syntax in a Bash node:
 ```
 
 Do **not** write `${NPM_TOKEN}`. Kyron interprets that as a public template variable and fails because credentials are deliberately excluded from public context.
+
+Choose credential names that do not overlap Kyron built-ins such as `RUN_ID` or
+`USER_EMAIL`, or base process names such as `PATH` and `HOME`. They occupy the same
+subprocess environment namespace.
 
 ## Secret lifetime
 
