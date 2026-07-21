@@ -24,10 +24,16 @@ async def test_invalid_workflow_json_logs_location_and_reason_without_contents(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     raw = '{"id": "root", "token": "must-not-be-logged",}'
+    with pytest.raises(json.JSONDecodeError) as parse_error:
+        json.loads(raw)
+    expected = parse_error.value
     loader = WorkflowSnapshotLoader(cast(GitManager, StubGit(raw)))
     caplog.set_level(logging.WARNING, logger="backend.engine.snapshot")
 
-    with pytest.raises(BundleResolutionError, match=r"line 1, column 45"):
+    with pytest.raises(
+        BundleResolutionError,
+        match=rf"line {expected.lineno}, column {expected.colno}",
+    ):
         await loader.load(
             tmp_path,
             "a" * 40,
@@ -40,7 +46,8 @@ async def test_invalid_workflow_json_logs_location_and_reason_without_contents(
     assert "Workflow JSON parsing failed" in caplog.text
     assert "workflow=root" in caplog.text
     assert "file=.workflowEngine/root.json" in caplog.text
-    assert "line=1, column=45" in caplog.text
+    assert f"line={expected.lineno}, column={expected.colno}" in caplog.text
+    assert expected.msg in caplog.text
     assert "must-not-be-logged" not in caplog.text
 
 
