@@ -304,7 +304,11 @@ State-machine changes must include tests. Preserve unrelated worktree changes, u
 
 ## Project status
 
-Kyron is currently at **v0.1.0**. The original eight milestones are complete and dual-provider support is tracked as milestone 9; acceptance scenarios that require real provider instances, OAuth applications, a TLS hostname, and provider credentials remain deployment-specific checks.
+Kyron is currently available as **v1.0-alpha**. This prerelease contains the complete
+single-worker workflow engine, visual builder, governance model, and GitLab/GitHub
+integration. Acceptance scenarios that require real provider instances, OAuth
+applications, a TLS hostname, and provider credentials remain deployment-specific
+checks before production promotion.
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [acceptance checklist](docs/acceptance.md) for the detailed delivery record.
 

@@ -1,5 +1,18 @@
 # Acceptance verification
 
+## 1.0-alpha release preparation — 2026-07-21
+
+- Ruff passed and strict MyPy reported no issues across 113 Python source files.
+- All 100 backend tests passed.
+- Frontend and auth-service TypeScript checks and production builds passed.
+- The VitePress documentation build completed, including the 1.0-alpha release page.
+- Frontend, auth-service, and documentation npm audits reported zero vulnerabilities.
+- Docker Compose configuration validation passed with `.env.example`.
+- Runtime inspection reported `1.0-alpha` from both the backend package and FastAPI.
+
+Production image builds, Caddy image validation, and the live-provider scenarios below
+remain promotion checks before the prerelease is used for a production installation.
+
 ## Dual-provider local record — 2026-07-17
 
 - Ruff and strict MyPy passed across 94 Python source files; all 66 backend tests

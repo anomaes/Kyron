@@ -51,8 +51,9 @@ export default defineConfig({
       { text: "Deploy", link: "/deployment/" },
       { text: "Reference", link: "/reference/" },
       {
-        text: "v0.1",
+        text: "v1.0-alpha",
         items: [
+          { text: "1.0-alpha release", link: "/releases/1.0-alpha" },
           { text: "Implementation status", link: "/IMPLEMENTATION_PLAN" },
           { text: "Acceptance record", link: "/acceptance" },
         ],

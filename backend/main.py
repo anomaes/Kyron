@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from backend import __version__
 from backend.api.admin_routes import router as admin_router
 from backend.api.auth_routes import router as auth_router
 from backend.api.credential_routes import router as credential_router
@@ -45,7 +46,7 @@ def create_app() -> FastAPI:
     configure_application_logging(get_settings().LOG_LEVEL)
     app = FastAPI(
         title="Kyron Workflow Engine",
-        version="0.1.0",
+        version=__version__,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,

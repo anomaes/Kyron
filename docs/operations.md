@@ -80,3 +80,27 @@ Run `./scripts/verify.sh`, `npm audit` in both Node packages, and
 `docker compose -f deploy/docker-compose.yml config`. Build all three images and
 validate the Caddyfile inside the Caddy image before promoting it. Verify that
 only 80/443 are published with `docker compose ps`.
+
+## Publishing a GitHub prerelease
+
+Prepare the release metadata and notes in a normal reviewed commit, merge that commit to
+`main`, and wait for the `verify` and `Documentation` workflows to pass. Tag that exact
+commit rather than a local commit that has not reached `main`:
+
+```bash
+git switch main
+git pull --ff-only
+git status --short
+git tag -a v1.0-alpha -m "Kyron 1.0-alpha"
+git push origin v1.0-alpha
+```
+
+In GitHub, open **Releases**, choose **Draft a new release**, select `v1.0-alpha`, use
+`Kyron 1.0-alpha` as the title, and mark it as a prerelease. Summarize the release from
+the [1.0-alpha notes](/releases/1.0-alpha) and link the acceptance record. Publish only
+after the tag's verification workflow is green.
+
+GitHub Pages is deployed from `main` whenever files under `docs/` change. The release
+commit updates the version selector and release-notes page; the tag itself does not need
+a separate Pages deployment. Confirm the `Documentation` workflow's `github-pages`
+environment URL after the release commit is pushed.
