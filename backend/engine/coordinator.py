@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,8 @@ from backend.services.approval_policy_service import ApprovalPolicyError, Approv
 from backend.services.crypto import SecretCipher
 from backend.services.report_service import ReportService
 
+logger = logging.getLogger(__name__)
+
 
 class RunPaused(RuntimeError):
     pass
@@ -69,6 +72,15 @@ class RunCoordinator:
         project = await self._project(run.project_id)
         user = await self._user(run.triggered_by)
         bundle = WorkflowBundle.model_validate(run.workflow_bundle_snapshot)
+        logger.info(
+            "Workflow run execution starting "
+            "(run=%s, project=%s, workflow=%s, status=%s, commit=%s)",
+            run.id,
+            project.id,
+            run.root_workflow_id,
+            run.status,
+            run.base_commit_sha[:12],
+        )
         if run.status == RunStatus.QUEUED:
             async with project_git_locks.for_project(project.id):
                 branch, worktree, run_data = await self.git.create_run_worktree(
@@ -96,6 +108,12 @@ class RunCoordinator:
             run.status = RunStatus.RUNNING
             run.started_at = datetime.now(UTC)
             await self.session.commit()
+            logger.info(
+                "Run worktree initialized (run=%s, branch=%s, invocation=%s)",
+                run.id,
+                branch,
+                root.id,
+            )
         else:
             existing_root = await self.session.scalar(
                 select(WorkflowInvocation).where(
@@ -109,10 +127,16 @@ class RunCoordinator:
             if run.status == RunStatus.RESUMING:
                 run.status = RunStatus.RUNNING
                 await self.session.commit()
+                logger.info("Workflow run resumed (run=%s, invocation=%s)", run.id, root.id)
 
         try:
             await self.execute_invocation(run, root, bundle, project, user)
         except RunPaused:
+            logger.info(
+                "Workflow run paused for feedback (run=%s, node_execution=%s)",
+                run.id,
+                run.current_node_execution_id,
+            )
             return
         except (WaveExecutionError, GraphDeadlockError, RunExecutionError) as exc:
             if run.status != RunStatus.FAILED:
@@ -122,6 +146,12 @@ class RunCoordinator:
                 )
                 run.error_message = str(exc)
                 await self.session.commit()
+            logger.error(
+                "Workflow run failed (run=%s, error_type=%s): %s",
+                run.id,
+                run.error_type,
+                exc,
+            )
             return
 
         workflow = bundle.workflows[run.root_workflow_id]
@@ -156,6 +186,12 @@ class RunCoordinator:
         run.current_wave_id = None
         await self.session.commit()
         await ReportService(self.session).get(run)
+        logger.info(
+            "Workflow run completed (run=%s, workflow=%s, commit=%s)",
+            run.id,
+            run.root_workflow_id,
+            final_sha[:12],
+        )
 
     async def execute_invocation(
         self,
@@ -178,6 +214,14 @@ class RunCoordinator:
         invocation.status = InvocationStatus.RUNNING
         invocation.started_at = invocation.started_at or datetime.now(UTC)
         await self.session.commit()
+        logger.info(
+            "Workflow invocation started "
+            "(run=%s, invocation=%s, path=%s, workflow=%s)",
+            run.id,
+            invocation.id,
+            invocation.invocation_path,
+            workflow.id,
+        )
         scheduler = DagScheduler(workflow)
         while True:
             executions = list(
@@ -200,8 +244,25 @@ class RunCoordinator:
                 invocation.status = InvocationStatus.SUCCESS
                 invocation.finished_at = datetime.now(UTC)
                 await self.session.commit()
+                logger.info(
+                    "Workflow invocation completed "
+                    "(run=%s, invocation=%s, path=%s, workflow=%s)",
+                    run.id,
+                    invocation.id,
+                    invocation.invocation_path,
+                    workflow.id,
+                )
                 return outputs
             decision = scheduler.next(statuses, edge_results)
+            logger.debug(
+                "Scheduler decision (run=%s, invocation=%s, runnable=%s, skipped=%s, "
+                "control_boundary=%s)",
+                run.id,
+                invocation.id,
+                [node.id for node in decision.nodes],
+                decision.skipped_node_ids,
+                decision.control_boundary,
+            )
             for node_id in decision.skipped_node_ids:
                 execution = await self._node_execution(run, invocation, workflow, node_id)
                 execution.status = NodeStatus.SKIPPED
@@ -282,6 +343,15 @@ class RunCoordinator:
                 **mapped,
             }
             await self.session.commit()
+            logger.info(
+                "Subworkflow invocation created "
+                "(run=%s, parent_invocation=%s, node=%s, child_invocation=%s, workflow=%s)",
+                run.id,
+                invocation.id,
+                node.id,
+                child.id,
+                node.config.workflow_id,
+            )
         try:
             outputs = await self.execute_invocation(run, child, bundle, project, user)
         except Exception:
@@ -300,6 +370,12 @@ class RunCoordinator:
         execution.finished_at = datetime.now(UTC)
         await self._persist_control_edges(run, invocation, workflow, execution, success=True)
         await self.session.commit()
+        logger.info(
+            "Subworkflow node completed (run=%s, invocation=%s, node=%s)",
+            run.id,
+            invocation.id,
+            node.id,
+        )
 
     async def _execute_review_loop(
         self,
@@ -322,6 +398,15 @@ class RunCoordinator:
             run.error_type = "MAX_REVIEW_ITERATIONS_REACHED"
             run.error_message = execution.error_message
             await self.session.commit()
+            logger.error(
+                "Review loop exceeded its iteration limit "
+                "(run=%s, invocation=%s, node=%s, iteration=%s, maximum=%s)",
+                run.id,
+                invocation.id,
+                node.id,
+                iteration,
+                maximum,
+            )
             raise RunExecutionError(execution.error_message)
         child_workflow_id = (
             node.config.initial_workflow_id
@@ -450,6 +535,16 @@ class RunCoordinator:
         run.current_node_execution_id = execution.id
         run.current_wave_id = None
         await self.session.commit()
+        logger.info(
+            "Feedback gate opened "
+            "(run=%s, invocation=%s, node=%s, gate=%s, iteration=%s, eligible_reviewers=%s)",
+            run.id,
+            invocation.id,
+            node.id,
+            gate.id,
+            iteration,
+            len(reviewers),
+        )
         raise RunPaused()
 
     async def _ensure_merge_request(
@@ -492,6 +587,12 @@ class RunCoordinator:
                 token,
                 reviewers,
             )
+            logger.info(
+                "Change request reviewers updated (run=%s, change_request=%s, reviewers=%s)",
+                run.id,
+                run.change_request_number,
+                len(reviewers),
+            )
             return
         change_request = await self.code_host.create_change_request(
             repository_locator(
@@ -508,6 +609,12 @@ class RunCoordinator:
         run.change_request_url = change_request.url
         run.change_request_created_at = datetime.now(UTC)
         await self.session.commit()
+        logger.info(
+            "Change request created (run=%s, change_request=%s, reviewers=%s)",
+            run.id,
+            change_request.number,
+            len(reviewers),
+        )
 
     async def _node_execution(
         self,

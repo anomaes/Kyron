@@ -100,7 +100,7 @@ Creates or updates the run change request and pauses for the selected approval p
   "type": "human_feedback",
   "label": "Approve implementation",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "commit_message": "Checkpoint: awaiting implementation review",
     "mr_title": "Review ${WORKFLOW_NAME}",
     "mr_description": "Run ${RUN_ID} is ready for review.",
@@ -148,7 +148,7 @@ Runs an initial child, pauses for review, and optionally invokes a revision chil
   "type": "review_loop",
   "label": "Implement until approved",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "initial_workflow_id": "implement_change",
     "revision_workflow_id": "revise_change",
     "inputs": {

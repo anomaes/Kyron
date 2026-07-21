@@ -598,7 +598,7 @@ The authorization and conformance model uses the following durable records:
 | Tables | Purpose |
 |---|---|
 | `project_memberships`, `project_roles`, `project_role_permissions`, `project_membership_roles` | Active project membership and composable project-scoped roles from the fixed permission catalog |
-| `approval_policies`, `approval_policy_requirements`, `approval_requirement_roles`, `approval_requirement_users` | Reusable role/user requirements, per-requirement quorum, initiator approval, and cross-requirement distinctness settings |
+| `approval_policies`, `approval_policy_requirements`, `approval_requirement_roles`, `approval_requirement_users` | Reusable role/user/dynamic-triggerer requirements, per-requirement quorum, initiator approval, and cross-requirement distinctness settings |
 | `governance_profiles` | Optional tag-scoped rules requiring named policies, independent approval, and a minimum total quorum |
 | `gate_instances` | Immutable policy and eligibility snapshots tied to the exact invocation, node execution, iteration, and checkpoint commit |
 | `gate_decisions` | Actor snapshots, matched requirements, approval/feedback/override evidence, provider event IDs, and supersession state |
@@ -607,8 +607,10 @@ The authorization and conformance model uses the following durable records:
 | `change_request_lifecycle_events` | Post-run merge/close actor, delivery, and optional merge commit evidence appended to report responses |
 
 The first authenticated user becomes the initial global system administrator. New projects
-seed the built-in roles and assign the registering administrator as project administrator.
-This is bootstrap behavior, not an implicit authorization rule for later users.
+seed the built-in roles, assign the registering administrator as project administrator, and
+create the `default` approval policy. That policy has one quorum-1 requirement whose only
+eligible identity is the user who triggered the workflow. This is bootstrap behavior, not an
+implicit authorization rule for later users.
 
 A gate snapshot is never recalculated in place. Membership or policy edits affect only later
 gate instances. Revision feedback closes the current gate, supersedes its approvals, and a
@@ -982,7 +984,7 @@ Pi's working directory is the run worktree, so Pi may read and modify files in t
 {
   "type": "human_feedback",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "commit_message": "Checkpoint: awaiting review",
     "mr_title": "Workflow: ${WORKFLOW_NAME}",
     "mr_description": "Approve to continue or comment with `@kyron <feedback>`.",
@@ -991,6 +993,10 @@ Pi's working directory is the run worktree, so Pi may read and modify files in t
   }
 }
 ```
+
+`approval_policy` defaults to `default` when omitted. Every project has this policy; it requires
+one approval from the workflow triggerer and permits that user to provide revision feedback.
+Workflows select another project policy key when they require independent or additional review.
 
 The node:
 
@@ -1065,7 +1071,7 @@ The review loop is the only repeating control construct in version 1.
 {
   "type": "review_loop",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "initial_workflow_id": "implement_changes",
     "revision_workflow_id": "revise_from_feedback",
     "inputs": {

@@ -63,5 +63,9 @@ until every requirement is satisfied. Feedback closes that gate, supersedes its 
 and a later revision opens a new gate. Administrative overrides require a reason and are
 append-only audit events.
 
+Each project receives a `default` policy with a dynamic workflow-triggerer requirement and
+quorum 1. Gate node schemas select it when `approval_policy` is omitted; stricter workflows
+replace that stable key with a project-managed policy.
+
 Terminal execution reports are immutable database snapshots. Provider merge/close events
 arriving after completion are append-only post-run lifecycle addenda.

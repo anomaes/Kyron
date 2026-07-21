@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,24 +17,32 @@ from backend.api.webhook_routes import router as webhook_router
 from backend.api.workflow_routes import router as workflow_router
 from backend.config import get_settings
 from backend.lifecycle import runtime
+from backend.logging_config import configure_application_logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     settings.validate_runtime_secrets()
+    logger.info("Starting Kyron backend (environment=%s)", settings.APP_ENV)
     try:
         await runtime.start()
-    except (SQLAlchemyError, OSError):
+    except (SQLAlchemyError, OSError) as exc:
+        logger.exception("Backend runtime startup failed: %s", exc)
         if settings.is_production:
             raise
+        logger.warning("Continuing without the backend runtime because this is not production")
     try:
         yield
     finally:
         await runtime.stop()
+        logger.info("Kyron backend stopped")
 
 
 def create_app() -> FastAPI:
+    configure_application_logging(get_settings().LOG_LEVEL)
     app = FastAPI(
         title="Kyron Workflow Engine",
         version="0.1.0",

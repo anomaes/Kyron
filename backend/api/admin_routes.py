@@ -414,7 +414,7 @@ async def put_policy(
         )
     )
     for item in request.requirements:
-        if not item.role_keys and not item.user_ids:
+        if not item.role_keys and not item.user_ids and not item.include_triggering_user:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, f"Requirement {item.key} has no subjects"
             )
@@ -426,7 +426,11 @@ async def put_policy(
                 f"Requirement {item.key} references unknown or inactive project subjects",
             )
         requirement = ApprovalPolicyRequirement(
-            policy_id=policy.id, key=item.key, name=item.name, quorum=item.quorum
+            policy_id=policy.id,
+            key=item.key,
+            name=item.name,
+            quorum=item.quorum,
+            include_triggering_user=item.include_triggering_user,
         )
         db.add(requirement)
         await db.flush()
@@ -443,7 +447,7 @@ async def put_policy(
     assert project is not None
     try:
         await ApprovalPolicyService(db).snapshot(
-            project, policy.key, triggering_user_id=uuid.uuid4()
+            project, policy.key, triggering_user_id=project.added_by
         )
     except ApprovalPolicyError as exc:
         await db.rollback()
@@ -573,6 +577,7 @@ async def _policy_payload(db: DbSession, policy: ApprovalPolicy) -> dict[str, An
                 "quorum": requirement.quorum,
                 "role_keys": sorted(role_keys),
                 "user_ids": user_ids,
+                "include_triggering_user": requirement.include_triggering_user,
             }
         )
     return {**_model(policy), "requirements": items}

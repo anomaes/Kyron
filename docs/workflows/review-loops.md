@@ -16,7 +16,7 @@ Ordinary Kyron graphs are acyclic. A `review_loop` is the one deliberate repetit
   "label": "Implement until approved",
   "join": "and",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "initial_workflow_id": "implement_change",
     "revision_workflow_id": "revise_change",
     "inputs": {

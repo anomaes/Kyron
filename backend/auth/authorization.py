@@ -15,6 +15,7 @@ from backend.db.models import (
     ProjectRole,
     ProjectRolePermission,
 )
+from backend.services.approval_policy_seed import seed_default_approval_policy
 
 PROJECT_VIEW = "project.view"
 PROJECT_MANAGE = "project.manage"
@@ -124,6 +125,7 @@ async def seed_project_roles(
     session.add(
         ProjectMembershipRole(membership_id=membership.id, role_id=roles["project-admin"].id)
     )
+    await seed_default_approval_policy(session, project_id)
 
 
 async def project_permissions(

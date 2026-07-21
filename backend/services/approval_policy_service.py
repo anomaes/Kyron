@@ -96,6 +96,12 @@ class ApprovalPolicyService:
                     )
                 )
             users = await self._eligible_users(project, named_user_ids)
+            if requirement.include_triggering_user:
+                triggering_user = await self._triggering_user(project, triggering_user_id)
+                if triggering_user is not None and all(
+                    user.id != triggering_user_id for user, _identity in users
+                ):
+                    users.append(triggering_user)
             if not policy.initiator_may_approve:
                 users = [item for item in users if item[0].id != triggering_user_id]
             actors = [self._actor(user, identity) for user, identity in users]
@@ -109,6 +115,7 @@ class ApprovalPolicyService:
                     "key": requirement.key,
                     "name": requirement.name,
                     "quorum": requirement.quorum,
+                    "include_triggering_user": requirement.include_triggering_user,
                     "users": actors,
                 }
             )
@@ -127,7 +134,12 @@ class ApprovalPolicyService:
             "distinct_approvers_across_requirements": policy.distinct_approvers_across_requirements,
             "eligible_approvers_may_give_feedback": policy.eligible_approvers_may_give_feedback,
             "requirements": [
-                {"key": item["key"], "name": item["name"], "quorum": item["quorum"]}
+                {
+                    "key": item["key"],
+                    "name": item["name"],
+                    "quorum": item["quorum"],
+                    "include_triggering_user": item["include_triggering_user"],
+                }
                 for item in eligible_requirements
             ],
         }
@@ -236,6 +248,21 @@ class ApprovalPolicyService:
                 result.append((user, identity))
         return result
 
+    async def _triggering_user(
+        self, project: Project, user_id: uuid.UUID
+    ) -> tuple[User, ProviderIdentity] | None:
+        row = await self.session.execute(
+            select(User, ProviderIdentity)
+            .join(ProviderIdentity, ProviderIdentity.user_id == User.id)
+            .where(
+                User.id == user_id,
+                User.is_active.is_(True),
+                ProviderIdentity.provider == project.provider,
+            )
+        )
+        result = row.one_or_none()
+        return None if result is None else (result[0], result[1])
+
     async def _has_gate_permission(self, project_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return (
             await self.session.scalar(
@@ -268,6 +295,8 @@ class ApprovalPolicyService:
             "provider_user_id": identity.provider_user_id,
             "provider_username": identity.username,
         }
+
+
 
 
 def actor_requirement_keys(

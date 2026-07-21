@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.approval_policy_defaults import DEFAULT_APPROVAL_POLICY_KEY
 from backend.auth.authorization import (
     GATE_RESPOND,
     PROJECT_MANAGE,
@@ -70,6 +71,78 @@ async def test_seeded_project_admin_has_full_project_control(
 
     permissions = await project_permissions(db_session, auth_user(owner, identity), project.id)
     assert {PROJECT_MANAGE, GATE_RESPOND, REPORT_VIEW} <= permissions
+
+    policy = await db_session.scalar(
+        select(ApprovalPolicy).where(
+            ApprovalPolicy.project_id == project.id,
+            ApprovalPolicy.key == DEFAULT_APPROVAL_POLICY_KEY,
+        )
+    )
+    assert policy is not None
+    assert policy.initiator_may_approve
+    requirement = await db_session.scalar(
+        select(ApprovalPolicyRequirement).where(
+            ApprovalPolicyRequirement.policy_id == policy.id
+        )
+    )
+    assert requirement is not None
+    assert requirement.quorum == 1
+    assert requirement.include_triggering_user
+
+
+async def test_default_policy_only_selects_the_workflow_triggerer(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    owner = User(email="owner-default@example.com", display_name="Owner")
+    triggerer = User(email="triggerer@example.com", display_name="Triggerer")
+    db_session.add_all([owner, triggerer])
+    await db_session.flush()
+    owner_identity = ProviderIdentity(
+        user_id=owner.id,
+        provider="gitlab",
+        provider_user_id="default-owner",
+        username="owner",
+    )
+    triggerer_identity = ProviderIdentity(
+        user_id=triggerer.id,
+        provider="gitlab",
+        provider_user_id="default-triggerer",
+        username="triggerer",
+    )
+    project = Project(
+        name="Default policy project",
+        git_url="https://gitlab.example/group/default.git",
+        provider="gitlab",
+        provider_project_id="default-policy",
+        provider_project_path="group/default",
+        encrypted_access_token=b"encrypted",
+        local_path=str(tmp_path / "default-policy"),
+        default_branch="main",
+        added_by=owner.id,
+    )
+    db_session.add_all([owner_identity, triggerer_identity, project])
+    await db_session.flush()
+    await seed_project_roles(db_session, project.id, owner.id)
+    await db_session.commit()
+
+    policy_snapshot, eligible = await ApprovalPolicyService(db_session).snapshot(
+        project,
+        DEFAULT_APPROVAL_POLICY_KEY,
+        triggering_user_id=triggerer.id,
+    )
+
+    assert policy_snapshot["key"] == DEFAULT_APPROVAL_POLICY_KEY
+    assert policy_snapshot["requirements"] == [
+        {
+            "key": "triggerer",
+            "name": "Workflow triggerer approval",
+            "quorum": 1,
+            "include_triggering_user": True,
+        }
+    ]
+    assert [
+        actor["provider_user_id"] for actor in eligible["requirements"][0]["users"]
+    ] == ["default-triggerer"]
 
 
 async def test_policy_snapshot_resolves_role_members_and_excludes_initiator(

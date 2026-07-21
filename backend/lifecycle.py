@@ -35,8 +35,9 @@ class EngineRuntime:
         self._resource_reconciler_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        logger.info("Initializing workflow runtime")
         async with session_factory() as session:
-            await mark_interrupted_runs(session)
+            interrupted = await mark_interrupted_runs(session)
             queued = list(
                 await session.scalars(
                     select(WorkflowRun.id)
@@ -44,6 +45,11 @@ class EngineRuntime:
                     .order_by(WorkflowRun.queued_at)
                 )
             )
+        logger.info(
+            "Workflow runtime state restored (interrupted=%s, queued=%s)",
+            interrupted,
+            len(queued),
+        )
         for run_id in queued:
             await self.schedule(run_id)
         self._queue_reconciler_task = asyncio.create_task(
@@ -52,8 +58,10 @@ class EngineRuntime:
         self._resource_reconciler_task = asyncio.create_task(
             self._resource_reconciler(), name="resource-reconciler"
         )
+        logger.info("Workflow runtime started")
 
     async def stop(self) -> None:
+        logger.info("Stopping workflow runtime")
         for task in (self._queue_reconciler_task, self._resource_reconciler_task):
             if task:
                 task.cancel()
@@ -61,14 +69,21 @@ class EngineRuntime:
                     await task
 
     async def schedule(self, run_id: uuid.UUID) -> None:
-        await self.tasks.schedule(run_id, lambda: self._execute(run_id))
+        scheduled = await self.tasks.schedule(run_id, lambda: self._execute(run_id))
+        if scheduled:
+            logger.info("Workflow run scheduled (run=%s)", run_id)
+        else:
+            logger.debug("Workflow run is already scheduled (run=%s)", run_id)
 
     async def reschedule(self, run_id: uuid.UUID) -> None:
+        logger.info("Waiting to reschedule workflow run (run=%s)", run_id)
         await self.tasks.wait(run_id)
         if not await self.tasks.schedule(run_id, lambda: self._execute(run_id)):
             raise RuntimeError(f"Could not schedule resumed run {run_id}")
+        logger.info("Workflow run rescheduled (run=%s)", run_id)
 
     async def _execute(self, run_id: uuid.UUID) -> None:
+        logger.info("Workflow run worker starting (run=%s)", run_id)
         settings = self.settings
         cipher = SecretCipher(
             settings.CREDENTIALS_ENCRYPTION_KEY,
@@ -92,9 +107,16 @@ class EngineRuntime:
         async with session_factory() as session:
             run = await session.get(WorkflowRun, run_id)
             if run is None:
+                logger.warning("Scheduled workflow run no longer exists (run=%s)", run_id)
                 return
             project = await session.get(Project, run.project_id)
             if project is None:
+                logger.error(
+                    "Cannot execute workflow run because its project is missing "
+                    "(run=%s, project=%s)",
+                    run_id,
+                    run.project_id,
+                )
                 return
             code_host = create_code_host_client(project.provider, settings)
             runner = ProcessRunner(
@@ -106,8 +128,14 @@ class EngineRuntime:
             try:
                 coordinator = RunCoordinator(session, git, code_host, cipher, waves)
                 await coordinator.execute_run(run_id)
+            except asyncio.CancelledError:
+                logger.info("Workflow run worker cancelled (run=%s)", run_id)
+                raise
+            except Exception as exc:
+                logger.exception("Workflow run worker crashed (run=%s): %s", run_id, exc)
             finally:
                 await code_host.close()
+        logger.info("Workflow run worker stopped (run=%s)", run_id)
 
     async def _queue_reconciler(self) -> None:
         while True:
@@ -120,6 +148,7 @@ class EngineRuntime:
                         .order_by(WorkflowRun.queued_at)
                     )
                 )
+            logger.debug("Queue reconciliation found %s queued workflow run(s)", len(queued))
             for run_id in queued:
                 await self.schedule(run_id)
 
@@ -135,6 +164,7 @@ class EngineRuntime:
                 else None
             )
             try:
+                logger.debug("Starting stale-resource reconciliation")
                 async with session_factory() as session:
                     await ReconciliationService(
                         session,
@@ -148,6 +178,7 @@ class EngineRuntime:
                         process_registry,
                         self.tasks,
                     ).reconcile()
+                logger.debug("Stale-resource reconciliation completed")
             except Exception:
                 logger.exception("Stale-resource reconciliation failed")
 

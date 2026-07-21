@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,8 @@ from backend.engine.validation import direct_references, parse_workflow, validat
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
+
+logger = logging.getLogger(__name__)
 
 
 class BundleResolutionError(RuntimeError):
@@ -29,28 +32,76 @@ class WorkflowSnapshotLoader:
         max_subworkflow_depth: int,
         project_pi: PiSettings | None = None,
     ) -> WorkflowBundle:
+        logger.info(
+            "Resolving workflow snapshot (workflow=%s, commit=%s)",
+            root_workflow_id,
+            _short_sha(commit_sha),
+        )
         workflows: dict[str, WorkflowDefinition] = {}
         pending = [root_workflow_id]
         while pending:
             workflow_id = pending.pop()
             if workflow_id in workflows:
                 continue
-            raw = await self.git.show_file(
-                repository_path,
-                commit_sha,
-                f".workflowEngine/{workflow_id}.json",
-            )
+            filename = f".workflowEngine/{workflow_id}.json"
+            try:
+                raw = await self.git.show_file(repository_path, commit_sha, filename)
+            except Exception as exc:
+                logger.warning(
+                    "Could not read workflow definition (workflow=%s, file=%s, commit=%s): %s",
+                    workflow_id,
+                    filename,
+                    _short_sha(commit_sha),
+                    exc,
+                )
+                raise
             try:
                 data: Any = json.loads(raw)
             except json.JSONDecodeError as exc:
-                raise BundleResolutionError(f"Workflow '{workflow_id}' is not valid JSON") from exc
+                logger.warning(
+                    "Workflow JSON parsing failed (workflow=%s, file=%s, commit=%s, "
+                    "line=%s, column=%s): %s",
+                    workflow_id,
+                    filename,
+                    _short_sha(commit_sha),
+                    exc.lineno,
+                    exc.colno,
+                    exc.msg,
+                )
+                raise BundleResolutionError(
+                    f"Workflow '{workflow_id}' is not valid JSON at line {exc.lineno}, "
+                    f"column {exc.colno}: {exc.msg}"
+                ) from exc
             if not isinstance(data, dict):
+                logger.warning(
+                    "Workflow parsing failed (workflow=%s, file=%s, commit=%s): "
+                    "top-level JSON value is %s, expected an object",
+                    workflow_id,
+                    filename,
+                    _short_sha(commit_sha),
+                    type(data).__name__,
+                )
                 raise BundleResolutionError(f"Workflow '{workflow_id}' must be a JSON object")
             workflow, parse_errors = parse_workflow(data, f"workflows.{workflow_id}")
             if parse_errors or workflow is None:
-                details = "; ".join(issue.message for issue in parse_errors)
+                details = _issue_details(parse_errors)
+                logger.warning(
+                    "Workflow schema parsing failed (workflow=%s, file=%s, commit=%s): %s",
+                    workflow_id,
+                    filename,
+                    _short_sha(commit_sha),
+                    details,
+                )
                 raise BundleResolutionError(f"Workflow '{workflow_id}' is invalid: {details}")
             if workflow.id != workflow_id:
+                logger.warning(
+                    "Workflow parsing failed (workflow=%s, file=%s, commit=%s): "
+                    "declared ID is %s",
+                    workflow_id,
+                    filename,
+                    _short_sha(commit_sha),
+                    workflow.id,
+                )
                 raise BundleResolutionError(
                     f"Workflow file '{workflow_id}.json' declares ID '{workflow.id}'"
                 )
@@ -66,8 +117,20 @@ class WorkflowSnapshotLoader:
             max_subworkflow_depth=max_subworkflow_depth,
         )
         if not report.valid:
-            details = "; ".join(f"{issue.code}: {issue.message}" for issue in report.errors)
+            details = _issue_details(report.errors)
+            logger.warning(
+                "Workflow bundle validation failed (workflow=%s, commit=%s): %s",
+                root_workflow_id,
+                _short_sha(commit_sha),
+                details,
+            )
             raise BundleResolutionError(details)
+        logger.info(
+            "Workflow snapshot resolved (workflow=%s, commit=%s, definitions=%s)",
+            root_workflow_id,
+            _short_sha(commit_sha),
+            len(workflows),
+        )
         return WorkflowBundle(
             base_commit_sha=commit_sha,
             root_workflow_id=root_workflow_id,
@@ -75,3 +138,11 @@ class WorkflowSnapshotLoader:
             workflows=workflows,
             reference_graph={key: direct_references(value) for key, value in workflows.items()},
         )
+
+
+def _issue_details(issues: list[Any]) -> str:
+    return "; ".join(f"{issue.path} [{issue.code}]: {issue.message}" for issue in issues)
+
+
+def _short_sha(commit_sha: str) -> str:
+    return commit_sha[:12]

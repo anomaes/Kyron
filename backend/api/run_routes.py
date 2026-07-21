@@ -19,6 +19,7 @@ from fastapi import (
 )
 from sqlalchemy import ColumnElement, func, select
 
+from backend.approval_policy_defaults import DEFAULT_APPROVAL_POLICY_KEY
 from backend.auth.authorization import (
     GATE_OVERRIDE,
     GATE_RESPOND,
@@ -395,7 +396,7 @@ async def approve(
     run = await db.get(WorkflowRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
-    await authorize_project(db, user, run.project_id, GATE_RESPOND)
+    await _authorize_gate_response(db, user, run)
     try:
         event = await feedback.accept(
             run_id,
@@ -424,7 +425,7 @@ async def submit_feedback(
     run = await db.get(WorkflowRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
-    await authorize_project(db, user, run.project_id, GATE_RESPOND)
+    await _authorize_gate_response(db, user, run)
     try:
         event = await feedback.accept(
             run_id,
@@ -559,3 +560,25 @@ async def _authorize_control(db: DbSession, user: CurrentUser, run: WorkflowRun)
     if RUN_CONTROL_OWN in permissions and run.triggered_by == user.id:
         return
     raise HTTPException(status.HTTP_403_FORBIDDEN, "You may only control runs you triggered")
+
+
+async def _authorize_gate_response(
+    db: DbSession, user: CurrentUser, run: WorkflowRun
+) -> None:
+    permissions = await project_permissions(db, user, run.project_id)
+    if GATE_RESPOND in permissions:
+        return
+    if run.triggered_by == user.id and run.current_node_execution_id is not None:
+        default_gate = await db.scalar(
+            select(GateInstance.id).where(
+                GateInstance.run_id == run.id,
+                GateInstance.node_execution_id == run.current_node_execution_id,
+                GateInstance.policy_key == DEFAULT_APPROVAL_POLICY_KEY,
+                GateInstance.status == "OPEN",
+            )
+        )
+        if default_gate is not None:
+            return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN, "You do not have permission for this project action"
+    )

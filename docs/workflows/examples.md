@@ -40,7 +40,7 @@ With no edge between `tests` and `lint`, both nodes are ready together and execu
       "label": "Review quality result",
       "join": "and",
       "config": {
-        "approval_policy": "production-review",
+        "approval_policy": "default",
         "commit_message": "Checkpoint: quality gate complete",
         "allow_comment_feedback": true,
         "allow_approval": true

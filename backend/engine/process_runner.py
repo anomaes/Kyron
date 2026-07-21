@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
@@ -12,6 +13,8 @@ import aiofiles
 from backend.engine.process_registry import ProcessRegistry, terminate_process_group
 from backend.services.crypto import SecretRedactor
 from backend.services.log_broadcaster import LogBroadcaster
+
+logger = logging.getLogger(__name__)
 
 LineCallback = Callable[[str, str], Awaitable[None]]
 
@@ -82,14 +85,32 @@ class ProcessRunner:
         stdout_preview = BoundedPreview(spec.max_preview_bytes)
         stderr_preview = BoundedPreview(spec.max_preview_bytes)
         redactor = SecretRedactor(secret_values)
-        process = await asyncio.create_subprocess_exec(
-            *spec.command,
-            cwd=spec.cwd,
-            env=spec.environment,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
+        logger.debug(
+            "Starting node process (run=%s, attempt=%s, node_path=%s, timeout_seconds=%s)",
+            spec.run_id,
+            spec.attempt_id,
+            spec.node_path,
+            spec.timeout_seconds,
         )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *spec.command,
+                cwd=spec.cwd,
+                env=spec.environment,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+        except Exception as exc:
+            redactor.clear()
+            logger.exception(
+                "Could not start node process (run=%s, attempt=%s, node_path=%s): %s",
+                spec.run_id,
+                spec.attempt_id,
+                spec.node_path,
+                exc,
+            )
+            raise
         pgid = os.getpgid(process.pid)
         await self.registry.register(spec.run_id, spec.attempt_id, pgid)
 
@@ -132,11 +153,25 @@ class ProcessRunner:
                 await asyncio.wait_for(process.wait(), timeout=spec.timeout_seconds)
             except TimeoutError:
                 timed_out = True
+                logger.warning(
+                    "Node process timed out; terminating process group "
+                    "(run=%s, attempt=%s, node_path=%s, timeout_seconds=%s)",
+                    spec.run_id,
+                    spec.attempt_id,
+                    spec.node_path,
+                    spec.timeout_seconds,
+                )
                 await terminate_process_group(pgid, self.termination_grace_seconds)
                 await process.wait()
             await asyncio.gather(stdout_task, stderr_task)
         except asyncio.CancelledError:
             cancelled = True
+            logger.info(
+                "Node process cancellation requested (run=%s, attempt=%s, node_path=%s)",
+                spec.run_id,
+                spec.attempt_id,
+                spec.node_path,
+            )
             await terminate_process_group(pgid, self.termination_grace_seconds)
             await process.wait()
             await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
@@ -144,6 +179,16 @@ class ProcessRunner:
         finally:
             await self.registry.unregister(spec.run_id, spec.attempt_id)
             redactor.clear()
+        logger.debug(
+            "Node process exited "
+            "(run=%s, attempt=%s, node_path=%s, exit_code=%s, timed_out=%s, cancelled=%s)",
+            spec.run_id,
+            spec.attempt_id,
+            spec.node_path,
+            process.returncode,
+            timed_out,
+            cancelled,
+        )
         return ProcessResult(
             exit_code=process.returncode if process.returncode is not None else -1,
             stdout_path=stdout_path,

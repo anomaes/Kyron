@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import json
+import logging
 import re
 import shutil
 import uuid
@@ -37,6 +38,8 @@ from backend.schemas.workflow import (
 )
 from backend.services.approval_policy_service import ApprovalPolicyService
 from backend.services.crypto import SecretCipher
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowConflictError(RuntimeError):
@@ -97,6 +100,11 @@ class WorkflowService:
         _, definitions, _templates = await self._load_all(project)
         root, errors = parse_workflow(proposed)
         if root is None:
+            logger.warning(
+                "Proposed workflow schema parsing failed (project=%s): %s",
+                project.id,
+                _issue_details(errors),
+            )
             return WorkflowValidationResponse(valid=False, errors=errors)
         definitions[root.id] = root
         for workflow_id, raw in proposed_related.items():
@@ -107,8 +115,22 @@ class WorkflowService:
             if definition:
                 definitions[workflow_id] = definition
         if errors:
+            logger.warning(
+                "Related workflow schema parsing failed (project=%s, workflow=%s): %s",
+                project.id,
+                root.id,
+                _issue_details(errors),
+            )
             return WorkflowValidationResponse(valid=False, errors=errors)
-        return self._validate_bundle(root.id, definitions)
+        report = self._validate_bundle(root.id, definitions)
+        if not report.valid:
+            logger.warning(
+                "Proposed workflow bundle validation failed (project=%s, workflow=%s): %s",
+                project.id,
+                root.id,
+                _issue_details(report.errors),
+            )
+        return report
 
     async def save_draft(
         self,
@@ -293,6 +315,13 @@ class WorkflowService:
         *,
         use_local_definitions: bool = False,
     ) -> tuple[str, WorkflowBundle]:
+        logger.info(
+            "Creating workflow snapshot (project=%s, workflow=%s, base_ref=%s, local=%s)",
+            project.id,
+            workflow_id,
+            base_ref,
+            use_local_definitions,
+        )
         token = self.cipher.decrypt(project.encrypted_access_token)
         repository = Path(project.local_path)
         snapshot_worktree: Path | None = None
@@ -327,6 +356,12 @@ class WorkflowService:
                     max_review_iterations=self.settings.MAX_REVIEW_ITERATIONS,
                     max_subworkflow_depth=self.settings.MAX_SUBWORKFLOW_DEPTH,
                     project_pi=PiSettings.model_validate(project.pi),
+                )
+                logger.info(
+                    "Workflow snapshot created (project=%s, workflow=%s, commit=%s)",
+                    project.id,
+                    workflow_id,
+                    sha[:12],
                 )
                 return sha, bundle
         finally:
@@ -374,6 +409,14 @@ class WorkflowService:
         )
         self.session.add(run)
         await self.session.commit()
+        logger.info(
+            "Workflow run queued (run=%s, project=%s, workflow=%s, commit=%s, local=%s)",
+            run.id,
+            project.id,
+            workflow_id,
+            sha[:12],
+            use_local_definitions,
+        )
         return run
 
     def _validate_bundle(
@@ -416,22 +459,78 @@ class WorkflowService:
                     if not filename.endswith(".json"):
                         continue
                     raw = await self.git.show_file(repository, sha, filename)
-                    data = json.loads(raw)
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError as exc:
+                        logger.warning(
+                            "Definition JSON parsing failed "
+                            "(project=%s, file=%s, commit=%s, line=%s, column=%s): %s",
+                            project.id,
+                            filename,
+                            sha[:12],
+                            exc.lineno,
+                            exc.colno,
+                            exc.msg,
+                        )
+                        raise
                     if not isinstance(data, dict):
+                        logger.warning(
+                            "Definition parsing skipped (project=%s, file=%s, commit=%s): "
+                            "top-level JSON value is %s, expected an object",
+                            project.id,
+                            filename,
+                            sha[:12],
+                            type(data).__name__,
+                        )
                         continue
                     if filename.startswith(".workflowEngine/templates/"):
                         try:
                             template = NodeTemplate.model_validate(data)
-                        except ValueError:
+                        except ValueError as exc:
+                            logger.warning(
+                                "Node template parsing skipped "
+                                "(project=%s, file=%s, commit=%s): %s",
+                                project.id,
+                                filename,
+                                sha[:12],
+                                exc,
+                            )
                             continue
                         if filename.endswith(f"/{template.id}.json"):
                             templates[template.id] = template
+                        else:
+                            logger.warning(
+                                "Node template parsing skipped "
+                                "(project=%s, file=%s, commit=%s): declared ID %s "
+                                "does not match filename",
+                                project.id,
+                                filename,
+                                sha[:12],
+                                template.id,
+                            )
                         continue
                     if Path(filename).parent != Path(".workflowEngine"):
                         continue
                     definition, errors = parse_workflow(data, filename)
                     if definition is not None and not errors:
                         definitions[definition.id] = definition
+                    else:
+                        logger.warning(
+                            "Workflow schema parsing skipped "
+                            "(project=%s, file=%s, commit=%s): %s",
+                            project.id,
+                            filename,
+                            sha[:12],
+                            _issue_details(errors),
+                        )
+                logger.debug(
+                    "Repository definitions loaded "
+                    "(project=%s, commit=%s, workflows=%s, templates=%s)",
+                    project.id,
+                    sha[:12],
+                    len(definitions),
+                    len(templates),
+                )
                 return sha, definitions, templates
         finally:
             token = ""
@@ -447,6 +546,26 @@ class WorkflowService:
                 definition, errors = parse_workflow(data, str(path))
                 if definition is not None and not errors and path.stem == definition.id:
                     definitions[definition.id] = definition
+                elif errors:
+                    logger.warning(
+                        "Local workflow schema parsing skipped (file=%s): %s",
+                        path,
+                        _issue_details(errors),
+                    )
+                elif definition is not None:
+                    logger.warning(
+                        "Local workflow parsing skipped (file=%s): declared ID %s "
+                        "does not match filename",
+                        path,
+                        definition.id,
+                    )
+            elif data is not None:
+                logger.warning(
+                    "Local workflow parsing skipped (file=%s): top-level JSON value is %s, "
+                    "expected an object",
+                    path,
+                    type(data).__name__,
+                )
 
     async def _overlay_templates(self, templates: dict[str, NodeTemplate], layer: Path) -> None:
         for marker in await self._files(layer / "deleted_templates"):
@@ -565,7 +684,17 @@ class WorkflowService:
         try:
             raw = await asyncio.to_thread(path.read_text, "utf-8")
             return json.loads(raw)
-        except (OSError, json.JSONDecodeError):
+        except OSError as exc:
+            logger.warning("Could not read local definition JSON (file=%s): %s", path, exc)
+            return None
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Local definition JSON parsing failed (file=%s, line=%s, column=%s): %s",
+                path,
+                exc.lineno,
+                exc.colno,
+                exc.msg,
+            )
             return None
 
     async def _write_model(self, path: Path, model: WorkflowDefinition | NodeTemplate) -> None:
@@ -593,3 +722,7 @@ class WorkflowService:
             await asyncio.to_thread(path.unlink)
         except FileNotFoundError:
             pass
+
+
+def _issue_details(issues: list[Any]) -> str:
+    return "; ".join(f"{issue.path} [{issue.code}]: {issue.message}" for issue in issues)

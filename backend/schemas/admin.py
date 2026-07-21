@@ -29,6 +29,7 @@ class ApprovalRequirementRequest(BaseModel):
     quorum: int = Field(default=1, ge=1)
     role_keys: list[str] = Field(default_factory=list)
     user_ids: list[uuid.UUID] = Field(default_factory=list)
+    include_triggering_user: bool = False
 
 
 class ApprovalPolicyRequest(BaseModel):

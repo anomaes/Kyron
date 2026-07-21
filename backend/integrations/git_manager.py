@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import uuid
@@ -10,6 +11,8 @@ from pathlib import Path
 
 from backend.integrations.git_credentials import temporary_git_askpass
 from backend.services.crypto import SecretRedactor
+
+logger = logging.getLogger(__name__)
 
 
 class GitError(RuntimeError):
@@ -49,6 +52,8 @@ class GitManager:
     ) -> str:
         env = self._base_environment()
         env.update(env_patch or {})
+        operation = args[0] if args else "unknown"
+        logger.debug("Starting Git operation (operation=%s, cwd=%s)", operation, cwd)
         process = await asyncio.create_subprocess_exec(
             "git",
             *args,
@@ -64,7 +69,20 @@ class GitManager:
             output = redactor.redact(output)
             error = redactor.redact(error)
         if check and process.returncode:
+            logger.error(
+                "Git operation failed (operation=%s, cwd=%s, exit_code=%s): %s",
+                operation,
+                cwd,
+                process.returncode,
+                error.strip(),
+            )
             raise GitError(f"Git operation failed ({process.returncode}): {error.strip()}")
+        logger.debug(
+            "Git operation completed (operation=%s, cwd=%s, exit_code=%s)",
+            operation,
+            cwd,
+            process.returncode,
+        )
         return output.strip()
 
     async def clone(

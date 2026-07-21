@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import BashNode, PromptNode, ScriptNode, WorkflowDefinition
+
+logger = logging.getLogger(__name__)
 
 ProcessWorkflowNode = BashNode | ScriptNode | PromptNode
 CredentialLoader = Callable[[uuid.UUID], Awaitable[dict[str, str]]]
@@ -125,10 +128,30 @@ class WaveExecutor:
         run.current_invocation_id = invocation.id
         run.current_wave_id = wave.id
         await self.session.commit()
+        logger.info(
+            "Execution wave started "
+            "(run=%s, invocation=%s, wave=%s, index=%s, nodes=%s, commit=%s)",
+            run.id,
+            invocation.id,
+            wave.id,
+            wave.wave_index,
+            [node.id for node in nodes],
+            start_sha[:12],
+        )
 
         async def run_node(node: ProcessWorkflowNode) -> tuple[ProcessWorkflowNode, ProcessResult]:
             execution = executions[node.id]
             attempt = attempts[node.id]
+            logger.info(
+                "Node attempt started "
+                "(run=%s, invocation=%s, wave=%s, node=%s, type=%s, attempt=%s)",
+                run.id,
+                invocation.id,
+                wave.id,
+                node.id,
+                node.type,
+                attempt.attempt_number,
+            )
             secrets = await self.credential_loader(run.triggered_by)
             node_pi = (
                 PiSettings(
@@ -190,6 +213,14 @@ class WaveExecutor:
             if task.cancelled():
                 attempt.status = AttemptStatus.CANCELLED
                 execution.status = NodeStatus.CANCELLED
+                logger.warning(
+                    "Node attempt cancelled after another node failed "
+                    "(run=%s, wave=%s, node=%s, attempt=%s)",
+                    run.id,
+                    wave.id,
+                    node_id,
+                    attempt.attempt_number,
+                )
                 continue
             exception = task.exception()
             if isinstance(exception, NodeProcessFailure):
@@ -201,6 +232,17 @@ class WaveExecutor:
                 attempt.error_message = str(exception)
                 execution.status = NodeStatus.FAILED
                 execution.error_message = str(exception)
+                logger.error(
+                    "Node attempt failed "
+                    "(run=%s, wave=%s, node=%s, attempt=%s, exit_code=%s, timed_out=%s): %s",
+                    run.id,
+                    wave.id,
+                    node_id,
+                    attempt.attempt_number,
+                    result.exit_code,
+                    result.timed_out,
+                    exception,
+                )
             elif exception is not None:
                 failed_node_id = node_id
                 attempt.status = AttemptStatus.FAILED
@@ -208,11 +250,30 @@ class WaveExecutor:
                 attempt.error_message = str(exception)
                 execution.status = NodeStatus.FAILED
                 execution.error_message = str(exception)
+                logger.error(
+                    "Node attempt crashed "
+                    "(run=%s, wave=%s, node=%s, attempt=%s): %s",
+                    run.id,
+                    wave.id,
+                    node_id,
+                    attempt.attempt_number,
+                    exception,
+                    exc_info=(type(exception), exception, exception.__traceback__),
+                )
             else:
                 _, result = task.result()
                 results[node_id] = result
                 attempt.status = AttemptStatus.SUCCESS
                 execution.status = NodeStatus.SUCCESS
+                logger.info(
+                    "Node attempt completed "
+                    "(run=%s, wave=%s, node=%s, attempt=%s, exit_code=%s)",
+                    run.id,
+                    wave.id,
+                    node_id,
+                    attempt.attempt_number,
+                    result.exit_code,
+                )
             if node_id in results:
                 result = results[node_id]
                 attempt.exit_code = result.exit_code
@@ -232,6 +293,13 @@ class WaveExecutor:
                 run.error_type = "WORKTREE_RECOVERY_FAILED"
                 run.error_message = str(exc)
                 await self.session.commit()
+                logger.exception(
+                    "Wave rollback failed (run=%s, wave=%s, commit=%s): %s",
+                    run.id,
+                    wave.id,
+                    start_sha[:12],
+                    exc,
+                )
                 raise WaveExecutionError(wave.id, str(exc)) from exc
             wave.status = WaveStatus.ROLLED_BACK
             run.status = RunStatus.FAILED
@@ -239,6 +307,15 @@ class WaveExecutor:
             run.error_message = wave.error_message
             run.current_node_execution_id = executions[failed_node_id].id
             await self.session.commit()
+            logger.error(
+                "Execution wave rolled back after node failure "
+                "(run=%s, invocation=%s, wave=%s, failed_node=%s, commit=%s)",
+                run.id,
+                invocation.id,
+                wave.id,
+                failed_node_id,
+                start_sha[:12],
+            )
             raise WaveExecutionError(wave.id, wave.error_message or "Wave failed")
 
         for node in nodes:
@@ -297,6 +374,15 @@ class WaveExecutor:
         wave.finished_at = datetime.now(UTC)
         run.current_head_sha = end_sha
         await self.session.commit()
+        logger.info(
+            "Execution wave completed "
+            "(run=%s, invocation=%s, wave=%s, nodes=%s, commit=%s)",
+            run.id,
+            invocation.id,
+            wave.id,
+            [node.id for node in nodes],
+            end_sha[:12],
+        )
         return wave
 
 

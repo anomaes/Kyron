@@ -25,6 +25,12 @@ Approval policies select one or more project roles and optionally named members.
 requirement has its own quorum. A policy also decides whether the run initiator may approve
 and whether the same person may satisfy several requirements.
 
+Every project starts with a `default` policy whose only eligible reviewer is the user who
+triggered the workflow. One approval satisfies it, and that user may also provide revision
+feedback. This makes new human-feedback and review-loop nodes usable immediately. Create another
+policy and change the workflow's `approval_policy` key when independent or multi-person review is
+needed.
+
 Workflow gate nodes reference a stable policy key. When a gate opens, Kyron snapshots the
 policy, eligible provider identities, and exact checkpoint commit. Later membership changes
 do not rewrite that open gate. A new review iteration resolves current membership again.

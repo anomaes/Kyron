@@ -19,7 +19,7 @@ Use `human_feedback` when the workflow should stop once, present the current bra
   "label": "Review implementation",
   "join": "and",
   "config": {
-    "approval_policy": "production-review",
+    "approval_policy": "default",
     "commit_message": "Checkpoint: implementation ready for review",
     "mr_title": "Review ${WORKFLOW_NAME}",
     "mr_description": "Inspect run ${RUN_ID} at ${BASE_COMMIT_SHA}.",
@@ -33,6 +33,11 @@ Use `human_feedback` when the workflow should stop once, present the current bra
 When reached, Kyron commits pending work, resolves the selected approval policy, snapshots
 eligible users and requirements, requests their provider identities as reviewers, and sets
 the run to `awaiting_feedback`.
+
+The built-in `default` policy requires one approval from the user who triggered the workflow.
+The `approval_policy` field may be omitted because `default` is also the schema default. Select a
+custom project policy when the triggerer must not approve their own run or more reviewers are
+required.
 
 ## Who may continue the run
 

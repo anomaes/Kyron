@@ -162,6 +162,7 @@ export type ProjectMembership = {
 
 export type ApprovalRequirement = {
   key: string; name: string; quorum: number; role_keys: string[]; user_ids: string[];
+  include_triggering_user: boolean;
 };
 
 export type ApprovalPolicy = {

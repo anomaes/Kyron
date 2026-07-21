@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     FILESYSTEM_USAGE_WARNING_PERCENT: int = Field(85, ge=1, le=100)
     AUTH_USER_TOUCH_INTERVAL_SECONDS: int = Field(300, ge=0)
 
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def valid_log_level(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+            raise ValueError("LOG_LEVEL must be CRITICAL, ERROR, WARNING, INFO, or DEBUG")
+        return normalized
+
     @field_validator("MAX_NODE_TIMEOUT_SECONDS")
     @classmethod
     def max_timeout_covers_default(cls, value: int, info: object) -> int:

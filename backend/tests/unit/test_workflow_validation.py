@@ -63,6 +63,40 @@ def test_pi_defaults_and_prompt_overrides_are_parsed() -> None:
     assert node.config.skill == ".agents/skills/node/SKILL.md"
 
 
+def test_gate_nodes_default_to_the_triggerer_approval_policy() -> None:
+    human = parsed(
+        workflow(
+            nodes=[
+                {
+                    "id": "review",
+                    "type": "human_feedback",
+                    "label": "Review",
+                    "config": {},
+                }
+            ]
+        )
+    )
+    human_node = human.nodes[0]
+    assert human_node.type == "human_feedback"
+    assert human_node.config.approval_policy == "default"
+
+    loop = parsed(
+        workflow(
+            nodes=[
+                {
+                    "id": "review",
+                    "type": "review_loop",
+                    "label": "Review",
+                    "config": {"initial_workflow_id": "child"},
+                }
+            ]
+        )
+    )
+    loop_node = loop.nodes[0]
+    assert loop_node.type == "review_loop"
+    assert loop_node.config.approval_policy == "default"
+
+
 @pytest.mark.parametrize("skill", ["../outside/SKILL.md", "/absolute/SKILL.md"])
 def test_pi_skill_paths_cannot_escape_repository(skill: str) -> None:
     data = workflow()

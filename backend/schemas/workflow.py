@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.approval_policy_defaults import DEFAULT_APPROVAL_POLICY_KEY
 from backend.schemas.pi import PiSettings
 
 IDENTIFIER_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
@@ -130,7 +131,7 @@ class PromptConfig(StrictModel):
 
 
 class HumanFeedbackConfig(StrictModel):
-    approval_policy: Identifier
+    approval_policy: Identifier = DEFAULT_APPROVAL_POLICY_KEY
     commit_message: str = "Checkpoint: awaiting review"
     mr_title: str | None = None
     mr_description: str | None = None
@@ -146,7 +147,7 @@ class SubworkflowConfig(StrictModel):
 
 
 class ReviewLoopConfig(StrictModel):
-    approval_policy: Identifier
+    approval_policy: Identifier = DEFAULT_APPROVAL_POLICY_KEY
     initial_workflow_id: Identifier
     revision_workflow_id: Identifier | None = None
     inputs: dict[Identifier, str] = Field(default_factory=dict)
