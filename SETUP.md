@@ -6,12 +6,11 @@ webhooks, secrets, persistent storage, startup, validation, upgrades, and
 backups.
 
 Kyron executes Bash, Python, and Pi processes against checked-out repositories.
-Pi Prompt processes are write-confined to their run worktree and ephemeral
-scratch space; Bash and Python processes are unrestricted, and Pi retains read,
-credential, network, and compute access. Kyron is therefore an internal
-orchestration service rather than a hostile-code sandbox. Deploy it only for
-trusted users and repositories, and keep every service behind the included
-Caddy/OAuth boundary.
+Bash and Python nodes run directly in the backend container. Pi prompt nodes run
+with a read-only container filesystem and may write only to the current run
+worktree and ephemeral Pi state. This is still a trusted-internal service: Pi
+retains read, network, environment, and compute access. Keep every service behind
+the included Caddy/OAuth boundary.
 
 ## What the deployment runs
 
@@ -48,7 +47,7 @@ worker process.
 
 For a small internal installation, start with:
 
-- Ubuntu Server 24.04 LTS, 64-bit x86, with the standard Landlock-enabled kernel;
+- Ubuntu Server 24.04 LTS, 64-bit x86;
 - 4 vCPU;
 - 8 GB RAM; and
 - at least 50 GB of SSD storage.
@@ -382,18 +381,6 @@ sudo docker compose -f deploy/docker-compose.yml build --pull
 The first build downloads base images and installs Python, Node, frontend, auth,
 and Pi dependencies, so it can take several minutes.
 
-Verify that the host kernel and container runtime expose the filesystem boundary
-required by Prompt nodes:
-
-```bash
-sudo docker compose -f deploy/docker-compose.yml run --rm --no-deps \
-  --entrypoint python backend \
-  /app/backend/engine/pi/write_sandbox.py --check
-```
-
-The command must report Landlock ABI 3 or newer. Prompt execution fails closed
-when this support is unavailable; Bash and Script nodes are unaffected.
-
 Validate the packaged Caddy configuration before startup:
 
 ```bash
@@ -549,8 +536,40 @@ to the Kyron/provider identity, encrypted at rest, injected only for process
 execution, and write-only through the API.
 
 Do not add model API keys to workflow JSON, `.env`, Docker images, Git remotes,
-or shell command arguments. Run a small non-production workflow to verify model
-access, Git push, change-request creation, reviewer assignment, and live logs.
+or shell command arguments.
+
+The backend image includes Bubblewrap. Its runtime must permit an unprivileged
+process to create user, mount, and PID namespaces. Landlock is not required. Run
+the complete preflight inside the deployed backend container before enabling
+Prompt nodes:
+
+```bash
+sudo docker compose -f deploy/docker-compose.yml exec backend \
+  python -m backend.engine.pi.sandbox --check
+```
+
+For a Kubernetes deployment, run the same check in the backend pod:
+
+```bash
+kubectl exec deployment/<kyron-backend> -- \
+  python -m backend.engine.pi.sandbox --check
+```
+
+The successful result is `Bubblewrap Pi filesystem confinement is supported`.
+The check creates the same namespace and mounts used for a real Prompt node and
+verifies both allowed and denied writes. A user-namespace-only probe is not
+sufficient because the container seccomp profile must also permit Bubblewrap's
+mount setup. The included Compose deployment disables seccomp filtering for the
+backend container while retaining its unprivileged UID and dropping all Linux
+capabilities.
+
+On Kubernetes, use an unconfined or custom seccomp profile that permits the same
+namespace and mount operations. Do not grant `privileged` mode or `CAP_SYS_ADMIN`.
+Prompt nodes fail closed when Bubblewrap cannot establish the namespace, while
+Bash and Script nodes are unaffected.
+
+Run a small non-production workflow to verify model access, Git push,
+change-request creation, reviewer assignment, and live logs.
 
 ## Private networks and internal TLS
 

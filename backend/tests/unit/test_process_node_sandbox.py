@@ -30,11 +30,11 @@ class CapturingRunner(ProcessRunner):
         self.command = list(spec.command)
         self.environment = dict(spec.environment)
         self.secret_values = list(secret_values)
-        if "--write-root" in self.command:
-            root_indexes = [
-                index for index, value in enumerate(self.command) if value == "--write-root"
-            ]
-            self.scratch_root = Path(self.command[root_indexes[-1] + 1])
+        bind_indexes = [
+            index for index, value in enumerate(self.command) if value == "--bind"
+        ]
+        if bind_indexes:
+            self.scratch_root = Path(self.command[bind_indexes[-1] + 1])
             assert self.scratch_root.is_dir()
         spec.output_directory.mkdir(parents=True, exist_ok=True)
         stdout = spec.output_directory / spec.stdout_filename
@@ -82,10 +82,10 @@ async def test_prompt_node_is_write_confined_and_uses_ephemeral_pi_state(tmp_pat
         operation,
     )
 
-    assert runner.command[0:2] != ["pi", "--mode"]
-    assert runner.command.count("--write-root") == 2
+    assert runner.command[0] == "/usr/bin/bwrap"
+    assert runner.command.count("--bind") == 2
     assert str(operation.worktree) in runner.command
-    assert "pi" in runner.command
+    assert runner.command[runner.command.index("--") + 1] == "pi"
     assert runner.environment["GIT_OPTIONAL_LOCKS"] == "0"
     assert runner.environment["ANTHROPIC_API_KEY"] == "secret"
     assert runner.environment["PI_CODING_AGENT_DIR"].endswith("/agent")
@@ -108,4 +108,4 @@ async def test_bash_node_does_not_use_pi_write_confinement(tmp_path: Path) -> No
 
     assert runner.command == ["/bin/bash", "-lc", "pwd"]
     assert "PI_CODING_AGENT_DIR" not in runner.environment
-    assert "--write-root" not in runner.command
+    assert "--bind" not in runner.command

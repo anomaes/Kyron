@@ -26,7 +26,11 @@ Kyron orchestrates coding workflows against Git repositories and delivers their 
 It is designed for trusted internal engineering teams that want the speed of coding agents without giving up review, reproducibility, or operational control.
 
 > [!IMPORTANT]
-> **Kyron is an orchestration engine, not a hostile-code sandbox.** Bash and Python nodes execute directly in the backend environment. Pi Prompt processes and their child processes can write only to the run worktree and ephemeral Pi scratch space, but they retain the backend's readable files, injected credentials, network access, and compute. Run Kyron only for trusted workflow authors and trusted repositories, behind the included OAuth boundary.
+> **Kyron is not a hostile multi-tenant sandbox.** Bash and Python nodes execute directly
+> in the backend environment. Pi prompt nodes retain network and environment access, but
+> their filesystem is mounted read-only except for the current run worktree and ephemeral
+> Pi state. Run Kyron only for trusted workflow authors and repositories, behind the
+> included OAuth boundary.
 
 ## Why Kyron
 
@@ -56,6 +60,7 @@ It is designed for trusted internal engineering teams that want the speed of cod
 - **Live operations UI** with expanded run graphs, nested review iterations, WebSocket logs, Git checkpoint boundaries, and resume/cancel controls.
 - **GitLab and GitHub delivery** with provider-bound OAuth identity, repository registration, workflow-definition reviews, run change requests, and authenticated webhooks.
 - **Secret-aware execution** with Fernet-encrypted credentials, just-in-time decryption, in-memory redaction, and write-only API values.
+- **Worktree-confined Pi writes** enforced for Pi and its child processes with a read-only-root Bubblewrap namespace.
 - **Recovery after interruption** through startup reconciliation, exact worktree state, immutable attempts, and explicit operator-driven resume.
 - **Single-VM deployment** with Caddy, React, FastAPI, PostgreSQL, GitLab/GitHub OAuth, and the Pi coding agent packaged in Docker Compose.
 

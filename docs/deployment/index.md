@@ -24,7 +24,7 @@ Do not scale the backend container and do not add Uvicorn workers. The current c
 
 ## 1. Prepare the VM
 
-A reasonable starting point for a small internal installation is Ubuntu Server 24.04 LTS, 4 vCPU, 8 GB RAM, and 50 GB SSD. Repository size, build tooling, concurrent runs, and retention determine real capacity. Hosts that execute Prompt nodes must expose Landlock ABI 3 or newer to the backend container; Ubuntu 24.04's standard kernel satisfies this requirement.
+A reasonable starting point for a small internal installation is Ubuntu Server 24.04 LTS, 4 vCPU, 8 GB RAM, and 50 GB SSD. Repository size, build tooling, concurrent runs, and retention determine real capacity.
 
 Allow inbound:
 
@@ -91,12 +91,21 @@ Follow [configuration](/deployment/configuration) for every setting and [provide
 ```bash
 sudo docker compose -f deploy/docker-compose.yml --env-file .env config --quiet
 sudo docker compose -f deploy/docker-compose.yml build
-sudo docker compose -f deploy/docker-compose.yml --env-file .env run --rm \
-  --no-deps --entrypoint python backend \
-  /app/backend/engine/pi/write_sandbox.py --check
 ```
 
-The compatibility check must report a supported Landlock ABI. Inspect the resolved Compose configuration. Only Caddy should publish ports. Confirm the backend command starts one Uvicorn worker and does not enable reload.
+Inspect the resolved Compose configuration. Only Caddy should publish ports. Confirm the backend command starts one Uvicorn worker and does not enable reload.
+
+Verify Pi's filesystem boundary in the built backend image:
+
+```bash
+sudo docker compose -f deploy/docker-compose.yml run --rm --no-deps \
+  --entrypoint python backend -m backend.engine.pi.sandbox --check
+```
+
+The runtime must permit Bubblewrap to create unprivileged user, mount, and PID
+namespaces. This preflight exercises the complete mount setup; Landlock is not required.
+The Compose backend runs as UID/GID `10001` with all capabilities dropped and uses an
+unconfined seccomp profile so the required namespace syscalls reach the kernel.
 
 ## 6. Start and verify
 
@@ -117,6 +126,7 @@ Verify:
 5. A test project validates, fetches, and lists merged workflows.
 6. Signed provider webhooks are accepted and duplicate deliveries are ignored.
 7. A disposable run can checkpoint, pause for feedback, resume, and clean up after merge/close.
+8. A Prompt node can modify its run worktree but cannot modify a path outside it.
 
 ## Back up before inviting users
 
@@ -139,9 +149,9 @@ Restoring encrypted credential rows without the Fernet key makes them permanentl
 - [ ] GitLab/GitHub webhook signatures and replay protection were tested.
 - [ ] Protected branches require a fresh approval.
 - [ ] The Kyron provider identity can consume intermediate approvals.
-- [ ] The backend container reports Landlock ABI 3 or newer.
 - [ ] Storage, memory, and retention alerts are configured.
 - [ ] Only trusted authors and repositories have access.
+- [ ] The Pi Bubblewrap preflight passes inside the deployed backend container.
 - [ ] A release-specific `./scripts/verify.sh` record exists.
 
 For exhaustive host commands, private TLS, upgrades, and restore rehearsal, use the repository's [VM setup runbook](https://github.com/anomaes/Kyron/blob/main/SETUP.md).

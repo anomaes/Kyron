@@ -9,7 +9,7 @@ from backend.engine.context import build_process_environment, expand_public_vari
 from backend.engine.pi.command import build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.renderer import render_event
-from backend.engine.pi.write_sandbox import sandboxed_command
+from backend.engine.pi.sandbox import sandboxed_command
 from backend.engine.process_runner import (
     DIAGNOSTIC_TAIL_BYTES,
     BoundedTail,

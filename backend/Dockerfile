@@ -9,9 +9,10 @@ RUN npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_VERSIO
 
 FROM python:3.12-slim-bookworm
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && apt-get install -y --no-install-recommends git curl ca-certificates bubblewrap \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 10001 workflow
+    && useradd --create-home --uid 10001 workflow \
+    && bwrap --version
 COPY --from=pi /usr/local /usr/local
 WORKDIR /app
 COPY pyproject.toml README.md ./

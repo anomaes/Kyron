@@ -17,10 +17,12 @@ Each run has one branch and worktree created from an exact fetched SHA. Root and
 transitive workflow JSON are read with `git show <sha>:<path>` and stored as a
 secret-free snapshot. All invocations share the run worktree. Process nodes can
 run concurrently only within a checkpointed wave; control nodes are serialized.
-Prompt processes and their descendants inherit a Linux Landlock ruleset that permits
-file-content and directory-entry changes only in that worktree and ephemeral Pi scratch
-space. Bash and Script nodes remain unrestricted; the coordinator, rather than Pi, owns
-Git checkpoint mutations.
+
+Prompt nodes add a process-local filesystem boundary around Pi. Bubblewrap presents a
+recursively read-only view of the backend container and rebinds only the resolved run
+worktree and ephemeral Pi state read-write. Pi and every child process share that mount
+view and a private PID namespace. Bash and Script nodes retain direct backend-container
+execution.
 
 Workflow tags are versioned metadata inside those JSON definitions rather than
 database state. Consequently catalog grouping, filtering, and builder child-workflow

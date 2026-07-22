@@ -63,7 +63,13 @@ The script path must be relative and stay inside the repository; absolute paths 
 
 ## Prompt
 
-Runs the Pi coding agent non-interactively in the worktree.
+Runs the Pi coding agent non-interactively in the worktree. Pi and its child processes
+may write only to that run worktree and an ephemeral state directory; the rest of the
+container filesystem is read-only. Filesystem reads, model-provider network access, and
+the injected environment remain available.
+
+Prompt processes see an empty read-only `/proc`, so tools such as `ps` and commands that
+depend on procfs information are not available through Pi's Bash tool.
 
 ```json
 {
@@ -87,14 +93,6 @@ configuration, not template-expanded fields. Each omitted value inherits from th
 workflow and then the project. A skill is a repository-relative Markdown manifest or
 directory containing `SKILL.md`; Kyron loads the exact file from the pinned worktree
 and explicitly invokes the skill. `project_trust` remains fixed to `never`.
-
-Pi and every process it starts can change file contents and create, rename, or remove
-directory entries only in the run worktree or Kyron's ephemeral Pi scratch directory.
-Pi state, temporary files, and caches use that scratch directory and are discarded when
-the node ends. Reads, network access, injected credentials, and ordinary environment
-variables are not restricted. Git mutations that require the linked worktree's metadata
-are left to Kyron's checkpointing layer. The detailed boundary and its metadata limits
-are described in the [security model](/deployment/security).
 
 Prompt stdout contains Pi's raw JSONL event stream. Kyron also parses events into readable live logs and uses the terminal result event to determine success.
 

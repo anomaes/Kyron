@@ -60,7 +60,10 @@ The following assumptions are intentional:
    administrators and project administrators manage project memberships, roles, approval
    policies, and governance profiles.
 5. Parallel nodes may share the same worktree. The workflow author is responsible for ensuring that nodes scheduled in parallel do not conflict.
-6. Bash and Python nodes are trusted to execute within the backend environment. Pi Prompt processes and their descendants are write-confined to the run worktree and ephemeral scratch space, but retain readable backend files, injected credentials, network access, and compute. Container-per-node isolation is out of scope for the first version.
+6. Bash and Python nodes are trusted to execute within the backend environment. Pi nodes
+   retain read, network, environment, and compute access, while Bubblewrap confines
+   filesystem writes to the run worktree and ephemeral Pi state. Container-per-node
+   sandboxing is out of scope for the first version.
 
 These assumptions simplify the initial implementation. They must be clearly documented in the README and deployment notes so that the system is not later exposed to untrusted users without a security redesign.
 
@@ -955,14 +958,10 @@ Behavior:
 
 Pi must be invoked in JSON event-stream mode so that the backend can parse structured agent events.
 
-Normative command:
+Normative inner command:
 
 ```bash
-python /app/backend/engine/pi/write_sandbox.py \
-  --write-root /absolute/worktree \
-  --write-root /ephemeral/pi-scratch \
-  -- \
-  pi --mode json --no-session --no-approve \
+pi --mode json --no-session --no-approve \
   --no-extensions \
   --extension /app/backend/engine/pi/worktree_guard.mjs \
   --provider anthropic \
@@ -985,17 +984,37 @@ Rules:
   snapshotted skill selected by the workflow configuration.
 - `--no-session` prevents durable Pi session state from becoming the workflow state source.
 - `--no-approve` prevents non-interactive execution from automatically trusting repository-local Pi configuration and extensions.
-- `--no-extensions` disables extension discovery; the explicit Kyron-owned extension rejects `write` and `edit` tool paths outside the real worktree.
-- Before Pi starts, the launcher applies a Linux Landlock ruleset to itself and all descendants. The ruleset permits file-content and directory-entry changes only beneath the real worktree and ephemeral scratch directory, including protection against truncation, deletion, rename, hard-link, and symlink escapes. Landlock does not mediate metadata-only operations such as permission or timestamp changes.
-- `PI_CODING_AGENT_DIR`, `TMPDIR`, and `XDG_CACHE_HOME` point into the ephemeral scratch directory, which is removed after the process ends. `GIT_OPTIONAL_LOCKS=0` keeps Git inspection read-only; Kyron owns checkpoint mutations.
-- The launcher requires Landlock ABI 3 or newer and fails the node closed with exit code `126` when the boundary cannot be enforced. It must never fall back to an unconfined Pi process.
+- `--no-extensions` plus the explicit built-in extension rejects out-of-worktree paths
+  from Pi's `write` and `edit` tools without loading repository extensions.
 - The engine parses each JSONL record from stdout.
 - Raw JSONL is stored in `pi_events.jsonl`.
 - A human-readable event stream is published to the run log WebSocket.
 - Stderr is stored separately.
 - The process exit code determines success.
 
-Pi's working directory is the run worktree. Pi may read any path available to the backend user, but it and its child processes may change file contents or directory entries only in the worktree and ephemeral scratch directory. This is a write-integrity boundary, not isolation for hostile code.
+The engine wraps the complete Pi argument array in Bubblewrap. It recursively
+bind-mounts `/` read-only, rebinds only the resolved run worktree and a per-attempt
+scratch directory read-write, creates a private PID namespace with an empty read-only
+`/proc` and isolated ephemeral `/dev`, drops capabilities, and changes to the resolved
+worktree before executing Pi. Pi state, cache, and temporary environment paths point into
+the scratch directory. Consequently the Pi process, its Bash tool, and all descendants
+can modify the worktree, scratch directory, and ephemeral device filesystem but cannot
+mutate other filesystem paths. The sandbox does not restrict reads, network, environment
+variables, or compute resources.
+
+The empty `/proc` prevents access to the parent container namespace through
+`/proc/<pid>/root` without requiring the container runtime to expose an unmasked procfs.
+Prompt-node commands that require procfs information are unsupported.
+
+Bubblewrap must be invoked as an argument array and must fail closed: Pi must not run if
+the namespace or any mount cannot be established. The production image includes
+`/usr/bin/bwrap`. Deployment acceptance must run
+`python -m backend.engine.pi.sandbox --check` inside the backend container; this verifies
+the complete namespace and mount behavior. Landlock is not required.
+
+The Compose backend uses an unconfined seccomp profile while remaining an unprivileged
+UID with all Linux capabilities dropped. Other runtimes may use a custom profile that
+permits the required namespace and mount operations.
 
 ## 6.4 Human Feedback Node
 
@@ -2774,8 +2793,6 @@ cmd = [
     "--mode", "json",
     "--no-session",
     "--no-approve",
-    "--no-extensions",
-    "--extension", "/app/backend/engine/pi/worktree_guard.mjs",
 ]
 
 if provider:
@@ -2784,11 +2801,9 @@ if model:
     cmd += ["--model", model]
 
 cmd.append(expanded_prompt)
-cmd = sandboxed_command(cmd, worktree, pi_scratch)
 ```
 
-Do not use the obsolete `pi --prompt` form. `sandboxed_command` must construct an
-argument array for the Landlock launcher, never a shell string.
+Do not use the obsolete `pi --prompt` form.
 
 ## 18.4 Project Trust
 
@@ -3786,7 +3801,10 @@ If reset fails:
 
 ## 26.1 Trusted Internal Execution
 
-The system intentionally executes trusted workflows in the backend environment. Prompt processes have a worktree write boundary, while Bash and Script nodes remain unrestricted. This is acceptable only under the documented assumptions.
+The system intentionally executes trusted Bash and Script workflows directly in the
+backend environment. Pi Prompt nodes add filesystem write confinement, but remain trusted
+for reads, network access, environment access, and resource consumption. This is
+acceptable only under the documented assumptions.
 
 Before exposing the system to untrusted repositories or workflow authors, redesign execution to use isolated runner containers with resource and network restrictions.
 
@@ -3802,7 +3820,9 @@ Even internally:
 - Project tokens are never persisted in Git remotes.
 - Webhooks are authenticated and deduplicated.
 - Paths are validated beneath configured roots.
-- Pi Prompt processes fail closed unless Landlock ABI 3 or newer confines writes to the run worktree and ephemeral scratch space.
+- Pi and its descendants receive a read-only root filesystem with only the run worktree
+  and ephemeral Pi state mounted read-write; execution fails if Bubblewrap cannot create
+  that boundary.
 - Git commands use argument arrays.
 - Processes run as non-root.
 - Output and database backups are controlled.
@@ -3960,13 +3980,6 @@ Test with captured JSONL fixtures:
 - Timeout.
 - Cancellation.
 - Bounded preview output.
-- Prompt commands include only the Kyron-owned extension and are wrapped with both write roots.
-- Bash and Script commands are not wrapped by the Pi write boundary.
-
-On a Linux host with Landlock ABI 3 or newer, integration tests must verify that Pi
-can read outside the worktree; can write in the worktree and scratch directory; cannot
-create, write, truncate, delete, rename, or escape through symlinks outside those roots;
-and passes the same restriction to child processes.
 
 ## 27.8 Integration Tests — Git
 

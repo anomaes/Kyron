@@ -41,8 +41,7 @@ The implementation release gate completed successfully:
   passed; both dependency trees reported zero npm audit vulnerabilities.
 - Backend, OAuth service, and frontend/Caddy production images built.
 - The backend image reports the pinned Pi CLI version `0.80.9`.
-- The production-like backend container reports Landlock ABI 3 or newer, and the Pi
-  write-confinement integration test passes on that host.
+- The backend image passes `python -m backend.engine.pi.sandbox --check`.
 - Alembic upgraded a clean PostgreSQL 16 database and created the complete
   twelve-table domain plus `alembic_version`.
 - Docker Compose rendered successfully, publishes only ports 80 and 443, and
@@ -55,8 +54,8 @@ Run `./scripts/verify.sh` to repeat the repository-local portion of this gate.
 - Backend: unit/API/integration tests cover models, atomic state transitions,
   encryption/redaction, provider identity, Git/GitLab/GitHub adapters, exact snapshots,
   workflow validation, scheduling/joins, conditions, process timeout/output,
-  Pi JSON events, worktree checkpoint rollback, webhook authentication and
-  feedback actor/approval-reset semantics.
+  Pi JSON events and write confinement, worktree checkpoint rollback, webhook
+  authentication, and feedback actor/approval-reset semantics.
 - Frontend: strict TypeScript check and production Vite build.
 - Auth service: strict TypeScript check and production build.
 - Supply chain: both Node package trees pass `npm audit --audit-level=high`.

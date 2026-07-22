@@ -29,7 +29,7 @@ If one required node fails, the entire wave is reset. Resuming creates new attem
 
 ## What Kyron is not
 
-- It is **not a hostile-code sandbox**. Bash and Script nodes run directly in the backend container. Prompt nodes are write-confined to the run worktree and ephemeral Pi scratch space, but keep read, credential, network, and compute access.
+- It is **not a hostile multi-tenant sandbox**. Bash and Script nodes run directly in the backend container; Prompt-node writes are confined to the run worktree and ephemeral Pi state, but reads, network, environment, and compute remain available.
 - It is **not a multi-tenant SaaS boundary**. The trust model assumes authenticated internal users and explicitly registered repositories.
 - It is **not a general cyclic workflow engine**. Ordinary graphs must be acyclic; bounded repetition belongs in a `review_loop` node.
 - It is **not a distributed worker system**. Production runs exactly one backend worker.

@@ -64,6 +64,10 @@ services:
         required: true
     expose:
       - "8000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - seccomp=unconfined
     volumes:
       - ${WORKFLOW_DATA_HOST_PATH:-/var/workflowengine}:/var/workflowengine
     depends_on:

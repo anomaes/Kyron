@@ -89,22 +89,23 @@ Inspect the first durable engine error and the workflow snapshot. Common authori
 
 If the definition itself is wrong, merge a fix and start a new run. Existing snapshots do not change.
 
-## Prompt exits before Pi starts
+## Prompt node reports that Bubblewrap is unavailable
 
-An error beginning with `Kyron Pi write sandbox` means the backend could not enforce
-the Prompt process's worktree write boundary. Check the deployment directly:
+Run the complete check in the same backend pod or container:
 
 ```bash
-sudo docker compose -f deploy/docker-compose.yml --env-file .env run --rm \
-  --no-deps --entrypoint python backend \
-  /app/backend/engine/pi/write_sandbox.py --check
+python -m backend.engine.pi.sandbox --check
 ```
 
-Prompt execution requires Linux Landlock ABI 3 or newer and a container runtime whose
-security profile permits the Landlock syscalls. Use the supported Linux VM deployment,
-or upgrade the host kernel and container runtime. Some Linux virtual machines used by
-desktop container products do not expose Landlock even when the physical host is
-current. Kyron fails closed instead of running Pi without the write boundary.
+Bubblewrap is included in the image and does not depend on Landlock. A failure usually
+means the container runtime blocks one of the unprivileged user, mount, or PID namespace
+operations. A successful `unshare(CLONE_NEWUSER)` test confirms only the first of those
+requirements. Review the pod's effective seccomp policy and the node's unprivileged user
+namespace settings. Use either an unconfined seccomp profile, as in the included Compose
+deployment, or a custom profile that permits Bubblewrap's namespace and mount setup. Keep
+the backend unprivileged and grant neither `privileged` mode nor `CAP_SYS_ADMIN`. Prompt
+nodes remain unavailable until the full preflight succeeds, while Bash and Script nodes
+continue to run normally.
 
 ## Resume repeats successful-looking nodes
 

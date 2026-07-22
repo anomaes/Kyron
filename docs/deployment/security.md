@@ -5,7 +5,7 @@ description: Kyron's trust boundary, secret handling, provider identity, and min
 
 # Security model
 
-Kyron is designed for a **trusted internal environment**. It provides strong reproducibility, identity, credential-lifetime, and path protections, including a write boundary for Pi Prompt processes. It does not isolate hostile workflow code.
+Kyron is designed for a **trusted internal environment**. It provides strong reproducibility, identity, credential-lifetime, and path protections. Prompt nodes also receive a filesystem write boundary; this is not a hostile multi-tenant or general-purpose process sandbox.
 
 ## Trust assumptions
 
@@ -16,29 +16,40 @@ The deployment trusts:
 - repositories explicitly registered by operators; and
 - the single VM and container host.
 
-Bash and Script nodes can execute arbitrary code in the backend environment. Prompt nodes can execute arbitrary code with access to readable backend files, their environment and injected credentials, compute, and the network. Do not expose authoring or project registration to untrusted users.
+Bash and Script nodes can execute arbitrary code in the backend environment. Prompt nodes can execute Pi tools and child processes, read the container filesystem, read their environment, consume compute, and access the network. Do not expose authoring or project registration to untrusted users.
 
-## Prompt write boundary
+## Prompt-node filesystem boundary
 
-Kyron launches every Pi Prompt process under a Linux Landlock ruleset. Pi and all of
-its child processes can write or truncate file contents and create, delete, or rename
-directory entries only beneath the run's current Git worktree and an ephemeral scratch
-directory used for Pi state, caches, and temporary files. The scratch directory is
-removed after the process ends. Kyron's Pi extension also rejects out-of-worktree
-`write` and `edit` tool calls with a direct error.
+Kyron launches each Pi process in a Bubblewrap user, mount, and PID namespace. The
+container root is recursively bind-mounted read-only, then the resolved run worktree
+and a per-attempt scratch directory are mounted read-write. Pi state, caches, and
+temporary files point into that scratch directory, which is removed after execution.
+An empty read-only `/proc`, a private PID namespace, dropped capabilities, an isolated
+ephemeral `/dev`, and a new session keep Pi child processes inside the same filesystem
+view. The built-in Pi `write` and `edit` tools also reject paths outside the worktree to
+provide an immediate, readable error.
 
-The boundary covers file content writes, truncation, creation, deletion, renaming,
-hard-linking, and symlink escapes. Landlock does not mediate every metadata-only
-operation, such as changing file permissions or timestamps. The boundary also does not
-restrict reads, environment variables, network access, or resource consumption, and it
-does not apply to Bash or Script nodes. All credentials belonging to the triggering
-user are still injected into the Prompt process. Treat the boundary as protection
-against unintended content and namespace edits, not as permission to run untrusted
-prompts or repositories.
+`/proc` is intentionally empty rather than a nested procfs mount. This prevents access to
+the parent backend process through paths such as `/proc/<pid>/root` and works with the
+masked procfs used by standard container runtimes. Commands that require procfs process or
+system information are therefore unavailable inside Prompt nodes.
 
-Prompt execution fails closed before Pi starts unless the backend host and container
-runtime expose Landlock ABI 3 or newer. Kyron never silently falls back to an
-unconfined Prompt process.
+This boundary covers direct writes, truncation, deletion, renaming, links, metadata
+changes, and writes attempted through Pi's Bash tool or its descendants. Reads,
+environment variables, network access, and resource consumption are deliberately not
+restricted. Bash and Script workflow nodes do not use this boundary.
+
+Bubblewrap is part of the backend image. The container runtime must permit unprivileged
+user, mount, and PID namespaces; no Landlock support is required. Prompt execution
+fails closed if the namespace cannot be established. Operators must run
+`python -m backend.engine.pi.sandbox --check` in the deployed backend container because
+a successful user-namespace probe alone does not verify the required mount operations.
+The included Compose stack uses an unconfined backend seccomp profile so Bubblewrap can
+perform that setup; the process still runs as UID/GID `10001` with all Linux capabilities
+dropped.
+
+Kubernetes deployments may instead use a custom seccomp allow-list when the cluster can
+distribute one to every eligible node.
 
 ## Network boundary
 
@@ -109,7 +120,7 @@ Output retention is separate from database metadata. Design a retention policy t
 ## Out of scope in the current release
 
 - hostile multi-tenancy;
-- per-node containers or general syscall/network isolation;
+- per-node containers, network isolation, syscall filtering, or resource quotas;
 - distributed worker ownership;
 - provider-account linking; and
 - automatic secret-manager integration.

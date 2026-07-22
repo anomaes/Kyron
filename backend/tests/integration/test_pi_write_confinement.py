@@ -7,14 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from backend.engine.pi.write_sandbox import sandboxed_command
+from backend.engine.pi.sandbox import BUBBLEWRAP_PATH, sandboxed_command
 
-pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Landlock is Linux-only")
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux" or not BUBBLEWRAP_PATH.is_file(),
+    reason="Bubblewrap confinement is Linux-only",
+)
 
 
-async def test_pi_write_sandbox_allows_only_worktree_and_scratch_writes(
-    tmp_path: Path,
-) -> None:
+async def test_pi_sandbox_allows_only_worktree_and_scratch_writes(tmp_path: Path) -> None:
     worktree = tmp_path / "worktree"
     scratch = tmp_path / "scratch"
     outside = tmp_path / "outside"
@@ -36,6 +37,7 @@ outside = pathlib.Path(sys.argv[3])
 outside_file = outside / "existing.txt"
 
 assert outside_file.read_text() == "preserve me"
+assert not any(pathlib.Path("/proc").iterdir())
 (worktree / "allowed.txt").write_text("worktree")
 (scratch / "allowed.txt").write_text("scratch")
 
@@ -46,10 +48,12 @@ for operation in (
     lambda: outside_file.rename(worktree / "moved.txt"),
     lambda: os.link(outside_file, worktree / "linked.txt"),
     lambda: os.open(outside_file, os.O_RDONLY | os.O_TRUNC),
+    lambda: outside_file.chmod(0o600),
+    lambda: outside_file.touch(),
 ):
     try:
         operation()
-    except PermissionError:
+    except OSError:
         pass
     else:
         raise AssertionError("out-of-worktree mutation unexpectedly succeeded")
@@ -58,7 +62,7 @@ link = worktree / "outside-link"
 link.symlink_to(outside_file)
 try:
     link.write_text("blocked")
-except PermissionError:
+except OSError:
     pass
 else:
     raise AssertionError("symlink escape unexpectedly succeeded")
