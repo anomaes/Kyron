@@ -44,13 +44,17 @@ The permission catalogue has the following meaning:
 | `run.trigger` | Start a workflow run |
 | `run.control.own` | Cancel or resume runs started by the same user |
 | `run.control.any` | Cancel or resume any run in the project |
+| `run.delete` | Permanently delete completed, failed, interrupted, or cancelled runs and their local resources |
 | `gate.respond` | Approve or provide feedback at a gate when the user is eligible under the gate's snapshotted approval policy |
 | `gate.override` | Override a stuck gate with a recorded reason |
 | `report.view` | View run traceability reports |
 | `audit.view` | View the project's authorization audit events |
 
 A Project Administrator has all of these permissions, including control of any project
-run and audited gate overrides. A global system administrator is separate from the
+run, deletion of inactive runs, and audited gate overrides. Deleting a run removes its
+worktree, local branch, stored output, logs, report, and execution history; the authorization
+audit event recording who deleted it remains. Remote branches and pull or merge requests are
+not deleted. A global system administrator is separate from the
 `project-admin` role: system administrators receive every project permission without a
 project membership and can register projects and manage global users. Disabling a user
 globally immediately prevents login and gate responses. Permissions do not bypass provider

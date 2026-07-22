@@ -30,6 +30,7 @@ RUN_VIEW = "run.view"
 RUN_TRIGGER = "run.trigger"
 RUN_CONTROL_OWN = "run.control.own"
 RUN_CONTROL_ANY = "run.control.any"
+RUN_DELETE = "run.delete"
 GATE_RESPOND = "gate.respond"
 GATE_OVERRIDE = "gate.override"
 REPORT_VIEW = "report.view"
@@ -49,6 +50,7 @@ PERMISSIONS = {
     RUN_TRIGGER,
     RUN_CONTROL_OWN,
     RUN_CONTROL_ANY,
+    RUN_DELETE,
     GATE_RESPOND,
     GATE_OVERRIDE,
     REPORT_VIEW,

@@ -26,6 +26,7 @@ from backend.auth.authorization import (
     REPORT_VIEW,
     RUN_CONTROL_ANY,
     RUN_CONTROL_OWN,
+    RUN_DELETE,
     RUN_VIEW,
     accessible_project_ids,
     actor_snapshot,
@@ -65,6 +66,7 @@ from backend.integrations.git_manager import GitManager
 from backend.lifecycle import runtime
 from backend.schemas.admin import GateOverrideRequest
 from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
+from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
 from backend.services.report_service import ReportService
@@ -324,6 +326,51 @@ async def cancel(
     if run.status == RunStatus.CANCELLED:
         await ReportService(db).get(run)
     return RunResponse.model_validate(run)
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_run(
+    run_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_DELETE)
+
+    project_id = run.project_id
+    run_status = run.status
+    cleanup = CleanupService(
+        db,
+        GitManager(
+            settings.PROJECT_CLONE_BASE_PATH,
+            settings.WORKTREE_BASE_PATH,
+            settings.RUN_DATA_BASE_PATH,
+        ),
+        process_registry,
+        runtime.tasks,
+        settings.PROCESS_TERMINATION_GRACE_SECONDS,
+    )
+    try:
+        await cleanup.delete_run(run.id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    db.add(
+        audit_event(
+            user,
+            "RUN_DELETED",
+            "workflow_run",
+            project_id=project_id,
+            run_id=run_id,
+            target_id=str(run_id),
+            details={"status": run_status},
+        )
+    )
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{run_id}/resume", response_model=RunResponse)

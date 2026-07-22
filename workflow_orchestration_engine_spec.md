@@ -609,6 +609,12 @@ The authorization and conformance model uses the following durable records:
 | `run_reports` | One versioned frozen report payload for each terminal run |
 | `change_request_lifecycle_events` | Post-run merge/close actor, delivery, and optional merge commit evidence appended to report responses |
 
+The `run.delete` project permission allows permanent deletion only after a run reaches
+`COMPLETED`, `FAILED`, `INTERRUPTED`, or `CANCELLED`. Deletion removes the worktree, local run
+branch, output data, and execution record hierarchy before removing the run itself. Active runs
+cannot be deleted. A separate authorization audit event retains the actor, project, deleted run
+identifier, and final status; remote branches and change requests are left untouched.
+
 The first authenticated user becomes the initial global system administrator. New projects
 seed the built-in roles, assign the registering administrator as project administrator, and
 create the `default` approval policy. That policy has one quorum-1 requirement whose only

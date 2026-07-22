@@ -8,6 +8,7 @@ from backend.auth.authorization import (
     GATE_RESPOND,
     PROJECT_MANAGE,
     REPORT_VIEW,
+    RUN_DELETE,
     project_permissions,
     seed_project_roles,
 )
@@ -70,7 +71,7 @@ async def test_seeded_project_admin_has_full_project_control(
     await db_session.commit()
 
     permissions = await project_permissions(db_session, auth_user(owner, identity), project.id)
-    assert {PROJECT_MANAGE, GATE_RESPOND, REPORT_VIEW} <= permissions
+    assert {PROJECT_MANAGE, GATE_RESPOND, REPORT_VIEW, RUN_DELETE} <= permissions
 
     policy = await db_session.scalar(
         select(ApprovalPolicy).where(

@@ -20,6 +20,12 @@ ACTIVE_RUN_STATUSES = {
 }
 TERMINAL_RUN_STATUSES = {RunStatus.COMPLETED, RunStatus.CANCELLED}
 RESUMABLE_RUN_STATUSES = {RunStatus.FAILED, RunStatus.INTERRUPTED, RunStatus.CANCELLED}
+DELETABLE_RUN_STATUSES = {
+    RunStatus.COMPLETED,
+    RunStatus.FAILED,
+    RunStatus.INTERRUPTED,
+    RunStatus.CANCELLED,
+}
 
 
 class InvocationStatus(StrEnum):

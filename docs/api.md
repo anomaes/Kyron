@@ -46,6 +46,7 @@ headers and secrets.
 | POST | `/api/projects/{project_id}/workflows/{workflow_id}/runs` | Snapshot and queue a run |
 | GET | `/api/runs` | Filtered, paginated run list |
 | GET | `/api/runs/{run_id}` | Durable run state |
+| DELETE | `/api/runs/{run_id}` | Permanently remove an inactive run and its local resources; requires `run.delete` |
 | GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, waves, nodes, attempts, edges, feedback |
 | GET | `/api/runs/{run_id}/report` | Live or immutable terminal traceability report plus post-run lifecycle addenda |
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
@@ -63,6 +64,10 @@ headers and secrets.
 `GET /api/runs` accepts `project_id`, `root_workflow_id`, `status`,
 `triggered_by`, `created_after`, and `created_before`. Output retrieval accepts
 `attempt`, `stream=stdout|stderr|pi_events`, and `tail_lines`.
+`DELETE /api/runs/{run_id}` accepts only completed, failed, interrupted, or
+cancelled runs. It removes the local worktree and branch, output, logs, report,
+and execution hierarchy while retaining a separate authorization audit event.
+Remote branches and pull or merge requests are not changed.
 
 Workflow definitions include a `tags` array. Tags are lowercase catalog metadata
 stored in the workflow JSON; they do not alter scheduling. The workflow list response

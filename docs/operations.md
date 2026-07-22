@@ -63,8 +63,10 @@ recovery can classify interrupted work.
 
 Worktrees remain while a change request is open. Merge/close events trigger worktree and
 local-branch cleanup. Run output is retained independently for the configured
-number of days; database metadata and engine logs remain until an explicit
-policy is introduced. Terminal runs without a change request are cleaned after
+number of days. Users with the project-scoped `run.delete` permission may explicitly
+delete completed, failed, interrupted, or cancelled runs; this immediately removes
+their local resources and execution history while preserving the deletion audit event.
+Terminal runs without a change request have their worktrees cleaned after
 `TERMINAL_WORKTREE_RETENTION_DAYS`; failed and interrupted runs retain their
 separate resumability window. Hourly reconciliation repairs missed webhook
 cleanup, warns about long-open change requests, and deletes only Kyron-shaped
