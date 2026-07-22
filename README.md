@@ -26,7 +26,7 @@ Kyron orchestrates coding workflows against Git repositories and delivers their 
 It is designed for trusted internal engineering teams that want the speed of coding agents without giving up review, reproducibility, or operational control.
 
 > [!IMPORTANT]
-> **Kyron is an orchestration engine, not a sandbox.** Bash, Python, and Pi prompt nodes execute directly in the backend environment. Run it only for trusted workflow authors and trusted repositories, behind the included OAuth boundary.
+> **Kyron is an orchestration engine, not a hostile-code sandbox.** Bash and Python nodes execute directly in the backend environment. Pi Prompt processes and their child processes can write only to the run worktree and ephemeral Pi scratch space, but they retain the backend's readable files, injected credentials, network access, and compute. Run Kyron only for trusted workflow authors and trusted repositories, behind the included OAuth boundary.
 
 ## Why Kyron
 

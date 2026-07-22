@@ -41,6 +41,8 @@ The implementation release gate completed successfully:
   passed; both dependency trees reported zero npm audit vulnerabilities.
 - Backend, OAuth service, and frontend/Caddy production images built.
 - The backend image reports the pinned Pi CLI version `0.80.9`.
+- The production-like backend container reports Landlock ABI 3 or newer, and the Pi
+  write-confinement integration test passes on that host.
 - Alembic upgraded a clean PostgreSQL 16 database and created the complete
   twelve-table domain plus `alembic_version`.
 - Docker Compose rendered successfully, publishes only ports 80 and 443, and

@@ -6,7 +6,10 @@ webhooks, secrets, persistent storage, startup, validation, upgrades, and
 backups.
 
 Kyron executes Bash, Python, and Pi processes against checked-out repositories.
-It is an internal orchestration service, not a sandbox. Deploy it only for
+Pi Prompt processes are write-confined to their run worktree and ephemeral
+scratch space; Bash and Python processes are unrestricted, and Pi retains read,
+credential, network, and compute access. Kyron is therefore an internal
+orchestration service rather than a hostile-code sandbox. Deploy it only for
 trusted users and repositories, and keep every service behind the included
 Caddy/OAuth boundary.
 
@@ -45,7 +48,7 @@ worker process.
 
 For a small internal installation, start with:
 
-- Ubuntu Server 24.04 LTS, 64-bit x86;
+- Ubuntu Server 24.04 LTS, 64-bit x86, with the standard Landlock-enabled kernel;
 - 4 vCPU;
 - 8 GB RAM; and
 - at least 50 GB of SSD storage.
@@ -378,6 +381,18 @@ sudo docker compose -f deploy/docker-compose.yml build --pull
 
 The first build downloads base images and installs Python, Node, frontend, auth,
 and Pi dependencies, so it can take several minutes.
+
+Verify that the host kernel and container runtime expose the filesystem boundary
+required by Prompt nodes:
+
+```bash
+sudo docker compose -f deploy/docker-compose.yml run --rm --no-deps \
+  --entrypoint python backend \
+  /app/backend/engine/pi/write_sandbox.py --check
+```
+
+The command must report Landlock ABI 3 or newer. Prompt execution fails closed
+when this support is unavailable; Bash and Script nodes are unaffected.
 
 Validate the packaged Caddy configuration before startup:
 

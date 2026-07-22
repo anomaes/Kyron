@@ -5,7 +5,7 @@ description: Kyron's trust boundary, secret handling, provider identity, and min
 
 # Security model
 
-Kyron is designed for a **trusted internal environment**. It provides strong reproducibility, identity, credential-lifetime, and path protections, but it intentionally does not sandbox workflow code.
+Kyron is designed for a **trusted internal environment**. It provides strong reproducibility, identity, credential-lifetime, and path protections, including a write boundary for Pi Prompt processes. It does not isolate hostile workflow code.
 
 ## Trust assumptions
 
@@ -16,7 +16,29 @@ The deployment trusts:
 - repositories explicitly registered by operators; and
 - the single VM and container host.
 
-Bash, Script, and Prompt nodes can execute arbitrary code in the backend environment. A malicious workflow can read its environment, modify its worktree, consume compute, or attempt network access. Do not expose authoring or project registration to untrusted users.
+Bash and Script nodes can execute arbitrary code in the backend environment. Prompt nodes can execute arbitrary code with access to readable backend files, their environment and injected credentials, compute, and the network. Do not expose authoring or project registration to untrusted users.
+
+## Prompt write boundary
+
+Kyron launches every Pi Prompt process under a Linux Landlock ruleset. Pi and all of
+its child processes can write or truncate file contents and create, delete, or rename
+directory entries only beneath the run's current Git worktree and an ephemeral scratch
+directory used for Pi state, caches, and temporary files. The scratch directory is
+removed after the process ends. Kyron's Pi extension also rejects out-of-worktree
+`write` and `edit` tool calls with a direct error.
+
+The boundary covers file content writes, truncation, creation, deletion, renaming,
+hard-linking, and symlink escapes. Landlock does not mediate every metadata-only
+operation, such as changing file permissions or timestamps. The boundary also does not
+restrict reads, environment variables, network access, or resource consumption, and it
+does not apply to Bash or Script nodes. All credentials belonging to the triggering
+user are still injected into the Prompt process. Treat the boundary as protection
+against unintended content and namespace edits, not as permission to run untrusted
+prompts or repositories.
+
+Prompt execution fails closed before Pi starts unless the backend host and container
+runtime expose Landlock ABI 3 or newer. Kyron never silently falls back to an
+unconfined Prompt process.
 
 ## Network boundary
 
@@ -87,7 +109,7 @@ Output retention is separate from database metadata. Design a retention policy t
 ## Out of scope in the current release
 
 - hostile multi-tenancy;
-- per-node containers or syscall/network sandboxing;
+- per-node containers or general syscall/network isolation;
 - distributed worker ownership;
 - provider-account linking; and
 - automatic secret-manager integration.

@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.schemas.pi import PiSettings
 
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+WORKTREE_GUARD_PATH = Path(__file__).with_name("worktree_guard.mjs")
 
 
 def resolve_pi_settings(*scopes: PiSettings) -> PiSettings:
@@ -54,7 +55,16 @@ def build_pi_command(
     skill_path: Path | None = None,
     skill_name: str | None = None,
 ) -> list[str]:
-    command = ["pi", "--mode", "json", "--no-session", "--no-approve"]
+    command = [
+        "pi",
+        "--mode",
+        "json",
+        "--no-session",
+        "--no-approve",
+        "--no-extensions",
+        "--extension",
+        str(WORKTREE_GUARD_PATH),
+    ]
     if provider:
         command.extend(["--provider", provider])
     if model:

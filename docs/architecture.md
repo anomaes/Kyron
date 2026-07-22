@@ -17,6 +17,10 @@ Each run has one branch and worktree created from an exact fetched SHA. Root and
 transitive workflow JSON are read with `git show <sha>:<path>` and stored as a
 secret-free snapshot. All invocations share the run worktree. Process nodes can
 run concurrently only within a checkpointed wave; control nodes are serialized.
+Prompt processes and their descendants inherit a Linux Landlock ruleset that permits
+file-content and directory-entry changes only in that worktree and ephemeral Pi scratch
+space. Bash and Script nodes remain unrestricted; the coordinator, rather than Pi, owns
+Git checkpoint mutations.
 
 Workflow tags are versioned metadata inside those JSON definitions rather than
 database state. Consequently catalog grouping, filtering, and builder child-workflow

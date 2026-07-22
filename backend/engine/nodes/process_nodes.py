@@ -3,11 +3,13 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from backend.engine.context import build_process_environment, expand_public_variables
 from backend.engine.pi.command import build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.renderer import render_event
+from backend.engine.pi.write_sandbox import sandboxed_command
 from backend.engine.process_runner import (
     DIAGNOSTIC_TAIL_BYTES,
     BoundedTail,
@@ -47,6 +49,7 @@ class ProcessNodeExecutor:
         stdout_filename = "stdout.log"
         collector: PiEventCollector | None = None
         environment: dict[str, str] = {}
+        pi_scratch: TemporaryDirectory[str] | None = None
         try:
             if isinstance(node, BashNode):
                 command = [
@@ -99,6 +102,25 @@ class ProcessNodeExecutor:
                 stdout_filename = "pi_events.jsonl"
 
             environment = build_process_environment(request.public_context, request.secrets)
+            if isinstance(node, PromptNode):
+                pi_scratch = TemporaryDirectory(prefix=f"kyron-pi-{request.attempt_id}-")
+                scratch_root = Path(pi_scratch.name)
+                agent_directory = scratch_root / "agent"
+                cache_directory = scratch_root / "cache"
+                temporary_directory = scratch_root / "tmp"
+                agent_directory.mkdir()
+                cache_directory.mkdir()
+                temporary_directory.mkdir()
+                environment.update(
+                    {
+                        "GIT_OPTIONAL_LOCKS": "0",
+                        "PI_CODING_AGENT_DIR": str(agent_directory),
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "TMPDIR": str(temporary_directory),
+                        "XDG_CACHE_HOME": str(cache_directory),
+                    }
+                )
+                command = sandboxed_command(command, request.worktree, scratch_root)
             result = await self.runner.execute(
                 ProcessSpec(
                     run_id=request.run_id,
@@ -118,6 +140,8 @@ class ProcessNodeExecutor:
         finally:
             request.secrets.clear()
             environment.clear()
+            if pi_scratch is not None:
+                pi_scratch.cleanup()
         if isinstance(node, PromptNode) and collector is not None and collector.errors:
             stderr_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
             stderr_tail.append(result.stderr_tail)

@@ -24,7 +24,7 @@ Do not scale the backend container and do not add Uvicorn workers. The current c
 
 ## 1. Prepare the VM
 
-A reasonable starting point for a small internal installation is Ubuntu Server 24.04 LTS, 4 vCPU, 8 GB RAM, and 50 GB SSD. Repository size, build tooling, concurrent runs, and retention determine real capacity.
+A reasonable starting point for a small internal installation is Ubuntu Server 24.04 LTS, 4 vCPU, 8 GB RAM, and 50 GB SSD. Repository size, build tooling, concurrent runs, and retention determine real capacity. Hosts that execute Prompt nodes must expose Landlock ABI 3 or newer to the backend container; Ubuntu 24.04's standard kernel satisfies this requirement.
 
 Allow inbound:
 
@@ -91,9 +91,12 @@ Follow [configuration](/deployment/configuration) for every setting and [provide
 ```bash
 sudo docker compose -f deploy/docker-compose.yml --env-file .env config --quiet
 sudo docker compose -f deploy/docker-compose.yml build
+sudo docker compose -f deploy/docker-compose.yml --env-file .env run --rm \
+  --no-deps --entrypoint python backend \
+  /app/backend/engine/pi/write_sandbox.py --check
 ```
 
-Inspect the resolved Compose configuration. Only Caddy should publish ports. Confirm the backend command starts one Uvicorn worker and does not enable reload.
+The compatibility check must report a supported Landlock ABI. Inspect the resolved Compose configuration. Only Caddy should publish ports. Confirm the backend command starts one Uvicorn worker and does not enable reload.
 
 ## 6. Start and verify
 
@@ -136,6 +139,7 @@ Restoring encrypted credential rows without the Fernet key makes them permanentl
 - [ ] GitLab/GitHub webhook signatures and replay protection were tested.
 - [ ] Protected branches require a fresh approval.
 - [ ] The Kyron provider identity can consume intermediate approvals.
+- [ ] The backend container reports Landlock ABI 3 or newer.
 - [ ] Storage, memory, and retention alerts are configured.
 - [ ] Only trusted authors and repositories have access.
 - [ ] A release-specific `./scripts/verify.sh` record exists.

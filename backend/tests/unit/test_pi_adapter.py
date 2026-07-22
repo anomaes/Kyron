@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.engine.pi.command import build_pi_command, resolve_pi_settings, resolve_pi_skill
+from backend.engine.pi.command import (
+    WORKTREE_GUARD_PATH,
+    build_pi_command,
+    resolve_pi_settings,
+    resolve_pi_skill,
+)
 from backend.engine.pi.json_events import PiEventCollector, PiProtocolError, parse_event
 from backend.engine.pi.renderer import render_event
 from backend.schemas.pi import PiSettings
@@ -15,6 +20,9 @@ def test_pi_command_uses_json_noninteractive_mode() -> None:
         "json",
         "--no-session",
         "--no-approve",
+        "--no-extensions",
+        "--extension",
+        str(WORKTREE_GUARD_PATH),
         "--provider",
         "anthropic",
         "--model",
@@ -35,6 +43,9 @@ def test_pi_command_explicitly_loads_and_invokes_skill() -> None:
         "json",
         "--no-session",
         "--no-approve",
+        "--no-extensions",
+        "--extension",
+        str(WORKTREE_GUARD_PATH),
         "--model",
         "anthropic/model",
         "--no-skills",
@@ -42,6 +53,10 @@ def test_pi_command_explicitly_loads_and_invokes_skill() -> None:
         "/worktree/.agents/skills/release/SKILL.md",
         "/skill:release ship",
     ]
+
+
+def test_pi_worktree_guard_is_packaged_with_the_adapter() -> None:
+    assert WORKTREE_GUARD_PATH.is_file()
 
 
 def test_pi_settings_resolve_field_by_field() -> None:

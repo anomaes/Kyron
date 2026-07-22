@@ -51,7 +51,7 @@ features:
 | Integrate through HTTP or WebSocket | [Use the API reference](/api) |
 
 ::: warning Trusted internal execution
-Kyron is an orchestration engine, not a sandbox. Bash, Python, and Pi prompt nodes execute directly in the backend environment. Only trusted users should author workflows or register repositories.
+Kyron is an orchestration engine, not a hostile-code sandbox. Bash and Python nodes execute directly in the backend environment. Pi Prompt processes are write-confined to the run worktree and ephemeral scratch space, but retain read, credential, network, and compute access. Only trusted users should author workflows or register repositories.
 :::
 
 ## The execution model in one minute

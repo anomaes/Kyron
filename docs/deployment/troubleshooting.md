@@ -89,6 +89,23 @@ Inspect the first durable engine error and the workflow snapshot. Common authori
 
 If the definition itself is wrong, merge a fix and start a new run. Existing snapshots do not change.
 
+## Prompt exits before Pi starts
+
+An error beginning with `Kyron Pi write sandbox` means the backend could not enforce
+the Prompt process's worktree write boundary. Check the deployment directly:
+
+```bash
+sudo docker compose -f deploy/docker-compose.yml --env-file .env run --rm \
+  --no-deps --entrypoint python backend \
+  /app/backend/engine/pi/write_sandbox.py --check
+```
+
+Prompt execution requires Linux Landlock ABI 3 or newer and a container runtime whose
+security profile permits the Landlock syscalls. Use the supported Linux VM deployment,
+or upgrade the host kernel and container runtime. Some Linux virtual machines used by
+desktop container products do not expose Landlock even when the physical host is
+current. Kyron fails closed instead of running Pi without the write boundary.
+
 ## Resume repeats successful-looking nodes
 
 This is expected when nodes shared a failed wave. Their combined filesystem changes were rolled back to the wave start. Resume creates fresh attempts for the whole wave to preserve a coherent checkpoint.
