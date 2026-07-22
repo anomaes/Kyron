@@ -44,7 +44,8 @@ class GitLabClient:
         category: str,
         json: dict[str, Any] | None = None,
         retry_get: bool = True,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+        allow_scalar_response: bool = False,
+    ) -> object:
         redactor = SecretRedactor([token])
         attempts = 3 if method == "GET" and retry_get else 1
         try:
@@ -69,7 +70,7 @@ class GitLabClient:
                 if response.status_code == 204 or not response.content:
                     return {}
                 data = response.json()
-                if not isinstance(data, (dict, list)):
+                if not allow_scalar_response and not isinstance(data, (dict, list)):
                     raise GitLabError(category, response.status_code)
                 return data
         finally:
@@ -85,12 +86,21 @@ class GitLabClient:
         category: str,
         json: dict[str, Any] | None = None,
         retry_get: bool = True,
+        require_object: bool = True,
     ) -> dict[str, Any]:
         data = await self._request_data(
-            method, path, token, category=category, json=json, retry_get=retry_get
+            method,
+            path,
+            token,
+            category=category,
+            json=json,
+            retry_get=retry_get,
+            allow_scalar_response=not require_object,
         )
         if not isinstance(data, dict):
-            raise GitLabError(category)
+            if require_object:
+                raise GitLabError(category)
+            return {}
         return data
 
     async def request_list(
@@ -196,6 +206,7 @@ class GitLabClient:
             token,
             category="approval reset",
             retry_get=False,
+            require_object=False,
         )
 
     async def wait_for_approval_sync(

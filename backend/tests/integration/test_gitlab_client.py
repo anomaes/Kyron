@@ -28,6 +28,17 @@ async def test_gitlab_error_is_sanitized() -> None:
     assert "secret-token" not in str(captured.value)
 
 
+async def test_reset_approvals_accepts_scalar_202_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path == "/api/v4/projects/123/merge_requests/63/reset_approvals"
+        return httpx.Response(202, json=202)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        gitlab = GitLabClient("https://gitlab.example", client)
+        await gitlab.reset_approvals(123, 63, "secret-token")
+
+
 async def test_find_merge_request_uses_run_branch_and_target() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["state"] == "opened"

@@ -51,6 +51,7 @@ async def gitlab_webhook(
     reservation = await repository.try_begin(
         "gitlab", key, headers.get("x-gitlab-event", "unknown")
     )
+    delivery_id = reservation.delivery.id
     await db.commit()
     if not reservation.created:
         return reservation.delivery.result or {"status": "duplicate"}
@@ -82,12 +83,12 @@ async def gitlab_webhook(
             )
         finally:
             await code_host.close()
-        await repository.finish(reservation.delivery.id, "PROCESSED", result)
+        await repository.finish(delivery_id, "PROCESSED", result)
         await db.commit()
         return result
     except Exception as exc:
         result = {"status": "failed", "reason": str(exc)}
-        await repository.finish(reservation.delivery.id, "FAILED", result)
+        await repository.finish(delivery_id, "FAILED", result)
         await db.commit()
         raise
 
@@ -109,6 +110,7 @@ async def github_webhook(
     event_name = headers.get("x-github-event", "unknown")
     repository = WebhookDeliveryRepository(db)
     reservation = await repository.try_begin("github", key, event_name)
+    delivery_id = reservation.delivery.id
     await db.commit()
     if not reservation.created:
         return reservation.delivery.result or {"status": "duplicate"}
@@ -141,11 +143,11 @@ async def github_webhook(
             )
         finally:
             await code_host.close()
-        await repository.finish(reservation.delivery.id, "PROCESSED", result)
+        await repository.finish(delivery_id, "PROCESSED", result)
         await db.commit()
         return result
     except Exception as exc:
         result = {"status": "failed", "reason": str(exc)}
-        await repository.finish(reservation.delivery.id, "FAILED", result)
+        await repository.finish(delivery_id, "FAILED", result)
         await db.commit()
         raise
