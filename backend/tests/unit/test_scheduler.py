@@ -66,3 +66,18 @@ def test_control_nodes_are_isolated_after_process_nodes() -> None:
     second = scheduler.next({"process": LogicalStatus.SUCCESS}, {})
     assert [node.id for node in second.nodes] == ["child"]
     assert second.control_boundary
+
+
+def test_running_subworkflow_is_ready_for_continuation() -> None:
+    child = {
+        "id": "child",
+        "type": "subworkflow",
+        "label": "child",
+        "config": {"workflow_id": "other"},
+    }
+    scheduler = scheduler_for([child, bash_node("after")], [edge("child", "after")])
+
+    decision = scheduler.next({"child": LogicalStatus.RUNNING}, {})
+
+    assert [node.id for node in decision.nodes] == ["child"]
+    assert decision.control_boundary

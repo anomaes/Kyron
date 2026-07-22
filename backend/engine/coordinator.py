@@ -477,6 +477,10 @@ class RunCoordinator:
             )
         try:
             outputs = await self.execute_invocation(run, child, bundle, project, user)
+        except RunPaused:
+            # A feedback checkpoint in the child suspends the whole invocation chain.
+            # Keep the parent control node resumable; this is not an execution failure.
+            raise
         except Exception:
             execution.status = NodeStatus.FAILED
             execution.finished_at = datetime.now(UTC)

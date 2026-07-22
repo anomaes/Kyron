@@ -46,25 +46,30 @@ class DagScheduler:
         ready: list[WorkflowNode] = []
         skipped: list[str] = []
         for node_id in sorted(self.nodes):
-            if statuses.get(node_id, LogicalStatus.PENDING) != LogicalStatus.PENDING:
+            status = statuses.get(node_id, LogicalStatus.PENDING)
+            node = self.nodes[node_id]
+            if status == LogicalStatus.RUNNING and node.type in {"subworkflow", "review_loop"}:
+                ready.append(node)
+                continue
+            if status != LogicalStatus.PENDING:
                 continue
             incoming = self.incoming[node_id]
             if not incoming:
-                ready.append(self.nodes[node_id])
+                ready.append(node)
                 continue
             evaluated = [edge for edge in incoming if edge.id in edge_results]
             true_exists = any(edge_results[edge.id] for edge in evaluated)
             predecessors_terminal = all(
                 statuses.get(edge.source, LogicalStatus.PENDING) in TERMINAL for edge in incoming
             )
-            if self.nodes[node_id].join == "or":
+            if node.join == "or":
                 if true_exists:
-                    ready.append(self.nodes[node_id])
+                    ready.append(node)
                 elif predecessors_terminal and len(evaluated) == len(incoming):
                     skipped.append(node_id)
             elif predecessors_terminal and len(evaluated) == len(incoming):
                 if true_exists:
-                    ready.append(self.nodes[node_id])
+                    ready.append(node)
                 else:
                     skipped.append(node_id)
 
