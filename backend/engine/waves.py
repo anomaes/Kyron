@@ -27,6 +27,7 @@ from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import BashNode, PromptNode, ScriptNode, WorkflowDefinition
+from backend.services.engine_log_service import EngineLogService
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,13 @@ class WaveExecutor:
         git: GitManager,
         node_executor: ProcessNodeExecutor,
         credential_loader: CredentialLoader,
+        engine_logs: EngineLogService | None = None,
     ) -> None:
         self.session = session
         self.git = git
         self.node_executor = node_executor
         self.credential_loader = credential_loader
+        self.engine_logs = engine_logs
 
     async def execute(
         self,
@@ -127,6 +130,30 @@ class WaveExecutor:
             attempts[node.id] = attempt
         run.current_invocation_id = invocation.id
         run.current_wave_id = wave.id
+        if self.engine_logs is not None:
+            await self.engine_logs.write(
+                run.id,
+                "INFO",
+                "WAVE_STARTED",
+                f"Wave {wave.wave_index} started: {', '.join(node.id for node in nodes)}",
+                invocation_path=invocation.invocation_path,
+                metadata={"wave_id": str(wave.id), "wave_index": wave.wave_index},
+            )
+            for node in nodes:
+                attempt = attempts[node.id]
+                await self.engine_logs.write(
+                    run.id,
+                    "INFO",
+                    "NODE_STARTED",
+                    f"Started {node.label} (attempt {attempt.attempt_number})",
+                    invocation_path=invocation.invocation_path,
+                    node_path=executions[node.id].node_path,
+                    metadata={
+                        "attempt_id": str(attempt.id),
+                        "attempt_number": attempt.attempt_number,
+                        "node_type": node.type,
+                    },
+                )
         await self.session.commit()
         logger.info(
             "Execution wave started "
@@ -286,6 +313,29 @@ class WaveExecutor:
                 execution.stdout_path = str(result.stdout_path.relative_to(run_data))
                 execution.stderr_path = str(result.stderr_path.relative_to(run_data))
 
+            if self.engine_logs is not None:
+                level = "INFO" if execution.status == NodeStatus.SUCCESS else "ERROR"
+                event_type = f"NODE_{execution.status}"
+                message = (
+                    f"Completed {node_id} (attempt {attempt.attempt_number})"
+                    if execution.status == NodeStatus.SUCCESS
+                    else execution.error_message
+                    or f"{node_id} ended with status {execution.status}"
+                )
+                await self.engine_logs.write(
+                    run.id,
+                    level,
+                    event_type,
+                    message,
+                    invocation_path=invocation.invocation_path,
+                    node_path=execution.node_path,
+                    metadata={
+                        "attempt_id": str(attempt.id),
+                        "attempt_number": attempt.attempt_number,
+                        "exit_code": attempt.exit_code,
+                    },
+                )
+
         if failed_node_id:
             wave.status = WaveStatus.FAILED
             wave.error_message = executions[failed_node_id].error_message
@@ -311,6 +361,16 @@ class WaveExecutor:
             run.error_type = "NODE_FAILURE"
             run.error_message = wave.error_message
             run.current_node_execution_id = executions[failed_node_id].id
+            if self.engine_logs is not None:
+                await self.engine_logs.write(
+                    run.id,
+                    "ERROR",
+                    "WAVE_ROLLED_BACK",
+                    f"Wave {wave.wave_index} was rolled back after {failed_node_id} failed",
+                    invocation_path=invocation.invocation_path,
+                    node_path=executions[failed_node_id].node_path,
+                    metadata={"wave_id": str(wave.id), "commit_sha": start_sha},
+                )
             await self.session.commit()
             logger.error(
                 "Execution wave rolled back after node failure "
@@ -378,6 +438,15 @@ class WaveExecutor:
         wave.status = WaveStatus.SUCCESS
         wave.finished_at = datetime.now(UTC)
         run.current_head_sha = end_sha
+        if self.engine_logs is not None:
+            await self.engine_logs.write(
+                run.id,
+                "INFO",
+                "WAVE_COMPLETED",
+                f"Wave {wave.wave_index} completed at {end_sha[:12]}",
+                invocation_path=invocation.invocation_path,
+                metadata={"wave_id": str(wave.id), "commit_sha": end_sha},
+            )
         await self.session.commit()
         logger.info(
             "Execution wave completed "

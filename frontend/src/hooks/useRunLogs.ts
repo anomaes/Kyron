@@ -1,24 +1,78 @@
 import { useEffect, useRef, useState } from "react";
+import { api } from "../api/client";
 import type { LogEvent } from "../types";
+
+export type RunLogConnectionState = "connecting" | "live" | "retrying" | "complete";
 
 export function useRunLogs(runId: string, terminal: boolean) {
   const [events, setEvents] = useState<LogEvent[]>([]);
+  const [connectionState, setConnectionState] = useState<RunLogConnectionState>("connecting");
   const lastSequence = useRef(0);
+  const activeRun = useRef("");
   useEffect(() => {
-    let socket: WebSocket | null = null; let cancelled = false; let retry = 500;
+    let socket: WebSocket | null = null;
+    let cancelled = false;
+    let retry = 500;
+    let reconnectTimer: number | undefined;
+    let pollTimer: number | undefined;
+    if (activeRun.current !== runId) {
+      activeRun.current = runId;
+      lastSequence.current = 0;
+      setEvents([]);
+    }
+
+    function append(incoming: LogEvent[]) {
+      for (const event of incoming) {
+        if (event.sequence) lastSequence.current = Math.max(lastSequence.current, event.sequence);
+      }
+      setEvents((current) => {
+        const knownSequences = new Set(current.flatMap((event) => event.sequence ? [event.sequence] : []));
+        const fresh = incoming.filter((event) => !event.sequence || !knownSequences.has(event.sequence));
+        return fresh.length ? [...current, ...fresh].slice(-2000) : current;
+      });
+    }
+
+    async function backfill() {
+      try {
+        const historical = await api<LogEvent[]>(`/runs/${runId}/logs?after_id=${lastSequence.current}&limit=5000`);
+        if (!cancelled) append(historical);
+      } catch {
+        // The WebSocket remains the primary live path. A later poll retries the backfill.
+      }
+    }
+
     function connect() {
       if (cancelled || terminal) return;
+      setConnectionState("connecting");
       const protocol = location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${protocol}://${location.host}/api/ws/runs/${runId}/logs?after_id=${lastSequence.current}`);
       socket.onmessage = (message) => {
         const event = JSON.parse(message.data) as LogEvent;
-        if (event.sequence) lastSequence.current = Math.max(lastSequence.current, event.sequence);
-        if (event.type !== "heartbeat") setEvents((current) => [...current.slice(-1999), event]);
+        if (event.type !== "heartbeat") append([event]);
       };
-      socket.onopen = () => { retry = 500; };
-      socket.onclose = () => { if (!cancelled && !terminal) { setTimeout(connect, retry); retry = Math.min(retry * 2, 10000); } };
+      socket.onopen = () => { retry = 500; setConnectionState("live"); };
+      socket.onclose = () => {
+        if (!cancelled && !terminal) {
+          setConnectionState("retrying");
+          reconnectTimer = window.setTimeout(connect, retry);
+          retry = Math.min(retry * 2, 10000);
+        }
+      };
     }
-    connect(); return () => { cancelled = true; socket?.close(); };
+
+    void backfill();
+    if (terminal) {
+      setConnectionState("complete");
+    } else {
+      connect();
+      pollTimer = window.setInterval(() => { void backfill(); }, 3000);
+    }
+    return () => {
+      cancelled = true;
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+      if (pollTimer !== undefined) window.clearInterval(pollTimer);
+      socket?.close();
+    };
   }, [runId, terminal]);
-  return events;
+  return { events, connectionState };
 }

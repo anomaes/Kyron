@@ -21,6 +21,7 @@ from backend.engine.waves import WaveExecutor
 from backend.integrations.code_host import create_code_host_client
 from backend.integrations.git_manager import GitManager
 from backend.services.crypto import SecretCipher
+from backend.services.engine_log_service import EngineLogService
 from backend.services.log_broadcaster import log_broadcaster
 from backend.services.reconciliation_service import ReconciliationService
 
@@ -124,9 +125,23 @@ class EngineRuntime:
                 log_broadcaster,
                 settings.PROCESS_TERMINATION_GRACE_SECONDS,
             )
-            waves = WaveExecutor(session, git, ProcessNodeExecutor(runner), credentials)
+            engine_logs = EngineLogService(session, log_broadcaster)
+            waves = WaveExecutor(
+                session,
+                git,
+                ProcessNodeExecutor(runner),
+                credentials,
+                engine_logs,
+            )
             try:
-                coordinator = RunCoordinator(session, git, code_host, cipher, waves)
+                coordinator = RunCoordinator(
+                    session,
+                    git,
+                    code_host,
+                    cipher,
+                    waves,
+                    engine_logs,
+                )
                 await coordinator.execute_run(run_id)
             except asyncio.CancelledError:
                 logger.info("Workflow run worker cancelled (run=%s)", run_id)

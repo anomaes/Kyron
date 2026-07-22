@@ -39,6 +39,7 @@ from backend.schemas.workflow import (
 )
 from backend.services.approval_policy_service import ApprovalPolicyError, ApprovalPolicyService
 from backend.services.crypto import SecretCipher
+from backend.services.engine_log_service import EngineLogService
 from backend.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
@@ -60,12 +61,14 @@ class RunCoordinator:
         code_host: CodeHostClient,
         cipher: SecretCipher,
         wave_executor: WaveExecutor,
+        engine_logs: EngineLogService | None = None,
     ) -> None:
         self.session = session
         self.git = git
         self.code_host = code_host
         self.cipher = cipher
         self.wave_executor = wave_executor
+        self.engine_logs = engine_logs
 
     async def execute_run(self, run_id: uuid.UUID) -> None:
         run = await self._run(run_id)
@@ -107,6 +110,13 @@ class RunCoordinator:
             self.session.add(root)
             run.status = RunStatus.RUNNING
             run.started_at = datetime.now(UTC)
+            await self._write_log(
+                run.id,
+                "INFO",
+                "RUN_STARTED",
+                f"Workflow run started for {run.root_workflow_id}",
+                invocation_path="root",
+            )
             await self.session.commit()
             logger.info(
                 "Run worktree initialized (run=%s, branch=%s, invocation=%s)",
@@ -126,6 +136,13 @@ class RunCoordinator:
             root = existing_root
             if run.status == RunStatus.RESUMING:
                 run.status = RunStatus.RUNNING
+                await self._write_log(
+                    run.id,
+                    "INFO",
+                    "RUN_RESUMED",
+                    "Workflow run resumed",
+                    invocation_path="root",
+                )
                 await self.session.commit()
                 logger.info("Workflow run resumed (run=%s, invocation=%s)", run.id, root.id)
 
@@ -145,7 +162,14 @@ class RunCoordinator:
                     "GRAPH_DEADLOCK" if isinstance(exc, GraphDeadlockError) else "NODE_FAILURE"
                 )
                 run.error_message = str(exc)
-                await self.session.commit()
+            await self._write_log(
+                run.id,
+                "ERROR",
+                "RUN_FAILED",
+                run.error_message or str(exc),
+                metadata={"error_type": run.error_type},
+            )
+            await self.session.commit()
             logger.error(
                 "Workflow run failed (run=%s, error_type=%s): %s",
                 run.id,
@@ -184,6 +208,14 @@ class RunCoordinator:
         run.current_invocation_id = None
         run.current_node_execution_id = None
         run.current_wave_id = None
+        await self._write_log(
+            run.id,
+            "INFO",
+            "RUN_COMPLETED",
+            f"Workflow run completed at {final_sha[:12]}",
+            invocation_path="root",
+            metadata={"commit_sha": final_sha},
+        )
         await self.session.commit()
         await ReportService(self.session).get(run)
         logger.info(
@@ -213,6 +245,14 @@ class RunCoordinator:
         }
         invocation.status = InvocationStatus.RUNNING
         invocation.started_at = invocation.started_at or datetime.now(UTC)
+        await self._write_log(
+            run.id,
+            "INFO",
+            "INVOCATION_STARTED",
+            f"Started {workflow.name}",
+            invocation_path=invocation.invocation_path,
+            metadata={"workflow_id": workflow.id},
+        )
         await self.session.commit()
         logger.info(
             "Workflow invocation started "
@@ -243,6 +283,14 @@ class RunCoordinator:
                 invocation.output_context = outputs
                 invocation.status = InvocationStatus.SUCCESS
                 invocation.finished_at = datetime.now(UTC)
+                await self._write_log(
+                    run.id,
+                    "INFO",
+                    "INVOCATION_COMPLETED",
+                    f"Completed {workflow.name}",
+                    invocation_path=invocation.invocation_path,
+                    metadata={"workflow_id": workflow.id},
+                )
                 await self.session.commit()
                 logger.info(
                     "Workflow invocation completed "
@@ -534,6 +582,15 @@ class RunCoordinator:
         run.current_invocation_id = invocation.id
         run.current_node_execution_id = execution.id
         run.current_wave_id = None
+        await self._write_log(
+            run.id,
+            "INFO",
+            "FEEDBACK_GATE_OPENED",
+            f"Waiting for feedback on {node.label}",
+            invocation_path=invocation.invocation_path,
+            node_path=execution.node_path,
+            metadata={"gate_id": str(gate.id), "iteration": iteration},
+        )
         await self.session.commit()
         logger.info(
             "Feedback gate opened "
@@ -546,6 +603,28 @@ class RunCoordinator:
             len(reviewers),
         )
         raise RunPaused()
+
+    async def _write_log(
+        self,
+        run_id: uuid.UUID,
+        level: str,
+        event_type: str,
+        message: str,
+        *,
+        invocation_path: str | None = None,
+        node_path: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self.engine_logs is not None:
+            await self.engine_logs.write(
+                run_id,
+                level,
+                event_type,
+                message,
+                invocation_path=invocation_path,
+                node_path=node_path,
+                metadata=metadata,
+            )
 
     async def _ensure_merge_request(
         self,

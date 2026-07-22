@@ -208,6 +208,7 @@ export type LogEvent = {
   timestamp?: string;
   level?: string;
   event_type?: string;
+  invocation_path?: string | null;
   node_path?: string | null;
   source?: string;
   line?: string;
