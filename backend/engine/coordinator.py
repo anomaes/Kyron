@@ -25,6 +25,7 @@ from backend.engine.scheduler import DagScheduler, GraphDeadlockError, LogicalSt
 from backend.engine.waves import WaveExecutionError, WaveExecutor
 from backend.integrations.code_host import (
     CodeHostClient,
+    CodeHostError,
     ProviderUser,
     git_username,
     repository_locator,
@@ -43,6 +44,9 @@ from backend.services.engine_log_service import EngineLogService
 from backend.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
+
+PENDING_FEEDBACK_PUBLICATION = "FEEDBACK_PUBLICATION"
+PENDING_FINAL_PUBLICATION = "FINAL_PUBLICATION"
 
 
 class RunPaused(RuntimeError):
@@ -145,6 +149,9 @@ class RunCoordinator:
                 )
                 await self.session.commit()
                 logger.info("Workflow run resumed (run=%s, invocation=%s)", run.id, root.id)
+                if run.pending_operation:
+                    await self._resume_pending_operation(run, bundle, project)
+                    return
 
         try:
             await self.execute_invocation(run, root, bundle, project, user)
@@ -184,30 +191,74 @@ class RunCoordinator:
             "WORKFLOW_ID": workflow.id,
             "WORKFLOW_NAME": workflow.name,
         }
-        assert run.worktree_path and run.branch_name
-        final_message = expand_public_variables(
-            workflow.settings.final_commit_message_template, run.public_context
+        run.pending_operation = PENDING_FINAL_PUBLICATION
+        await self.session.commit()
+        await self._finish_final_publication(run, project, workflow)
+
+    async def _resume_pending_operation(
+        self,
+        run: WorkflowRun,
+        bundle: WorkflowBundle,
+        project: Project,
+    ) -> None:
+        if run.pending_operation == PENDING_FINAL_PUBLICATION:
+            await self._finish_final_publication(
+                run, project, bundle.workflows[run.root_workflow_id]
+            )
+            return
+        if run.pending_operation != PENDING_FEEDBACK_PUBLICATION:
+            raise RunExecutionError(f"Unsupported pending run operation '{run.pending_operation}'")
+        if run.current_node_execution_id is None:
+            raise RunExecutionError("Pending feedback publication has no node execution")
+        execution = await self.session.get(NodeExecution, run.current_node_execution_id)
+        if execution is None:
+            raise RunExecutionError("Pending feedback publication node no longer exists")
+        invocation = await self.session.get(WorkflowInvocation, execution.invocation_id)
+        if invocation is None:
+            raise RunExecutionError("Pending feedback publication invocation no longer exists")
+        workflow = bundle.workflows.get(invocation.workflow_id)
+        if workflow is None:
+            raise RunExecutionError("Pending feedback workflow is absent from the run snapshot")
+        node = next((item for item in workflow.nodes if item.id == execution.node_id), None)
+        if not isinstance(node, (HumanFeedbackNode, ReviewLoopNode)):
+            raise RunExecutionError("Pending feedback publication node is not a feedback node")
+        iteration = int(execution.output_values.get("review_iteration", 1))
+        await self._publish_feedback_checkpoint(
+            run,
+            invocation,
+            workflow,
+            node,
+            execution,
+            project,
+            iteration=iteration,
         )
-        final_sha = await self.git.checkpoint(Path(run.worktree_path), final_message)
+
+    async def _finish_final_publication(
+        self,
+        run: WorkflowRun,
+        project: Project,
+        workflow: WorkflowDefinition,
+    ) -> None:
+        assert run.worktree_path and run.branch_name
+        final_sha = run.final_commit_sha
+        if final_sha is None:
+            final_message = expand_public_variables(
+                workflow.settings.final_commit_message_template, run.public_context
+            )
+            final_sha = await self.git.checkpoint(Path(run.worktree_path), final_message)
+            run.final_commit_sha = final_sha
+            run.current_head_sha = final_sha
+            await self.session.commit()
         if should_publish_run(run):
-            token = self.cipher.decrypt(project.encrypted_access_token)
-            try:
-                await self.git.push(
-                    Path(run.worktree_path),
-                    run.branch_name,
-                    token,
-                    username=git_username(project.provider),
-                )
-                await self._ensure_merge_request(run, project, workflow, token)
-            finally:
-                token = ""
-        run.final_commit_sha = final_sha
-        run.current_head_sha = final_sha
+            await self._publish_change_request(run, project, workflow)
+        run.pending_operation = None
         run.status = RunStatus.COMPLETED
         run.finished_at = datetime.now(UTC)
         run.current_invocation_id = None
         run.current_node_execution_id = None
         run.current_wave_id = None
+        run.error_type = None
+        run.error_message = None
         await self._write_log(
             run.id,
             "INFO",
@@ -224,6 +275,30 @@ class RunCoordinator:
             run.root_workflow_id,
             final_sha[:12],
         )
+
+    async def _publish_change_request(
+        self,
+        run: WorkflowRun,
+        project: Project,
+        workflow: WorkflowDefinition,
+        *,
+        node: HumanFeedbackNode | ReviewLoopNode | None = None,
+        reviewers: list[ProviderUser] | None = None,
+    ) -> None:
+        assert run.worktree_path and run.branch_name
+        token = self.cipher.decrypt(project.encrypted_access_token)
+        try:
+            await self.git.push(
+                Path(run.worktree_path),
+                run.branch_name,
+                token,
+                username=git_username(project.provider),
+            )
+            await self._ensure_merge_request(
+                run, project, workflow, token, node=node, reviewers=reviewers
+            )
+        finally:
+            token = ""
 
     async def execute_invocation(
         self,
@@ -525,9 +600,40 @@ class RunCoordinator:
     ) -> None:
         assert run.worktree_path and run.branch_name
         execution = await self._node_execution(run, invocation, workflow, node.id)
-        context = {**run.public_context, "REVIEW_ITERATION": iteration}
-        message = expand_public_variables(node.config.commit_message, context)
-        head = await self.git.checkpoint(Path(run.worktree_path), message)
+        execution.status = NodeStatus.RUNNING
+        execution.started_at = execution.started_at or datetime.now(UTC)
+        execution.output_values = {
+            **execution.output_values,
+            "review_iteration": iteration,
+        }
+        run.pending_operation = PENDING_FEEDBACK_PUBLICATION
+        run.current_invocation_id = invocation.id
+        run.current_node_execution_id = execution.id
+        run.current_wave_id = None
+        await self.session.commit()
+        await self._publish_feedback_checkpoint(
+            run,
+            invocation,
+            workflow,
+            node,
+            execution,
+            project,
+            iteration=iteration,
+        )
+        raise RunPaused()
+
+    async def _publish_feedback_checkpoint(
+        self,
+        run: WorkflowRun,
+        invocation: WorkflowInvocation,
+        workflow: WorkflowDefinition,
+        node: HumanFeedbackNode | ReviewLoopNode,
+        execution: NodeExecution,
+        project: Project,
+        *,
+        iteration: int,
+    ) -> None:
+        assert run.worktree_path and run.branch_name
         gate = await self.session.scalar(
             select(GateInstance).where(
                 GateInstance.node_execution_id == execution.id,
@@ -545,6 +651,9 @@ class RunCoordinator:
                 )
             except ApprovalPolicyError as exc:
                 raise RunExecutionError(str(exc)) from exc
+            context = {**run.public_context, "REVIEW_ITERATION": iteration}
+            message = expand_public_variables(node.config.commit_message, context)
+            head = await self.git.checkpoint(Path(run.worktree_path), message)
             gate = GateInstance(
                 run_id=run.id,
                 invocation_id=invocation.id,
@@ -554,31 +663,20 @@ class RunCoordinator:
                 policy_key=node.config.approval_policy,
                 policy_snapshot=policy_snapshot,
                 eligible_snapshot=eligible_snapshot,
+                status="PUBLISHING",
             )
             self.session.add(gate)
-            await self.session.flush()
+            run.current_head_sha = head
+            await self.session.commit()
         reviewers = _provider_reviewers(gate.eligible_snapshot)
         if should_publish_run(run):
-            token = self.cipher.decrypt(project.encrypted_access_token)
-            try:
-                await self.git.push(
-                    Path(run.worktree_path),
-                    run.branch_name,
-                    token,
-                    username=git_username(project.provider),
-                )
-                await self._ensure_merge_request(
-                    run, project, workflow, token, node=node, reviewers=reviewers
-                )
-            finally:
-                token = ""
+            await self._publish_change_request(
+                run, project, workflow, node=node, reviewers=reviewers
+            )
+        gate.status = "OPEN"
         execution.status = NodeStatus.AWAITING_FEEDBACK
-        execution.output_values = {
-            **execution.output_values,
-            "review_iteration": iteration,
-        }
         run.status = RunStatus.AWAITING_FEEDBACK
-        run.current_head_sha = head
+        run.pending_operation = None
         run.current_invocation_id = invocation.id
         run.current_node_execution_id = execution.id
         run.current_wave_id = None
@@ -602,7 +700,6 @@ class RunCoordinator:
             iteration,
             len(reviewers),
         )
-        raise RunPaused()
 
     async def _write_log(
         self,
@@ -655,43 +752,58 @@ class RunCoordinator:
                 username=run.reviewer_provider_username,
             )
         ]
-        if run.change_request_number:
-            await self.code_host.update_change_request_reviewers(
-                repository_locator(
-                    project.provider,
-                    project.provider_project_id,
-                    project.provider_project_path,
-                ),
-                run.change_request_number,
-                token,
-                reviewers,
-            )
-            logger.info(
-                "Change request reviewers updated (run=%s, change_request=%s, reviewers=%s)",
-                run.id,
-                run.change_request_number,
-                len(reviewers),
-            )
-            return
-        change_request = await self.code_host.create_change_request(
-            repository_locator(
-                project.provider, project.provider_project_id, project.provider_project_path
-            ),
-            token,
-            source_branch=run.branch_name,
-            target_branch=run.base_ref,
-            title=title,
-            description=description,
-            reviewers=reviewers,
+        repository = repository_locator(
+            project.provider, project.provider_project_id, project.provider_project_path
         )
-        run.change_request_number = change_request.number
-        run.change_request_url = change_request.url
-        run.change_request_created_at = datetime.now(UTC)
-        await self.session.commit()
+        if run.change_request_number is None:
+            change_request = await self.code_host.find_change_request(
+                repository,
+                token,
+                source_branch=run.branch_name,
+                target_branch=run.base_ref,
+            )
+            if change_request is None:
+                try:
+                    change_request = await self.code_host.create_change_request(
+                        repository,
+                        token,
+                        source_branch=run.branch_name,
+                        target_branch=run.base_ref,
+                        title=title,
+                        description=description,
+                        reviewers=reviewers,
+                    )
+                except CodeHostError:
+                    # The provider may have accepted the POST before the response was lost.
+                    # Reconcile by the run's unique source branch before reporting failure.
+                    change_request = await self.code_host.find_change_request(
+                        repository,
+                        token,
+                        source_branch=run.branch_name,
+                        target_branch=run.base_ref,
+                    )
+                    if change_request is None:
+                        raise
+            run.change_request_number = change_request.number
+            run.change_request_url = change_request.url
+            run.change_request_created_at = datetime.now(UTC)
+            await self.session.commit()
+            logger.info(
+                "Change request recorded (run=%s, change_request=%s)",
+                run.id,
+                change_request.number,
+            )
+        assert run.change_request_number is not None
+        await self.code_host.update_change_request_reviewers(
+            repository,
+            run.change_request_number,
+            token,
+            reviewers,
+        )
         logger.info(
-            "Change request created (run=%s, change_request=%s, reviewers=%s)",
+            "Change request reviewers updated (run=%s, change_request=%s, reviewers=%s)",
             run.id,
-            change_request.number,
+            run.change_request_number,
             len(reviewers),
         )
 

@@ -30,22 +30,20 @@ async def test_repository_request_uses_bearer_token_and_normalizes_metadata() ->
     assert metadata.clone_url == "https://github.test/acme/widget.git"
 
 
-async def test_pull_request_creation_requests_triggering_user_as_reviewer() -> None:
+async def test_pull_request_creation_leaves_reviewer_assignment_to_coordinator() -> None:
     requests: list[tuple[str, str, dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content or b"{}")
         requests.append((request.method, request.url.path, body))
-        if request.url.path.endswith("/pulls"):
-            return httpx.Response(
-                201,
-                json={
-                    "number": 17,
-                    "html_url": "https://github.test/acme/widget/pull/17",
-                    "state": "open",
-                },
-            )
-        return httpx.Response(201, json={"requested_reviewers": [{"login": "alice"}]})
+        return httpx.Response(
+            201,
+            json={
+                "number": 17,
+                "html_url": "https://github.test/acme/widget/pull/17",
+                "state": "open",
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         change_request = await GitHubClient(
@@ -60,11 +58,46 @@ async def test_pull_request_creation_requests_triggering_user_as_reviewer() -> N
             reviewers=[ProviderUser(id="7", username="alice")],
         )
     assert change_request.number == 17
-    assert requests[1] == (
-        "POST",
-        "/repos/acme/widget/pulls/17/requested_reviewers",
-        {"reviewers": ["alice"]},
-    )
+    assert requests == [
+        (
+            "POST",
+            "/repos/acme/widget/pulls",
+            {
+                "head": "workflow/run",
+                "base": "main",
+                "title": "Run",
+                "body": "Review",
+                "maintainer_can_modify": True,
+            },
+        )
+    ]
+
+
+async def test_find_pull_request_uses_run_branch_and_base() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["state"] == "open"
+        assert request.url.params["head"] == "acme:workflow/run"
+        assert request.url.params["base"] == "main"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 17,
+                    "html_url": "https://github.test/acme/widget/pull/17",
+                    "state": "open",
+                }
+            ],
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        change_request = await GitHubClient("https://api.github.test", client).find_change_request(
+            "acme/widget",
+            "token",
+            source_branch="workflow/run",
+            target_branch="main",
+        )
+    assert change_request is not None
+    assert change_request.number == 17
 
 
 async def test_submitted_approval_is_dismissed_by_review_id() -> None:

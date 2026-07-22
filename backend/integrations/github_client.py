@@ -130,8 +130,38 @@ class GitHubClient:
         )
         assert isinstance(data, dict)
         number = int(data["number"])
-        await self.update_change_request_reviewers(repository, number, token, reviewers)
+        # Reviewer assignment is deliberately separate. The coordinator persists the
+        # newly created PR number before making that second external request.
+        del reviewers
         return ChangeRequest(number=number, url=str(data["html_url"]), state=str(data["state"]))
+
+    async def find_change_request(
+        self,
+        repository: str,
+        token: str,
+        *,
+        source_branch: str,
+        target_branch: str,
+    ) -> ChangeRequest | None:
+        path = self._repository_path(repository)
+        owner = repository.split("/", 1)[0]
+        head = quote(f"{owner}:{source_branch}", safe="")
+        base = quote(target_branch, safe="")
+        data = await self.request(
+            "GET",
+            f"/repos/{path}/pulls?state=open&head={head}&base={base}",
+            token,
+            category="pull request lookup",
+        )
+        assert isinstance(data, list)
+        if not data:
+            return None
+        pull_request = data[0]
+        return ChangeRequest(
+            number=int(pull_request["number"]),
+            url=str(pull_request.get("html_url") or ""),
+            state=str(pull_request["state"]),
+        )
 
     async def update_change_request_reviewers(
         self,

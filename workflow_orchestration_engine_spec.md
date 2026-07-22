@@ -378,6 +378,7 @@ The project token must be a GitLab project access token represented by a bot use
 | `current_invocation_id` | UUID NULL | Current invocation |
 | `current_node_execution_id` | UUID NULL | Current logical node |
 | `current_wave_id` | UUID NULL | Current wave |
+| `pending_operation` | VARCHAR(50) NULL | Durable external transition awaiting completion, such as feedback or final publication |
 | `error_type` | VARCHAR(100) NULL | `NODE_FAILURE`, `INTERRUPTED`, etc. |
 | `error_message` | TEXT NULL | Sanitized error |
 | `cancel_requested_at` | TIMESTAMPTZ NULL | Cancellation flag |
@@ -1044,12 +1045,12 @@ Workflows select another project policy key when they require independent or add
 
 The node:
 
-1. Ensures current changes are committed.
-2. Pushes the run branch.
-3. Creates the merge request if needed.
-4. Resolves the referenced project approval policy, snapshots its eligible identities,
-   requirements, and quorums, and requests those identities as reviewers.
-5. Stores an atomic checkpoint containing node status and run status.
+1. Resolves the referenced project approval policy and snapshots its eligible identities,
+   requirements, and quorums.
+2. Durably records the pending feedback publication and its checkpoint before external effects.
+3. Pushes the run branch.
+4. Reconciles or creates the change request and requests the snapshotted identities as reviewers.
+5. Stores an atomic checkpoint containing the open gate, node status, and run status.
 6. Pauses in `AWAITING_FEEDBACK`.
 7. Records eligible approvals without continuing until every quorum requirement is met.
 8. Ties all decisions to the exact checkpoint commit SHA.
@@ -1696,6 +1697,11 @@ On failure, persist:
 
 The run transitions to `FAILED` only after rollback succeeds. If rollback itself fails, set `error_type=WORKTREE_RECOVERY_FAILED` and block resume until an operator repairs the worktree.
 
+An unexpected in-process coordinator exception must not leave a run owned only in memory. In a
+fresh database session, transition an active `RUNNING` or `RESUMING` run to `INTERRUPTED`, mark
+any active wave, node, and attempt interrupted, and append a sanitized engine event. Do not use
+`FAILED` when the worktree rollback outcome is unknown.
+
 ## 11.4 Resume Algorithm
 
 ```python
@@ -1728,6 +1734,12 @@ async def resume_run(run_id: UUID, current_user: User) -> None:
     register_task(run_id, task)
 ```
 
+Pending feedback and final-publication operations are durable recovery boundaries. Resume resets
+the worktree to their stored `current_head_sha` and continues the pending external transition
+without replaying successful waves. Change-request creation first reconciles by the run's unique
+source branch; after an ambiguous create response it reconciles again before retrying. Persist the
+change-request identifier before requesting reviewers.
+
 ## 11.5 Interrupted Runs
 
 On backend startup:
@@ -1739,6 +1751,9 @@ On backend startup:
 - Node attempts in `RUNNING`: mark `INTERRUPTED`.
 - `AWAITING_FEEDBACK`: leave unchanged.
 - Terminal runs: leave unchanged.
+
+The same interruption transition is applied immediately when an individual in-process run worker
+crashes while the backend remains healthy; it does not wait for a container restart.
 
 Before marking a run interrupted, the startup process should verify that no other backend instance is expected. The version-1 deployment guarantees this through the one-worker, one-backend-container rule.
 

@@ -15,6 +15,13 @@ export default defineConfig({
     hostname,
   },
   head: [
+    [
+      "meta",
+      {
+        name: "google-site-verification",
+        content: "uAEA3MtHjOd_euTkR1N-sGH8Yonhz74M2ERjvH38Kow",
+      },
+    ],
     ["meta", { name: "theme-color", content: "#11120f" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "Kyron documentation" }],

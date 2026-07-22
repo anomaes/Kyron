@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import delete, desc, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
@@ -13,6 +13,7 @@ from backend.db.models import (
     GateInstance,
     NodeAttempt,
     NodeExecution,
+    RunLog,
     RunReport,
     WorkflowInvocation,
     WorkflowRun,
@@ -74,39 +75,61 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
         if run.status == RunStatus.CANCELLED
         else [WaveStatus.ROLLED_BACK, WaveStatus.INTERRUPTED, WaveStatus.FAILED]
     )
-    wave = await session.scalar(
-        select(ExecutionWave)
-        .where(
-            ExecutionWave.run_id == run.id,
-            ExecutionWave.status.in_(wave_statuses),
+    wave = (
+        await session.scalar(
+            select(ExecutionWave).where(
+                ExecutionWave.id == run.current_wave_id,
+                ExecutionWave.run_id == run.id,
+                ExecutionWave.status.in_(wave_statuses),
+            )
         )
-        .order_by(desc(ExecutionWave.started_at))
-        .limit(1)
+        if run.current_wave_id is not None
+        else None
     )
     if not run.worktree_path or not await asyncio.to_thread(Path(run.worktree_path).exists):
         raise ResumeError("Run worktree is missing")
+    if run.pending_operation is not None:
+        if not run.current_head_sha:
+            raise ResumeError("Pending run operation has no durable Git checkpoint")
+        await git.reset_wave(Path(run.worktree_path), run.current_head_sha)
+        run.status = RunStatus.RESUMING
+        run.status_version += 1
+        run.cancel_requested_at = None
+        run.finished_at = None
+        run.error_type = None
+        run.error_message = None
+        run.current_wave_id = None
+        await session.commit()
+        return run
     if wave is not None:
         await git.reset_wave(Path(run.worktree_path), wave.start_commit_sha)
         nodes = list(
             await session.scalars(select(NodeExecution).where(NodeExecution.wave_id == wave.id))
         )
-    elif run.status == RunStatus.CANCELLED:
+    else:
         if run.current_head_sha:
             await git.reset_wave(Path(run.worktree_path), run.current_head_sha)
+        node_statuses = (
+            [NodeStatus.CANCELLED]
+            if run.status == RunStatus.CANCELLED
+            else [NodeStatus.INTERRUPTED, NodeStatus.FAILED]
+        )
         nodes = list(
             await session.scalars(
                 select(NodeExecution).where(
                     NodeExecution.run_id == run.id,
-                    NodeExecution.status.in_(
-                        [NodeStatus.CANCELLED, NodeStatus.INTERRUPTED, NodeStatus.FAILED]
-                    ),
+                    NodeExecution.wave_id.is_(None),
+                    NodeExecution.status.in_(node_statuses),
                 )
             )
         )
         if not nodes:
-            raise ResumeError("The cancelled run has no resumable checkpoint")
-    else:
-        raise ResumeError("No resumable wave exists")
+            detail = (
+                "The cancelled run has no resumable checkpoint"
+                if run.status == RunStatus.CANCELLED
+                else "No resumable wave or control operation exists"
+            )
+            raise ResumeError(detail)
     for node in nodes:
         _reset_node(node)
     await _reset_parent_controls(session, nodes)
@@ -206,3 +229,61 @@ async def mark_interrupted_runs(session: AsyncSession) -> int:
     )
     await session.commit()
     return len(run_ids)
+
+
+async def mark_run_interrupted(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    error_type: str,
+    error_message: str,
+) -> bool:
+    """Durably release an active run after its in-process worker loses ownership."""
+    run = await session.scalar(
+        select(WorkflowRun).where(WorkflowRun.id == run_id).with_for_update()
+    )
+    if run is None or run.status not in {RunStatus.RUNNING, RunStatus.RESUMING}:
+        return False
+    now = datetime.now(UTC)
+    run.status = RunStatus.INTERRUPTED
+    run.status_version += 1
+    run.error_type = error_type
+    run.error_message = error_message
+    await session.execute(
+        update(ExecutionWave)
+        .where(ExecutionWave.run_id == run.id, ExecutionWave.status == WaveStatus.RUNNING)
+        .values(status=WaveStatus.INTERRUPTED, finished_at=now)
+    )
+    running_node_ids = select(NodeExecution.id).where(
+        NodeExecution.run_id == run.id, NodeExecution.status == NodeStatus.RUNNING
+    )
+    await session.execute(
+        update(NodeAttempt)
+        .where(
+            NodeAttempt.node_execution_id.in_(running_node_ids),
+            NodeAttempt.status == AttemptStatus.RUNNING,
+        )
+        .values(
+            status=AttemptStatus.INTERRUPTED,
+            finished_at=now,
+            error_type=error_type,
+            error_message=error_message,
+        )
+    )
+    await session.execute(
+        update(NodeExecution)
+        .where(NodeExecution.run_id == run.id, NodeExecution.status == NodeStatus.RUNNING)
+        .values(status=NodeStatus.INTERRUPTED, finished_at=now, error_message=error_message)
+    )
+    session.add(
+        RunLog(
+            run_id=run.id,
+            timestamp=now,
+            level="ERROR",
+            event_type="RUN_INTERRUPTED",
+            message=error_message,
+            log_metadata={"error_type": error_type},
+        )
+    )
+    await session.commit()
+    return True

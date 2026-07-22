@@ -26,3 +26,30 @@ async def test_gitlab_error_is_sanitized() -> None:
         with pytest.raises(GitLabError) as captured:
             await gitlab.get_project(123, "secret-token")
     assert "secret-token" not in str(captured.value)
+
+
+async def test_find_merge_request_uses_run_branch_and_target() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["state"] == "opened"
+        assert request.url.params["source_branch"] == "workflow/run"
+        assert request.url.params["target_branch"] == "main"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "iid": 19,
+                    "web_url": "https://gitlab.example/group/repo/-/merge_requests/19",
+                    "state": "opened",
+                }
+            ],
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        change_request = await GitLabClient("https://gitlab.example", client).find_change_request(
+            "123",
+            "token",
+            source_branch="workflow/run",
+            target_branch="main",
+        )
+    assert change_request is not None
+    assert change_request.number == 19

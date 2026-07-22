@@ -44,11 +44,12 @@ Backend services depend on `CodeHostClient`, not a concrete provider client. The
 contract normalizes these operations:
 
 1. validate repository metadata;
-2. create a merge request or pull request;
-3. request or refresh the complete gate reviewer set;
-4. inspect change-request lifecycle state;
-5. post a traceability comment;
-6. consume an intermediate approval so final merge requires a fresh approval.
+2. find an open merge request or pull request by source and target branch;
+3. create a merge request or pull request;
+4. request or refresh the complete gate reviewer set;
+5. inspect change-request lifecycle state;
+6. post a traceability comment;
+7. consume an intermediate approval so final merge requires a fresh approval.
 
 GitLab implements approval consumption with approval synchronization followed by
 `reset_approvals`. GitHub dismisses the submitted approving review. For a frontend
@@ -59,6 +60,12 @@ policy must require approving reviews for the fresh-final-approval guarantee.
 Provider responses are converted immediately into `RepositoryMetadata`,
 `ChangeRequest`, and `ProviderComment`; provider-shaped dictionaries do not cross
 the integration boundary.
+
+Creation is recoverable across ambiguous network failures. The coordinator checks
+for an existing open change request on the run's unique source branch before creation
+and checks again when a create request fails. It stores the returned identifier before
+the separate reviewer update, so reviewer-assignment failure cannot orphan an
+untracked change request.
 
 ## Webhooks
 

@@ -88,6 +88,15 @@ class CodeHostClient(Protocol):
         reviewers: list[ProviderUser],
     ) -> ChangeRequest: ...
 
+    async def find_change_request(
+        self,
+        repository: str,
+        token: str,
+        *,
+        source_branch: str,
+        target_branch: str,
+    ) -> ChangeRequest | None: ...
+
     async def update_change_request_reviewers(
         self,
         repository: str,

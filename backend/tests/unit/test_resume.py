@@ -11,15 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import (
     ExecutionWave,
     GateInstance,
+    NodeAttempt,
     NodeExecution,
     Project,
+    RunLog,
     RunReport,
     User,
     WorkflowInvocation,
     WorkflowRun,
 )
-from backend.db.statuses import NodeStatus, RunStatus, WaveStatus
-from backend.engine.resume import prepare_resume
+from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
+from backend.engine.resume import mark_run_interrupted, prepare_resume
 from backend.engine.task_registry import TaskRegistry
 from backend.integrations.git_manager import GitManager
 
@@ -32,9 +34,7 @@ class RecordingGit:
         self.resets.append((worktree, sha))
 
 
-async def _run(
-    session: AsyncSession, tmp_path: Path, status: RunStatus
-) -> WorkflowRun:
+async def _run(session: AsyncSession, tmp_path: Path, status: RunStatus) -> WorkflowRun:
     user = User(email=f"{uuid.uuid4()}@example.com", display_name="Runner")
     session.add(user)
     await session.flush()
@@ -112,6 +112,7 @@ async def test_resume_resets_failed_wave_and_parent_control_chain(
     )
     db_session.add(wave)
     await db_session.flush()
+    run.current_wave_id = wave.id
     failed = NodeExecution(
         run_id=run.id,
         invocation_id=child.id,
@@ -199,6 +200,7 @@ async def test_cancelled_process_wave_resumes_from_wave_checkpoint(
     )
     db_session.add(wave)
     await db_session.flush()
+    run.current_wave_id = wave.id
     node = NodeExecution(
         run_id=run.id,
         invocation_id=invocation.id,
@@ -248,3 +250,121 @@ async def test_task_registry_can_wait_for_failed_task_before_rescheduling() -> N
     await pending
     await registry.wait(run_id)
     assert replacement_ran.is_set()
+
+
+async def test_worker_crash_marks_active_state_interrupted(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.RUNNING)
+    run.pending_operation = "FEEDBACK_PUBLICATION"
+    invocation = WorkflowInvocation(
+        run_id=run.id, workflow_id="root", invocation_path="root", status="RUNNING"
+    )
+    db_session.add(invocation)
+    await db_session.flush()
+    wave = ExecutionWave(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        wave_index=1,
+        status=WaveStatus.RUNNING,
+        start_commit_sha="b" * 40,
+    )
+    db_session.add(wave)
+    await db_session.flush()
+    node = NodeExecution(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        wave_id=wave.id,
+        node_id="task",
+        node_path="root/task",
+        node_type="bash",
+        status=NodeStatus.RUNNING,
+    )
+    db_session.add(node)
+    await db_session.flush()
+    attempt = NodeAttempt(
+        node_execution_id=node.id,
+        attempt_number=1,
+        status=AttemptStatus.RUNNING,
+    )
+    db_session.add(attempt)
+    await db_session.commit()
+
+    changed = await mark_run_interrupted(
+        db_session,
+        run.id,
+        error_type="ENGINE_CRASH",
+        error_message="Workflow worker stopped unexpectedly (RuntimeError)",
+    )
+
+    assert changed is True
+    assert run.status == RunStatus.INTERRUPTED
+    assert run.pending_operation == "FEEDBACK_PUBLICATION"
+    assert wave.status == WaveStatus.INTERRUPTED
+    assert node.status == NodeStatus.INTERRUPTED
+    assert attempt.status == AttemptStatus.INTERRUPTED
+    event = await db_session.scalar(select(RunLog).where(RunLog.run_id == run.id))
+    assert event is not None
+    assert event.event_type == "RUN_INTERRUPTED"
+
+
+async def test_pending_publication_resumes_without_a_failed_wave(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.INTERRUPTED)
+    run.pending_operation = "FINAL_PUBLICATION"
+    await db_session.commit()
+    git = RecordingGit()
+
+    resumed = await prepare_resume(db_session, cast(GitManager, git), run.id)
+
+    assert resumed.status == RunStatus.RESUMING
+    assert resumed.pending_operation == "FINAL_PUBLICATION"
+    assert git.resets == [(Path(run.worktree_path or ""), "b" * 40)]
+
+
+async def test_interrupted_control_node_does_not_replay_historical_failed_wave(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.INTERRUPTED)
+    invocation = WorkflowInvocation(
+        run_id=run.id, workflow_id="root", invocation_path="root", status="RUNNING"
+    )
+    db_session.add(invocation)
+    await db_session.flush()
+    historical = ExecutionWave(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        wave_index=1,
+        status=WaveStatus.ROLLED_BACK,
+        start_commit_sha="c" * 40,
+    )
+    current = ExecutionWave(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        wave_index=2,
+        status=WaveStatus.SUCCESS,
+        start_commit_sha="d" * 40,
+        end_commit_sha="b" * 40,
+    )
+    db_session.add_all([historical, current])
+    await db_session.flush()
+    run.current_wave_id = current.id
+    control = NodeExecution(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        node_id="child",
+        node_path="root/child",
+        node_type="subworkflow",
+        status=NodeStatus.INTERRUPTED,
+    )
+    db_session.add(control)
+    await db_session.commit()
+    git = RecordingGit()
+
+    resumed = await prepare_resume(db_session, cast(GitManager, git), run.id)
+
+    assert resumed.status == RunStatus.RESUMING
+    assert control.status == NodeStatus.PENDING
+    assert historical.status == WaveStatus.ROLLED_BACK
+    assert git.resets == [(Path(run.worktree_path or ""), "b" * 40)]

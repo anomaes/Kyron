@@ -42,9 +42,14 @@ Updating `main` does not change the run's `base_commit_sha` or snapshot. If the 
 
 ## Interrupted runs
 
-At startup, reconciliation classifies in-flight process work as interrupted while preserving feedback waits. No process is assumed to have survived backend ownership loss.
+At startup, reconciliation classifies in-flight process work as interrupted while preserving feedback waits. An unexpected coordinator crash is also recorded immediately as interrupted even when the backend process remains healthy. No process is assumed to have survived engine ownership loss.
 
 Inspect the run, wave boundary, worktree, and last durable engine event. Resume only after the environment is stable. A normal restart should still have exactly one backend worker.
+
+Feedback and final change-request publication are stored as durable pending operations. Resuming
+one of these operations restores its Git checkpoint and continues publication without replaying
+successful waves. Kyron reconciles a change request by the run branch before creating it, which
+also recovers a provider request that succeeded remotely but lost its response locally.
 
 ## Worktree recovery failure
 

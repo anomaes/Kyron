@@ -15,7 +15,7 @@ from backend.engine.coordinator import RunCoordinator
 from backend.engine.nodes.process_nodes import ProcessNodeExecutor
 from backend.engine.process_registry import process_registry
 from backend.engine.process_runner import ProcessRunner
-from backend.engine.resume import mark_interrupted_runs
+from backend.engine.resume import mark_interrupted_runs, mark_run_interrupted
 from backend.engine.task_registry import TaskRegistry
 from backend.engine.waves import WaveExecutor
 from backend.integrations.code_host import create_code_host_client
@@ -85,6 +85,39 @@ class EngineRuntime:
 
     async def _execute(self, run_id: uuid.UUID) -> None:
         logger.info("Workflow run worker starting (run=%s)", run_id)
+        try:
+            await self._execute_owned(run_id)
+        except asyncio.CancelledError:
+            logger.info("Workflow run worker cancelled (run=%s)", run_id)
+            raise
+        except Exception as exc:
+            exception_type = type(exc).__name__
+            logger.error(
+                "Workflow run worker crashed (run=%s, exception_type=%s)",
+                run_id,
+                exception_type,
+            )
+            try:
+                async with session_factory() as recovery_session:
+                    await mark_run_interrupted(
+                        recovery_session,
+                        run_id,
+                        error_type="ENGINE_CRASH",
+                        error_message=(
+                            "Workflow worker stopped unexpectedly "
+                            f"({exception_type}); inspect backend logs"
+                        ),
+                    )
+            except Exception as recovery_exc:
+                logger.critical(
+                    "Could not record workflow worker crash (run=%s, exception_type=%s)",
+                    run_id,
+                    type(recovery_exc).__name__,
+                )
+        finally:
+            logger.info("Workflow run worker stopped (run=%s)", run_id)
+
+    async def _execute_owned(self, run_id: uuid.UUID) -> None:
         settings = self.settings
         cipher = SecretCipher(
             settings.CREDENTIALS_ENCRYPTION_KEY,
@@ -143,14 +176,8 @@ class EngineRuntime:
                     engine_logs,
                 )
                 await coordinator.execute_run(run_id)
-            except asyncio.CancelledError:
-                logger.info("Workflow run worker cancelled (run=%s)", run_id)
-                raise
-            except Exception as exc:
-                logger.exception("Workflow run worker crashed (run=%s): %s", run_id, exc)
             finally:
                 await code_host.close()
-        logger.info("Workflow run worker stopped (run=%s)", run_id)
 
     async def _queue_reconciler(self) -> None:
         while True:

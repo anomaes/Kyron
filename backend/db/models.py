@@ -298,6 +298,7 @@ class WorkflowRun(Base):
     current_invocation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     current_node_execution_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     current_wave_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    pending_operation: Mapped[str | None] = mapped_column(String(50))
     error_type: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

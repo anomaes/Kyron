@@ -35,7 +35,7 @@ class GitLabClient:
         if self._owned_client:
             await self.client.aclose()
 
-    async def request(
+    async def _request_data(
         self,
         method: str,
         path: str,
@@ -44,7 +44,7 @@ class GitLabClient:
         category: str,
         json: dict[str, Any] | None = None,
         retry_get: bool = True,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         redactor = SecretRedactor([token])
         attempts = 3 if method == "GET" and retry_get else 1
         try:
@@ -69,12 +69,42 @@ class GitLabClient:
                 if response.status_code == 204 or not response.content:
                     return {}
                 data = response.json()
-                if not isinstance(data, dict):
+                if not isinstance(data, (dict, list)):
                     raise GitLabError(category, response.status_code)
                 return data
         finally:
             redactor.clear()
         raise GitLabError(category)
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        token: str,
+        *,
+        category: str,
+        json: dict[str, Any] | None = None,
+        retry_get: bool = True,
+    ) -> dict[str, Any]:
+        data = await self._request_data(
+            method, path, token, category=category, json=json, retry_get=retry_get
+        )
+        if not isinstance(data, dict):
+            raise GitLabError(category)
+        return data
+
+    async def request_list(
+        self,
+        method: str,
+        path: str,
+        token: str,
+        *,
+        category: str,
+    ) -> list[dict[str, Any]]:
+        data = await self._request_data(method, path, token, category=category)
+        if not isinstance(data, list):
+            raise GitLabError(category)
+        return data
 
     async def get_repository(self, repository: str, token: str) -> RepositoryMetadata:
         data = await self.request(
@@ -210,6 +240,31 @@ class GitLabClient:
         )
         return ChangeRequest(
             number=int(data["iid"]), url=str(data["web_url"]), state=str(data["state"])
+        )
+
+    async def find_change_request(
+        self,
+        repository: str,
+        token: str,
+        *,
+        source_branch: str,
+        target_branch: str,
+    ) -> ChangeRequest | None:
+        query = (
+            f"state=opened&source_branch={quote(source_branch, safe='')}"
+            f"&target_branch={quote(target_branch, safe='')}"
+        )
+        rows = await self.request_list(
+            "GET",
+            f"/projects/{quote(repository, safe='')}/merge_requests?{query}",
+            token,
+            category="merge request lookup",
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return ChangeRequest(
+            number=int(row["iid"]), url=str(row.get("web_url") or ""), state=str(row["state"])
         )
 
     async def update_change_request_reviewers(

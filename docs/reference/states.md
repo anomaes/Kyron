@@ -15,7 +15,7 @@ Kyron stores state at several levels. A run status is the operator-facing summar
 | `running` | Engine is scheduling or executing work | Observe or cancel |
 | `awaiting_feedback` | Active human or review-loop checkpoint | Eligible reviewers satisfy the policy quorum or give feedback |
 | `failed` | Required work or a control transition failed | Diagnose, then resume when safe |
-| `interrupted` | Active ownership was lost, usually across restart | Inspect, then explicitly resume |
+| `interrupted` | Active engine ownership was lost through restart or worker crash | Inspect, then explicitly resume |
 | `completed` | Workflow execution and finalization succeeded | Review and merge the change request |
 | `cancelled` | User cancellation stopped active work at a retained checkpoint | Resume explicitly or start a new run |
 
