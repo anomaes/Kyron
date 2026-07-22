@@ -86,7 +86,7 @@ export type Workflow = {
   settings: Record<string, unknown> & { pi?: PiSettings };
 };
 
-export type WorkflowListItem = Workflow & { node_count: number };
+export type WorkflowListItem = Workflow & { node_count: number; folder_path: string };
 
 export type DefinitionChangeStatus = {
   outgoing_changes: number;

@@ -70,7 +70,7 @@ async def list_workflows(
 ) -> dict[str, Any]:
     project = await project_or_404(db, project_id)
     await authorize_project(db, _, project_id, WORKFLOW_VIEW)
-    sha, definitions = await workflows.list(project)
+    sha, definitions = await workflows.list_with_folders(project)
     change_status = await workflows.change_status(project)
     return {
         "base_commit_sha": sha,
@@ -78,9 +78,10 @@ async def list_workflows(
         "items": [
             {
                 **definition.model_dump(mode="json"),
+                "folder_path": folder_path,
                 "node_count": len(definition.nodes),
             }
-            for definition in definitions
+            for definition, folder_path in definitions
         ],
     }
 
@@ -229,12 +230,13 @@ async def get_workflow(
     project = await project_or_404(db, project_id)
     await authorize_project(db, _, project_id, WORKFLOW_VIEW)
     try:
-        sha, definition = await workflows.get(project, workflow_id)
+        sha, definition, folder_path = await workflows.get(project, workflow_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     return {
         "base_commit_sha": sha,
         "workflow": definition.model_dump(mode="json"),
+        "folder_path": folder_path,
         **await workflows.change_status(project),
     }
 
@@ -315,8 +317,11 @@ async def save_workflow(
     await authorize_project(db, user, project_id, WORKFLOW_EDIT)
     raw = request.get("workflow")
     expected = request.get("expected_base_commit_sha")
+    folder_path = request.get("folder_path")
     if not isinstance(raw, dict) or not isinstance(expected, str):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid save request")
+    if folder_path is not None and not isinstance(folder_path, str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid folder path")
     try:
         definition = WorkflowDefinition.model_validate(raw)
     except ValueError as exc:
@@ -334,7 +339,9 @@ async def save_workflow(
             {"code": "VALIDATION_ERROR", "errors": [item.model_dump() for item in report.errors]},
         )
     try:
-        result = await workflows.save_draft(project, definition, expected)
+        result = await workflows.save_draft(
+            project, definition, expected, folder_path=folder_path
+        )
         db.add(
             audit_event(
                 user,
@@ -348,6 +355,8 @@ async def save_workflow(
         return result
     except WorkflowConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.delete("/{workflow_id}")

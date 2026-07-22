@@ -7,7 +7,11 @@ description: Learn the structure, context model, and authoring lifecycle of Kyro
 
 A Kyron workflow is strict, versioned JSON stored with the repository it changes:
 
-<span class="doc-path">.workflowEngine/&lt;workflow_id&gt;.json</span>
+<span class="doc-path">.workflowEngine/[folders/]/&lt;workflow_id&gt;.json</span>
+
+Workflow files can be organized into nested folders. Kyron mirrors that hierarchy in the
+catalog while keeping workflow references ID-based. IDs must be unique across the entire
+tree, and `.workflowEngine/templates/` remains reserved for node templates.
 
 Definitions are code-reviewable, resolved from an exact Git commit, and immutable once captured in a run snapshot.
 

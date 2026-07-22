@@ -90,7 +90,9 @@ flowchart LR
    continues only after all configured quorum requirements are satisfied.
 6. Kyron persists the final state, commit, logs, attempts, and change-request metadata for later inspection or recovery.
 
-Workflow definitions live in the repository at `.workflowEngine/<workflow_id>.json`, so orchestration logic is versioned and reviewed alongside the code it changes.
+Workflow definitions live in the repository below `.workflowEngine/` and may be organized
+into nested folders, so orchestration logic is versioned and reviewed alongside the code it
+changes. The UI mirrors the repository folder tree.
 
 ## Interface
 

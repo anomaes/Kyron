@@ -75,7 +75,10 @@ After the child completes, this example makes `${QUALITY_EXIT_CODE}` available t
 
 ## Exact-revision guarantee
 
-At trigger time, Kyron recursively follows every `subworkflow` and `review_loop` reference from the root. All definitions are loaded with `git show <base_sha>:.workflowEngine/<id>.json` and stored in one secret-free bundle.
+At trigger time, Kyron indexes workflow files at the exact base commit, then recursively
+follows every `subworkflow` and `review_loop` reference from the root. Definitions may live
+in nested `.workflowEngine/` folders; IDs remain globally unique and the resolved files are
+stored in one secret-free bundle.
 
 The consequences are important:
 

@@ -14,7 +14,7 @@ ever disagree. The broader product behavior is defined in
 When asked to create or change a workflow, produce one or more complete JSON files.
 For every file:
 
-1. Store it at `.workflowEngine/<id>.json`.
+1. Store it at `.workflowEngine/<optional folders>/<id>.json`.
 2. Make the filename stem exactly equal to the root `id` value, including case.
 3. Emit strict JSON: double-quoted keys and strings, no comments, no trailing commas,
    and no Markdown fences when raw file content is requested.
@@ -64,6 +64,12 @@ A tag is 1 to 64 characters and matches:
 
 Tags must be unique within a workflow. A workflow may contain at most 32 tags. Tags
 are catalog metadata and do not change execution.
+
+Workflow files may be nested to any depth below `.workflowEngine/`; for example,
+`.workflowEngine/teams/platform/deploy.json`. The catalog mirrors these folders. Folder
+names are not added to `tags`, and references continue to use only the workflow ID. IDs
+must therefore be unique across all folders. The top-level `templates/` folder is reserved
+for node templates.
 
 ## 3. Root workflow object
 
@@ -742,7 +748,8 @@ Canonical explicit settings object:
 
 All workflows in one run are loaded from the exact same pinned Git commit. For a root
 workflow, Kyron recursively loads every workflow referenced by `subworkflow` and
-`review_loop` nodes from `.workflowEngine/<workflow_id>.json`.
+`review_loop` nodes from the file indexed for that workflow ID anywhere below
+`.workflowEngine/`.
 
 The complete workflow-reference graph must be acyclic. Direct or indirect recursion
 is invalid even when an edge condition would make the recursive node unreachable at

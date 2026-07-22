@@ -13,11 +13,40 @@ from backend.tests.fixtures.workflows import workflow
 
 
 class StubGit:
-    def __init__(self, raw: str) -> None:
+    def __init__(self, raw: str, files: list[str] | None = None) -> None:
         self.raw = raw
+        self.files = files or [".workflowEngine/root.json"]
 
     async def show_file(self, *_args: object) -> str:
         return self.raw
+
+    async def list_files(self, *_args: object) -> list[str]:
+        return self.files
+
+
+async def test_duplicate_workflow_ids_across_folders_are_rejected(tmp_path: Path) -> None:
+    loader = WorkflowSnapshotLoader(
+        cast(
+            GitManager,
+            StubGit(
+                json.dumps(workflow()),
+                [
+                    ".workflowEngine/team-a/root.json",
+                    ".workflowEngine/team-b/root.json",
+                ],
+            ),
+        )
+    )
+
+    with pytest.raises(BundleResolutionError, match="used by multiple files"):
+        await loader.load(
+            tmp_path,
+            "c" * 40,
+            "root",
+            max_timeout=14400,
+            max_review_iterations=10,
+            max_subworkflow_depth=8,
+        )
 
 
 async def test_invalid_workflow_json_logs_location_and_reason_without_contents(

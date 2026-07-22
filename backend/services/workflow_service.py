@@ -7,7 +7,7 @@ import logging
 import re
 import shutil
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,17 +67,28 @@ class WorkflowService:
         self.git = git
 
     async def list(self, project: Project) -> tuple[str, list[WorkflowDefinition]]:
-        sha, definitions, _templates = await self._load_all(project)
+        sha, definitions, _templates, _paths = await self._load_all(project)
         return sha, [definitions[key] for key in sorted(definitions)]
 
-    async def get(self, project: Project, workflow_id: str) -> tuple[str, WorkflowDefinition]:
-        sha, definitions, _templates = await self._load_all(project)
+    async def list_with_folders(
+        self, project: Project
+    ) -> tuple[str, builtins.list[tuple[WorkflowDefinition, str]]]:
+        sha, definitions, _templates, paths = await self._load_all(project)
+        return sha, [
+            (definitions[key], _folder_path(paths[key]))
+            for key in sorted(definitions)
+        ]
+
+    async def get(
+        self, project: Project, workflow_id: str
+    ) -> tuple[str, WorkflowDefinition, str]:
+        sha, definitions, _templates, paths = await self._load_all(project)
         if workflow_id not in definitions:
             raise LookupError("Workflow does not exist")
-        return sha, definitions[workflow_id]
+        return sha, definitions[workflow_id], _folder_path(paths[workflow_id])
 
     async def list_templates(self, project: Project) -> tuple[str, builtins.list[NodeTemplate]]:
-        sha, _definitions, templates = await self._load_all(project)
+        sha, _definitions, templates, _paths = await self._load_all(project)
         return sha, [templates[key] for key in sorted(templates)]
 
     async def change_status(self, project: Project) -> dict[str, Any]:
@@ -97,7 +108,7 @@ class WorkflowService:
         proposed: dict[str, Any],
         proposed_related: dict[str, dict[str, Any]],
     ) -> WorkflowValidationResponse:
-        _, definitions, _templates = await self._load_all(project)
+        _, definitions, _templates, _paths = await self._load_all(project)
         root, errors = parse_workflow(proposed)
         if root is None:
             logger.warning(
@@ -137,16 +148,39 @@ class WorkflowService:
         project: Project,
         workflow: WorkflowDefinition,
         expected_base_commit_sha: str,
+        folder_path: str | None = None,
     ) -> dict[str, Any]:
-        sha, remote, _templates = await self._load_remote(project)
+        requested_folder = (
+            _validate_folder_path(folder_path) if folder_path is not None else None
+        )
+        sha, remote, _templates, remote_paths = await self._load_remote(project)
         if sha != expected_base_commit_sha:
             raise WorkflowConflictError("Workflow base branch changed; reload the editor")
         published = dict(remote)
-        await self._overlay_workflows(published, self._changes_root(project) / "published")
-        path = self._changes_root(project) / "outgoing" / "workflows" / f"{workflow.id}.json"
-        marker = self._changes_root(project) / "outgoing" / "deleted_workflows" / workflow.id
+        published_paths = dict(remote_paths)
+        root = self._changes_root(project)
+        await self._overlay_workflows(
+            published, published_paths, root / "published"
+        )
+        normalized_folder = (
+            requested_folder
+            if requested_folder is not None
+            else _folder_path(published_paths.get(workflow.id, f"{workflow.id}.json"))
+        )
+        relative_path = (
+            f"{normalized_folder}/{workflow.id}.json"
+            if normalized_folder
+            else f"{workflow.id}.json"
+        )
+        outgoing_workflows = root / "outgoing" / "workflows"
+        await self._remove_local_workflow_files(outgoing_workflows, workflow.id)
+        path = outgoing_workflows / relative_path
+        marker = root / "outgoing" / "deleted_workflows" / workflow.id
         await self._remove_file(marker)
-        if published.get(workflow.id) == workflow:
+        if (
+            published.get(workflow.id) == workflow
+            and published_paths.get(workflow.id) == relative_path
+        ):
             await self._remove_file(path)
         else:
             await self._write_model(path, workflow)
@@ -159,13 +193,16 @@ class WorkflowService:
         expected_base_commit_sha: str,
     ) -> dict[str, Any]:
         self._require_identifier(workflow_id)
-        sha, remote, _templates = await self._load_remote(project)
+        sha, remote, _templates, remote_paths = await self._load_remote(project)
         if sha != expected_base_commit_sha:
             raise WorkflowConflictError("Workflow base branch changed; reload the catalog")
         root = self._changes_root(project)
         published = dict(remote)
-        await self._overlay_workflows(published, root / "published")
-        await self._remove_file(root / "outgoing" / "workflows" / f"{workflow_id}.json")
+        published_paths = dict(remote_paths)
+        await self._overlay_workflows(published, published_paths, root / "published")
+        await self._remove_local_workflow_files(
+            root / "outgoing" / "workflows", workflow_id
+        )
         marker = root / "outgoing" / "deleted_workflows" / workflow_id
         if workflow_id in published:
             await self._write_text(marker, "delete\n")
@@ -179,7 +216,7 @@ class WorkflowService:
         template: NodeTemplate,
         expected_base_commit_sha: str,
     ) -> dict[str, Any]:
-        sha, _workflows, remote = await self._load_remote(project)
+        sha, _workflows, remote, _paths = await self._load_remote(project)
         if sha != expected_base_commit_sha:
             raise WorkflowConflictError("Template base branch changed; reload the editor")
         root = self._changes_root(project)
@@ -205,7 +242,7 @@ class WorkflowService:
         expected_base_commit_sha: str,
     ) -> dict[str, Any]:
         self._require_identifier(template_id)
-        sha, _workflows, remote = await self._load_remote(project)
+        sha, _workflows, remote, _paths = await self._load_remote(project)
         if sha != expected_base_commit_sha:
             raise WorkflowConflictError("Template base branch changed; reload the editor")
         root = self._changes_root(project)
@@ -433,19 +470,29 @@ class WorkflowService:
 
     async def _load_all(
         self, project: Project
-    ) -> tuple[str, dict[str, WorkflowDefinition], dict[str, NodeTemplate]]:
-        sha, definitions, templates = await self._load_remote(project)
+    ) -> tuple[
+        str,
+        dict[str, WorkflowDefinition],
+        dict[str, NodeTemplate],
+        dict[str, str],
+    ]:
+        sha, definitions, templates, paths = await self._load_remote(project)
         root = self._changes_root(project)
-        await self._reconcile_published(root, definitions, templates)
-        await self._overlay_workflows(definitions, root / "published")
-        await self._overlay_workflows(definitions, root / "outgoing")
+        await self._reconcile_published(root, definitions, templates, paths)
+        await self._overlay_workflows(definitions, paths, root / "published")
+        await self._overlay_workflows(definitions, paths, root / "outgoing")
         await self._overlay_templates(templates, root / "published")
         await self._overlay_templates(templates, root / "outgoing")
-        return sha, definitions, templates
+        return sha, definitions, templates, paths
 
     async def _load_remote(
         self, project: Project
-    ) -> tuple[str, dict[str, WorkflowDefinition], dict[str, NodeTemplate]]:
+    ) -> tuple[
+        str,
+        dict[str, WorkflowDefinition],
+        dict[str, NodeTemplate],
+        dict[str, str],
+    ]:
         token = self.cipher.decrypt(project.encrypted_access_token)
         repository = Path(project.local_path)
         try:
@@ -455,6 +502,7 @@ class WorkflowService:
                 files = await self.git.list_files(repository, sha, ".workflowEngine")
                 definitions: dict[str, WorkflowDefinition] = {}
                 templates: dict[str, NodeTemplate] = {}
+                paths: dict[str, str] = {}
                 for filename in files:
                     if not filename.endswith(".json"):
                         continue
@@ -509,11 +557,35 @@ class WorkflowService:
                                 template.id,
                             )
                         continue
-                    if Path(filename).parent != Path(".workflowEngine"):
+                    try:
+                        relative_path = PurePosixPath(filename).relative_to(
+                            ".workflowEngine"
+                        )
+                    except ValueError:
                         continue
                     definition, errors = parse_workflow(data, filename)
-                    if definition is not None and not errors:
+                    if (
+                        definition is not None
+                        and not errors
+                        and relative_path.stem == definition.id
+                    ):
+                        if definition.id in definitions:
+                            raise ValueError(
+                                f"Workflow ID '{definition.id}' is used by both "
+                                f".workflowEngine/{paths[definition.id]} and {filename}"
+                            )
                         definitions[definition.id] = definition
+                        paths[definition.id] = relative_path.as_posix()
+                    elif definition is not None and not errors:
+                        logger.warning(
+                            "Workflow parsing skipped "
+                            "(project=%s, file=%s, commit=%s): declared ID %s "
+                            "does not match filename",
+                            project.id,
+                            filename,
+                            sha[:12],
+                            definition.id,
+                        )
                     else:
                         logger.warning(
                             "Workflow schema parsing skipped "
@@ -531,21 +603,27 @@ class WorkflowService:
                     len(definitions),
                     len(templates),
                 )
-                return sha, definitions, templates
+                return sha, definitions, templates, paths
         finally:
             token = ""
 
     async def _overlay_workflows(
-        self, definitions: dict[str, WorkflowDefinition], layer: Path
+        self,
+        definitions: dict[str, WorkflowDefinition],
+        paths: dict[str, str],
+        layer: Path,
     ) -> None:
         for marker in await self._files(layer / "deleted_workflows"):
             definitions.pop(marker.name, None)
-        for path in await self._files(layer / "workflows", suffix=".json"):
+            paths.pop(marker.name, None)
+        workflow_root = layer / "workflows"
+        for path in await self._files(workflow_root, suffix=".json", recursive=True):
             data = await self._read_json(path)
             if isinstance(data, dict):
                 definition, errors = parse_workflow(data, str(path))
                 if definition is not None and not errors and path.stem == definition.id:
                     definitions[definition.id] = definition
+                    paths[definition.id] = path.relative_to(workflow_root).as_posix()
                 elif errors:
                     logger.warning(
                         "Local workflow schema parsing skipped (file=%s): %s",
@@ -583,22 +661,31 @@ class WorkflowService:
     async def _apply_layer_to_worktree(self, worktree: Path, layer: Path) -> None:
         definitions = worktree / ".workflowEngine"
         for marker in await self._files(layer / "deleted_workflows"):
-            await self._remove_file(definitions / f"{marker.name}.json")
+            await self._remove_repository_workflow_files(definitions, marker.name)
         for marker in await self._files(layer / "deleted_templates"):
             await self._remove_file(definitions / "templates" / f"{marker.name}.json")
-        for path in await self._files(layer / "workflows", suffix=".json"):
-            await self._copy_file(path, definitions / path.name)
+        workflow_root = layer / "workflows"
+        for path in await self._files(workflow_root, suffix=".json", recursive=True):
+            await self._remove_repository_workflow_files(definitions, path.stem)
+            await self._copy_file(path, definitions / path.relative_to(workflow_root))
         for path in await self._files(layer / "templates", suffix=".json"):
             await self._copy_file(path, definitions / "templates" / path.name)
 
     async def _merge_outgoing_into_published(self, root: Path) -> None:
         outgoing = root / "outgoing"
         published = root / "published"
-        for path in await self._files(outgoing / "workflows", suffix=".json"):
+        outgoing_workflows = outgoing / "workflows"
+        published_workflows = published / "workflows"
+        for path in await self._files(
+            outgoing_workflows, suffix=".json", recursive=True
+        ):
             await self._remove_file(published / "deleted_workflows" / path.stem)
-            await self._copy_file(path, published / "workflows" / path.name)
+            await self._remove_local_workflow_files(published_workflows, path.stem)
+            await self._copy_file(
+                path, published_workflows / path.relative_to(outgoing_workflows)
+            )
         for marker in await self._files(outgoing / "deleted_workflows"):
-            await self._remove_file(published / "workflows" / f"{marker.name}.json")
+            await self._remove_local_workflow_files(published_workflows, marker.name)
             await self._copy_file(marker, published / "deleted_workflows" / marker.name)
         for path in await self._files(outgoing / "templates", suffix=".json"):
             await self._remove_file(published / "deleted_templates" / path.stem)
@@ -614,9 +701,13 @@ class WorkflowService:
         root: Path,
         remote_workflows: dict[str, WorkflowDefinition],
         remote_templates: dict[str, NodeTemplate],
+        remote_paths: dict[str, str],
     ) -> None:
         published = root / "published"
-        for path in await self._files(published / "workflows", suffix=".json"):
+        published_workflows = published / "workflows"
+        for path in await self._files(
+            published_workflows, suffix=".json", recursive=True
+        ):
             data = await self._read_json(path)
             if isinstance(data, dict):
                 definition, errors = parse_workflow(data)
@@ -624,6 +715,8 @@ class WorkflowService:
                     definition is not None
                     and not errors
                     and remote_workflows.get(path.stem) == definition
+                    and remote_paths.get(path.stem)
+                    == path.relative_to(published_workflows).as_posix()
                 ):
                     await self._remove_file(path)
         for marker in await self._files(published / "deleted_workflows"):
@@ -658,13 +751,37 @@ class WorkflowService:
             raise ValueError("Definition ID is invalid")
 
     @staticmethod
-    async def _files(directory: Path, *, suffix: str | None = None) -> builtins.list[Path]:
+    async def _files(
+        directory: Path,
+        *,
+        suffix: str | None = None,
+        recursive: bool = False,
+    ) -> builtins.list[Path]:
         if not await asyncio.to_thread(directory.is_dir):
             return []
-        paths = await asyncio.to_thread(lambda: sorted(directory.iterdir()))
+        paths = await asyncio.to_thread(
+            lambda: sorted(directory.rglob("*" if suffix is None else f"*{suffix}"))
+            if recursive
+            else sorted(directory.iterdir())
+        )
         return [
             path for path in paths if path.is_file() and (suffix is None or path.suffix == suffix)
         ]
+
+    async def _remove_local_workflow_files(
+        self, workflow_root: Path, workflow_id: str
+    ) -> None:
+        for path in await self._files(workflow_root, suffix=".json", recursive=True):
+            if path.stem == workflow_id:
+                await self._remove_file(path)
+
+    async def _remove_repository_workflow_files(
+        self, definitions_root: Path, workflow_id: str
+    ) -> None:
+        templates_root = definitions_root / "templates"
+        for path in await self._files(definitions_root, suffix=".json", recursive=True):
+            if path.stem == workflow_id and not path.is_relative_to(templates_root):
+                await self._remove_file(path)
 
     async def _entry_count(self, layer: Path) -> int:
         total = 0
@@ -674,7 +791,12 @@ class WorkflowService:
             "deleted_workflows",
             "deleted_templates",
         ):
-            total += len(await self._files(layer / directory))
+            total += len(
+                await self._files(
+                    layer / directory,
+                    recursive=directory == "workflows",
+                )
+            )
         return total
 
     @staticmethod
@@ -726,3 +848,24 @@ class WorkflowService:
 
 def _issue_details(issues: list[Any]) -> str:
     return "; ".join(f"{issue.path} [{issue.code}]: {issue.message}" for issue in issues)
+
+
+def _validate_folder_path(value: str) -> str:
+    if not value:
+        return ""
+    if "\\" in value:
+        raise ValueError("Workflow folder path is invalid")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in path.parts)
+        or path.parts[0] == "templates"
+    ):
+        raise ValueError("Workflow folder path is invalid")
+    return path.as_posix()
+
+
+def _folder_path(relative_workflow_path: str) -> str:
+    parent = PurePosixPath(relative_workflow_path).parent
+    return "" if parent == PurePosixPath(".") else parent.as_posix()

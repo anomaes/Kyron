@@ -26,11 +26,16 @@ test verification.
 
 ## D-005 — Workflow tags remain definition metadata
 
-Accepted. Workflow tags are stored in each `.workflowEngine/<workflow_id>.json`
+Accepted. Workflow tags are stored in each `.workflowEngine/**/<workflow_id>.json`
 definition and travel with Git review, exact-SHA snapshots, and exports. They are not
 duplicated into database catalog tables because they have no runtime semantics. The
 catalog derives search, filtering, and grouping from the exact default-branch
 definitions already returned by the workflow API.
+
+Repository folders are separate catalog location metadata. Workflows may be nested below
+`.workflowEngine/`, and the catalog mirrors that tree without converting folder names into
+definition tags. IDs remain globally unique and references remain ID-based, so moving a
+workflow does not require editing its callers.
 
 ## D-006 — Run visualization is derived from durable invocation state
 

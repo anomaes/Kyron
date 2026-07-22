@@ -92,3 +92,12 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .react-flow__edge-path { stroke-width: 1.7; }
 .react-flow__arrowhead polyline, .react-flow__arrowhead polygon { fill: #596052; stroke: #596052; }
 @media (max-width: 760px) { .interface-editor { grid-template-columns: 1fr; } }
+
+/* Workflow folders mirror the repository tree beneath .workflowEngine. */
+.workflow-folder-tree { display: grid; gap: 10px; }
+.workflow-folder-root,.workflow-folder-branch { display: grid; gap: 9px; }
+.workflow-folder-branch { margin-left: 20px; padding-left: 15px; border-left: 1px solid var(--line); }
+.workflow-folder-title { display: flex; align-items: baseline; justify-content: space-between; padding: 3px 4px; }
+.workflow-folder-title h2 { display: flex; gap: 7px; align-items: center; margin: 0; font-size: 13px; }
+.workflow-folder-title h2 span { color: #718052; font-size: 10px; }
+.workflow-folder-title small { color: var(--muted); font-size: 9px; }

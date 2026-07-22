@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from backend.engine.validation import direct_references, parse_workflow, validate_workflow_bundle
@@ -38,12 +38,23 @@ class WorkflowSnapshotLoader:
             _short_sha(commit_sha),
         )
         workflows: dict[str, WorkflowDefinition] = {}
+        workflow_paths = await self._workflow_paths(repository_path, commit_sha)
         pending = [root_workflow_id]
         while pending:
             workflow_id = pending.pop()
             if workflow_id in workflows:
                 continue
-            filename = f".workflowEngine/{workflow_id}.json"
+            candidates = workflow_paths.get(workflow_id, [])
+            if not candidates:
+                raise BundleResolutionError(
+                    f"Workflow '{workflow_id}' does not exist at commit {_short_sha(commit_sha)}"
+                )
+            if len(candidates) > 1:
+                raise BundleResolutionError(
+                    f"Workflow ID '{workflow_id}' is used by multiple files: "
+                    + ", ".join(candidates)
+                )
+            filename = candidates[0]
             try:
                 raw = await self.git.show_file(repository_path, commit_sha, filename)
             except Exception as exc:
@@ -138,6 +149,27 @@ class WorkflowSnapshotLoader:
             workflows=workflows,
             reference_graph={key: direct_references(value) for key, value in workflows.items()},
         )
+
+    async def _workflow_paths(
+        self, repository_path: Path, commit_sha: str
+    ) -> dict[str, list[str]]:
+        paths: dict[str, list[str]] = {}
+        for filename in await self.git.list_files(
+            repository_path, commit_sha, ".workflowEngine"
+        ):
+            path = PurePosixPath(filename)
+            try:
+                relative = path.relative_to(".workflowEngine")
+            except ValueError:
+                continue
+            if (
+                path.suffix != ".json"
+                or not relative.parts
+                or relative.parts[0] == "templates"
+            ):
+                continue
+            paths.setdefault(path.stem, []).append(filename)
+        return paths
 
 
 def _issue_details(issues: list[Any]) -> str:

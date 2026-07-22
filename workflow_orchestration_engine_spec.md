@@ -626,10 +626,12 @@ Workflow files are JSON documents stored in the repository:
 ```text
 repo-root/
 └── .workflowEngine/
-    ├── full_review.json
-    ├── implement_changes.json
-    ├── revise_from_feedback.json
-    ├── test_and_validate.json
+    ├── delivery/
+    │   ├── full_review.json
+    │   └── implement_changes.json
+    ├── quality/
+    │   ├── revise_from_feedback.json
+    │   └── test_and_validate.json
     └── templates/
         └── print_text.json
 ```
@@ -662,6 +664,13 @@ Workflow IDs, node IDs, input names, output names, and variable names must match
 ```
 
 Workflow filenames must equal `<workflow_id>.json`.
+
+Workflow definitions may be placed at any depth below `.workflowEngine/`. The relative
+folder path is catalog metadata and the UI mirrors that hierarchy. The top-level
+`.workflowEngine/templates/` directory remains reserved for node templates. Workflow IDs
+must be unique across the complete directory tree; sub-workflow and review-loop references
+continue to use the workflow ID and do not include the folder path. Exact-commit snapshot
+resolution builds an ID-to-path index from the Git tree before loading the transitive bundle.
 
 Workflow tags are optional lowercase labels used only for catalog organization. A tag must
 match `^[a-z0-9][a-z0-9._-]*$`, is limited to 64 characters, and may occur only once per
@@ -1378,10 +1387,11 @@ git rev-parse origin/<base_ref>
 
 The resulting 40-character SHA becomes `base_commit_sha`.
 
-The root workflow is read directly from that commit, not from a mutable checked-out working directory:
+Workflow paths are indexed directly from that commit, not from a mutable checked-out
+working directory. The resolved root path is then read with:
 
 ```bash
-git show <base_commit_sha>:.workflowEngine/<workflow_id>.json
+git show <base_commit_sha>:.workflowEngine/<resolved folders>/<workflow_id>.json
 ```
 
 All referenced child workflows are resolved using the same SHA.
@@ -2842,7 +2852,7 @@ Flow:
 2. Resolve current default-branch SHA.
 3. Validate the workflow and all references.
 4. Create a temporary definition worktree from that SHA.
-5. Write `.workflowEngine/<workflow_id>.json` with stable formatting.
+5. Write the workflow's indexed `.workflowEngine/<folders>/<workflow_id>.json` path with stable formatting.
 6. Stage only the workflow file.
 7. Commit with:
 
