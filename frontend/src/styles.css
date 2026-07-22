@@ -101,3 +101,12 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .workflow-folder-title h2 { display: flex; gap: 7px; align-items: center; margin: 0; font-size: 13px; }
 .workflow-folder-title h2 span { color: #718052; font-size: 10px; }
 .workflow-folder-title small { color: var(--muted); font-size: 9px; }
+
+/* The node inspector can be widened by dragging its left divider. */
+.builder-shell { grid-template-columns: 210px minmax(0, 1fr) 7px var(--inspector-width, 340px); }
+.inspector { border-left: 0; }
+.inspector-resize-handle { position: relative; z-index: 4; cursor: col-resize; touch-action: none; background: #ecece6; outline: none; }
+.inspector-resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: #caccc2; transition: width .12s, left .12s, background .12s; }
+.inspector-resize-handle:hover::after,.inspector-resize-handle:focus-visible::after { left: 2px; width: 3px; background: #8c9f62; }
+body.inspector-resizing,body.inspector-resizing * { cursor: col-resize !important; user-select: none !important; }
+@media (max-width: 1200px) { .builder-shell { grid-template-columns: 190px minmax(0, 1fr) 7px var(--inspector-width, 310px); } }
