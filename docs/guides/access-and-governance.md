@@ -16,8 +16,46 @@ and Viewer roles. A membership may hold several roles. Project administrators ca
 create custom roles from Kyron's fixed permission catalogue. Built-in roles are immutable,
 which keeps their meaning consistent across projects.
 
-Operators may control runs they triggered. Project administrators may control any project
-run. Disabling a user globally immediately prevents login and gate responses.
+Role permissions are additive: a member with several roles receives the union of their
+permissions. The built-in roles contain exactly these permissions:
+
+| Role | Intended use | Permissions |
+| --- | --- | --- |
+| Project Administrator (`project-admin`) | Administer one project and all of its workflows and runs | Every project permission listed below |
+| Workflow Author (`workflow-author`) | Create, validate, and publish workflow definitions and node templates | `project.view`, `policy.view`, `workflow.view`, `workflow.edit`, `workflow.publish`, `run.view`, `report.view` |
+| Operator (`operator`) | Trigger workflows and control runs they started | `project.view`, `policy.view`, `workflow.view`, `run.view`, `run.trigger`, `run.control.own`, `report.view` |
+| Approver (`approver`) | Inspect runs and respond when selected by an approval policy | `project.view`, `policy.view`, `workflow.view`, `run.view`, `gate.respond`, `report.view` |
+| Viewer (`viewer`) | Read workflows, runs, logs, and reports without changing them | `project.view`, `policy.view`, `workflow.view`, `run.view`, `report.view` |
+
+The permission catalogue has the following meaning:
+
+| Permission | Allows |
+| --- | --- |
+| `project.view` | View the project's repository metadata and configuration |
+| `project.manage` | Replace or validate the repository token, change Pi defaults, fetch the repository, and remove the project |
+| `membership.manage` | List project members and available users, add or update memberships and role assignments, and activate or deactivate memberships |
+| `role.manage` | List roles and create or update custom roles; built-in roles remain immutable |
+| `policy.view` | View approval policies |
+| `policy.manage` | Create or update approval policies and governance profiles |
+| `workflow.view` | View workflow definitions, node templates, references, and local change status |
+| `workflow.edit` | Validate, create, update, or delete local workflow definitions and node templates |
+| `workflow.publish` | Commit and push local workflow and node-template changes to the repository |
+| `run.view` | View runs, execution graphs, node details, outputs, and live or stored logs |
+| `run.trigger` | Start a workflow run |
+| `run.control.own` | Cancel or resume runs started by the same user |
+| `run.control.any` | Cancel or resume any run in the project |
+| `gate.respond` | Approve or provide feedback at a gate when the user is eligible under the gate's snapshotted approval policy |
+| `gate.override` | Override a stuck gate with a recorded reason |
+| `report.view` | View run traceability reports |
+| `audit.view` | View the project's authorization audit events |
+
+A Project Administrator has all of these permissions, including control of any project
+run and audited gate overrides. A global system administrator is separate from the
+`project-admin` role: system administrators receive every project permission without a
+project membership and can register projects and manage global users. Disabling a user
+globally immediately prevents login and gate responses. Permissions do not bypass provider
+identity checks: repository-writing actions and run control still require a session from the
+project or run's code-host provider.
 
 ## Approval policies
 
