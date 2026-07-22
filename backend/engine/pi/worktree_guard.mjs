@@ -57,7 +57,8 @@ export default function worktreeGuard(pi) {
     ) {
       return {
         block: true,
-        reason: `Pi may only modify files in the current run worktree: ${inputPath}`,
+        reason: `Pi may only modify files in the current run worktree: ${inputPath}. ` +
+          "Absolute paths must point inside the worktree; use a repository-relative path otherwise.",
       };
     }
 

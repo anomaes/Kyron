@@ -103,6 +103,71 @@ async def test_known_and_unknown_events_are_preserved() -> None:
     assert render_event(collector.events[1]) == "Pi event: future_event"
 
 
+async def test_terminal_assistant_error_is_a_pi_failure() -> None:
+    collector = PiEventCollector()
+    await collector.accept(
+        "stdout",
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[],"stopReason":"error",'
+        '"errorMessage":"401 invalid API key"}],"willRetry":false}\n',
+    )
+
+    assert collector.failure_message == "401 invalid API key"
+    assert render_event(collector.events[-1]) == "Pi session failed: 401 invalid API key"
+
+
+async def test_latest_successful_agent_end_supersedes_a_retried_error() -> None:
+    collector = PiEventCollector()
+    await collector.accept(
+        "stdout",
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[],"stopReason":"error",'
+        '"errorMessage":"provider overloaded"}],"willRetry":true}\n',
+    )
+    await collector.accept(
+        "stdout",
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[{"type":"text","text":"done"}],'
+        '"stopReason":"stop"}],"willRetry":false}\n',
+    )
+
+    assert collector.failure_message is None
+
+
+async def test_successful_agent_end_supersedes_nonterminal_extension_error() -> None:
+    collector = PiEventCollector()
+    await collector.accept(
+        "stdout",
+        '{"type":"extension_error","event":"tool_call",'
+        '"error":"temporary extension error"}\n',
+    )
+    await collector.accept(
+        "stdout",
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[{"type":"text","text":"done"}],'
+        '"stopReason":"stop"}],"willRetry":false}\n',
+    )
+
+    assert collector.failure_message is None
+
+
+def test_failed_tool_result_includes_guard_reason() -> None:
+    event = {
+        "type": "tool_execution_end",
+        "toolName": "write",
+        "isError": True,
+        "result": {
+            "content": [
+                {"type": "text", "text": "Pi may only modify files in the worktree"}
+            ]
+        },
+    }
+
+    assert render_event(event) == (
+        "Tool failed: write: Pi may only modify files in the worktree"
+    )
+
+
 def test_malformed_json_is_a_protocol_error() -> None:
     with pytest.raises(PiProtocolError):
         parse_event("not-json")

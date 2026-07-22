@@ -18,6 +18,7 @@ class CapturingRunner(ProcessRunner):
         self.environment: dict[str, str] = {}
         self.secret_values: list[str] = []
         self.scratch_root: Path | None = None
+        self.stdout_lines: list[str] = []
 
     async def execute(
         self,
@@ -26,7 +27,6 @@ class CapturingRunner(ProcessRunner):
         secret_values: Sequence[str] = (),
         line_callback: LineCallback | None = None,
     ) -> ProcessResult:
-        del line_callback
         self.command = list(spec.command)
         self.environment = dict(spec.environment)
         self.secret_values = list(secret_values)
@@ -41,6 +41,9 @@ class CapturingRunner(ProcessRunner):
         stderr = spec.output_directory / spec.stderr_filename
         stdout.write_text("")
         stderr.write_text("")
+        if line_callback is not None:
+            for line in self.stdout_lines:
+                await line_callback("stdout", line)
         return ProcessResult(
             exit_code=0,
             stdout_path=stdout,
@@ -109,3 +112,27 @@ async def test_bash_node_does_not_use_pi_write_confinement(tmp_path: Path) -> No
     assert runner.command == ["/bin/bash", "-lc", "pwd"]
     assert "PI_CODING_AGENT_DIR" not in runner.environment
     assert "--bind" not in runner.command
+
+
+async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: Path) -> None:
+    runner = CapturingRunner()
+    runner.stdout_lines = [
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[],"stopReason":"error",'
+        '"errorMessage":"401 invalid API key"}],"willRetry":false}\n'
+    ]
+    operation = request(tmp_path, {})
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert result.exit_code == 1
+    assert "Pi reported failure: 401 invalid API key" in result.stderr_preview
+    assert "Pi reported failure: 401 invalid API key" in result.stderr_tail

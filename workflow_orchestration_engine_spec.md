@@ -997,7 +997,9 @@ Rules:
 - Raw JSONL is stored in `pi_events.jsonl`.
 - A human-readable event stream is published to the run log WebSocket.
 - Stderr is stored separately.
-- The process exit code determines success.
+- A non-zero process exit, malformed JSONL, or a terminal assistant result with
+  `stopReason` equal to `error` or `aborted` fails the node. Pi JSON mode may return
+  process exit code `0` for provider failures, so the exit code alone is insufficient.
 
 The engine wraps the complete Pi argument array in Bubblewrap. It recursively
 bind-mounts `/` read-only, rebinds only the resolved run worktree and a per-attempt
@@ -2842,6 +2844,7 @@ The adapter should recognize at least:
 
 - `agent_start`
 - `agent_end`
+- `agent_settled`
 - `turn_start`
 - `turn_end`
 - `message_start`
@@ -2863,6 +2866,7 @@ Translate events into concise UI messages, for example:
 - `Pi session started`
 - `Assistant response streaming`
 - `Running tool: bash`
+- `Tool failed: write: <reason>`
 - `Editing src/example.py`
 - `Provider retry 1/3`
 - `Pi session completed`
@@ -2875,6 +2879,8 @@ The prompt node succeeds when:
 
 - The Pi process exits with code `0`.
 - JSONL parsing did not encounter an unrecoverable framing error.
+- The final assistant message does not have `stopReason: "error"` or
+  `stopReason: "aborted"`.
 - No engine-level timeout or cancellation occurred.
 
 A Pi-reported extension error may be logged but does not automatically fail the node unless the process exits non-zero or the final session event indicates failure.
