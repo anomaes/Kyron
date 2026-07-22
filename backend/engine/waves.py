@@ -234,14 +234,19 @@ class WaveExecutor:
                 execution.error_message = str(exception)
                 logger.error(
                     "Node attempt failed "
-                    "(run=%s, wave=%s, node=%s, attempt=%s, exit_code=%s, timed_out=%s): %s",
+                    "(run=%s, invocation=%s, invocation_path=%s, workflow=%s, wave=%s, "
+                    "node=%s, attempt=%s, exit_code=%s, timed_out=%s): %s%s",
                     run.id,
+                    invocation.id,
+                    invocation.invocation_path,
+                    workflow.id,
                     wave.id,
                     node_id,
                     attempt.attempt_number,
                     result.exit_code,
                     result.timed_out,
                     exception,
+                    _failure_diagnostics(result),
                 )
             elif exception is not None:
                 failed_node_id = node_id
@@ -391,3 +396,17 @@ def _safe_node_path(node_path: str) -> str:
         character if character.isalnum() or character in {"-", "_"} else "_"
         for character in node_path
     )
+
+
+def _failure_diagnostics(result: ProcessResult) -> str:
+    sections: list[str] = []
+    for stream, content, truncated in (
+        ("stderr", result.stderr_tail, result.stderr_tail_truncated),
+        ("stdout", result.stdout_tail, result.stdout_tail_truncated),
+    ):
+        diagnostic = content.strip()
+        if not diagnostic:
+            continue
+        prefix = "[earlier output omitted]\n" if truncated else ""
+        sections.append(f"{stream}:\n{prefix}{diagnostic}")
+    return "\n" + "\n".join(sections) if sections else "\nNo stdout or stderr was captured."

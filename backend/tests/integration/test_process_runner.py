@@ -36,6 +36,41 @@ async def test_process_output_is_bounded_redacted_and_persisted(tmp_path: Path) 
     assert "secret-value" not in result.stdout_path.read_text()
     assert "[REDACTED]" in result.stdout_path.read_text()
     assert result.stderr_path.read_text() == "err\n"
+    assert result.stdout_tail.endswith("x" * 18 + "\n")
+    assert "secret-value" not in result.stdout_tail
+    assert "[REDACTED]" in result.stdout_tail
+    assert result.stderr_tail == "err\n"
+
+
+async def test_process_result_keeps_bounded_redacted_diagnostic_tail(tmp_path: Path) -> None:
+    registry = ProcessRegistry()
+    runner = ProcessRunner(registry, LogBroadcaster())
+    result = await runner.execute(
+        ProcessSpec(
+            run_id=uuid.uuid4(),
+            attempt_id=uuid.uuid4(),
+            node_path="root/fail",
+            command=[
+                sys.executable,
+                "-c",
+                "import sys; "
+                "print('old-output-' + 'x' * 5000, file=sys.stderr); "
+                "print('token-value final diagnostic', file=sys.stderr)",
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "tail-output",
+            timeout_seconds=5,
+            max_preview_bytes=20,
+        ),
+        secret_values=["token-value"],
+    )
+
+    assert len(result.stderr_tail.encode()) <= 4096
+    assert result.stderr_tail_truncated
+    assert "old-output-" not in result.stderr_tail
+    assert "token-value" not in result.stderr_tail
+    assert "[REDACTED] final diagnostic" in result.stderr_tail
 
 
 async def test_timeout_terminates_the_process_group(tmp_path: Path) -> None:

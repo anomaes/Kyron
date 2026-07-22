@@ -8,7 +8,13 @@ from backend.engine.context import build_process_environment, expand_public_vari
 from backend.engine.pi.command import build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.renderer import render_event
-from backend.engine.process_runner import ProcessResult, ProcessRunner, ProcessSpec
+from backend.engine.process_runner import (
+    DIAGNOSTIC_TAIL_BYTES,
+    BoundedTail,
+    ProcessResult,
+    ProcessRunner,
+    ProcessSpec,
+)
 from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import BashNode, PromptNode, ScriptNode
 
@@ -113,12 +119,21 @@ class ProcessNodeExecutor:
             request.secrets.clear()
             environment.clear()
         if isinstance(node, PromptNode) and collector is not None and collector.errors:
+            stderr_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
+            stderr_tail.append(result.stderr_tail)
+            stderr_tail.append("\nPi emitted malformed JSONL")
             return ProcessResult(
                 exit_code=result.exit_code or 1,
                 stdout_path=result.stdout_path,
                 stderr_path=result.stderr_path,
                 stdout_preview=result.stdout_preview,
                 stderr_preview=(result.stderr_preview + "\nPi emitted malformed JSONL").strip(),
+                stdout_tail=result.stdout_tail,
+                stderr_tail=stderr_tail.text.strip(),
+                stdout_tail_truncated=result.stdout_tail_truncated,
+                stderr_tail_truncated=(
+                    result.stderr_tail_truncated or stderr_tail.truncated
+                ),
                 timed_out=result.timed_out,
                 cancelled=result.cancelled,
             )

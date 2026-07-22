@@ -17,6 +17,7 @@ from backend.services.log_broadcaster import LogBroadcaster
 logger = logging.getLogger(__name__)
 
 LineCallback = Callable[[str, str], Awaitable[None]]
+DIAGNOSTIC_TAIL_BYTES = 4096
 
 
 @dataclass(slots=True)
@@ -41,6 +42,10 @@ class ProcessResult:
     stderr_path: Path
     stdout_preview: str
     stderr_preview: str
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    stdout_tail_truncated: bool = False
+    stderr_tail_truncated: bool = False
     timed_out: bool = False
     cancelled: bool = False
 
@@ -55,6 +60,23 @@ class BoundedPreview:
         if remaining <= 0:
             return
         self._content.extend(text.encode("utf-8")[:remaining])
+
+    @property
+    def text(self) -> str:
+        return self._content.decode("utf-8", errors="replace")
+
+
+class BoundedTail:
+    def __init__(self, maximum_bytes: int) -> None:
+        self.maximum_bytes = maximum_bytes
+        self._content = bytearray()
+        self.truncated = False
+
+    def append(self, text: str) -> None:
+        self._content.extend(text.encode("utf-8"))
+        if len(self._content) > self.maximum_bytes:
+            del self._content[: len(self._content) - self.maximum_bytes]
+            self.truncated = True
 
     @property
     def text(self) -> str:
@@ -84,6 +106,8 @@ class ProcessRunner:
         stderr_path = spec.output_directory / spec.stderr_filename
         stdout_preview = BoundedPreview(spec.max_preview_bytes)
         stderr_preview = BoundedPreview(spec.max_preview_bytes)
+        stdout_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
+        stderr_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
         redactor = SecretRedactor(secret_values)
         logger.debug(
             "Starting node process (run=%s, attempt=%s, node_path=%s, timeout_seconds=%s)",
@@ -119,12 +143,14 @@ class ProcessRunner:
             path: Path,
             source: str,
             preview: BoundedPreview,
+            tail: BoundedTail,
         ) -> None:
             async with aiofiles.open(path, "w", encoding="utf-8") as output:
                 while chunk := await stream.readline():
                     text = redactor.redact(chunk.decode("utf-8", errors="replace"))
                     await output.write(text)
                     preview.append(text)
+                    tail.append(text)
                     await self.broadcaster.publish(
                         spec.run_id,
                         {
@@ -141,10 +167,10 @@ class ProcessRunner:
         assert process.stdout is not None
         assert process.stderr is not None
         stdout_task = asyncio.create_task(
-            copy_stream(process.stdout, stdout_path, "stdout", stdout_preview)
+            copy_stream(process.stdout, stdout_path, "stdout", stdout_preview, stdout_tail)
         )
         stderr_task = asyncio.create_task(
-            copy_stream(process.stderr, stderr_path, "stderr", stderr_preview)
+            copy_stream(process.stderr, stderr_path, "stderr", stderr_preview, stderr_tail)
         )
         timed_out = False
         cancelled = False
@@ -195,6 +221,10 @@ class ProcessRunner:
             stderr_path=stderr_path,
             stdout_preview=stdout_preview.text,
             stderr_preview=stderr_preview.text,
+            stdout_tail=stdout_tail.text,
+            stderr_tail=stderr_tail.text,
+            stdout_tail_truncated=stdout_tail.truncated,
+            stderr_tail_truncated=stderr_tail.truncated,
             timed_out=timed_out,
             cancelled=cancelled,
         )
