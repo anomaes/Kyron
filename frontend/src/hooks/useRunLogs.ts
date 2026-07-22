@@ -26,8 +26,25 @@ export function useRunLogs(runId: string, terminal: boolean) {
         if (event.sequence) lastSequence.current = Math.max(lastSequence.current, event.sequence);
       }
       setEvents((current) => {
-        const knownSequences = new Set(current.flatMap((event) => event.sequence ? [event.sequence] : []));
-        const fresh = incoming.filter((event) => !event.sequence || !knownSequences.has(event.sequence));
+        const eventKey = (event: LogEvent) => {
+          if (event.sequence) return `log:${event.sequence}`;
+          if (event.type === "pi_event" && event.attempt_id && event.event) {
+            return `pi:${event.attempt_id}:${event.event.event_index}`;
+          }
+          return null;
+        };
+        const knownKeys = new Set(current.flatMap((event) => {
+          const key = eventKey(event);
+          return key ? [key] : [];
+        }));
+        const fresh = incoming.filter((event) => {
+          const key = eventKey(event);
+          if (!key || !knownKeys.has(key)) {
+            if (key) knownKeys.add(key);
+            return true;
+          }
+          return false;
+        });
         return fresh.length ? [...current, ...fresh].slice(-2000) : current;
       });
     }

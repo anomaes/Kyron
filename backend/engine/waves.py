@@ -22,6 +22,7 @@ from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
 from backend.engine.conditions import evaluate_condition
 from backend.engine.context import expand_public_variables, output_variables
 from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNodeExecutor
+from backend.engine.output_paths import node_attempt_directory
 from backend.engine.pi.command import resolve_pi_settings
 from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
@@ -193,14 +194,13 @@ class WaveExecutor:
                 node,
                 NodeExecutionRequest(
                     run_id=run.id,
+                    node_execution_id=execution.id,
                     attempt_id=attempt.id,
+                    attempt_number=attempt.attempt_number,
                     node_path=execution.node_path,
                     worktree=worktree,
-                    output_directory=(
-                        run_data
-                        / "outputs"
-                        / _safe_node_path(execution.node_path)
-                        / f"attempt-{attempt.attempt_number}"
+                    output_directory=node_attempt_directory(
+                        run_data, execution.node_path, attempt.attempt_number
                     ),
                     public_context=dict(run.public_context),
                     secrets=secrets,
@@ -458,13 +458,6 @@ class WaveExecutor:
             end_sha[:12],
         )
         return wave
-
-
-def _safe_node_path(node_path: str) -> str:
-    return "".join(
-        character if character.isalnum() or character in {"-", "_"} else "_"
-        for character in node_path
-    )
 
 
 def _failure_diagnostics(result: ProcessResult) -> str:

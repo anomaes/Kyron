@@ -33,6 +33,7 @@ class ProcessSpec:
     max_preview_bytes: int
     stdout_filename: str = "stdout.log"
     stderr_filename: str = "stderr.log"
+    broadcast_stdout: bool = True
 
 
 @dataclass(slots=True)
@@ -151,16 +152,17 @@ class ProcessRunner:
                     await output.write(text)
                     preview.append(text)
                     tail.append(text)
-                    await self.broadcaster.publish(
-                        spec.run_id,
-                        {
-                            "type": "process_output",
-                            "node_path": spec.node_path,
-                            "attempt_id": str(spec.attempt_id),
-                            "source": source,
-                            "line": text.rstrip("\n"),
-                        },
-                    )
+                    if source != "stdout" or spec.broadcast_stdout:
+                        await self.broadcaster.publish(
+                            spec.run_id,
+                            {
+                                "type": "process_output",
+                                "node_path": spec.node_path,
+                                "attempt_id": str(spec.attempt_id),
+                                "source": source,
+                                "line": text.rstrip("\n"),
+                            },
+                        )
                     if line_callback:
                         await line_callback(source, text)
 

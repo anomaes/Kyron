@@ -2134,6 +2134,7 @@ GET  /api/runs/{run_id}/graph
 GET  /api/runs/{run_id}/logs
 GET  /api/runs/{run_id}/nodes/{node_execution_id}
 GET  /api/runs/{run_id}/nodes/{node_execution_id}/output
+GET  /api/runs/{run_id}/nodes/{node_execution_id}/pi-events
 POST /api/runs/{run_id}/cancel
 POST /api/runs/{run_id}/resume
 POST /api/runs/{run_id}/approve
@@ -2158,6 +2159,11 @@ Query:
 - Optional byte range or `tail_lines`.
 
 The endpoint must not read arbitrary paths supplied by the client.
+
+The Pi-events endpoint accepts an optional positive `attempt`, parses the corresponding
+redacted `pi_events.jsonl`, and returns Kyron's stable UI event schema plus attempt status.
+It is valid for an active attempt to return an empty event list before Pi emits its first
+record. Non-prompt nodes are rejected.
 
 ## 14.8 Approve
 
@@ -2220,6 +2226,14 @@ Messages:
 ```
 
 Process output events use a per-process sequence and are live-only. The client can fetch complete output from files after reconnect.
+
+Prompt stdout is not sent as generic `process_output`, because it is Pi protocol JSONL.
+Instead, recognized records are sent as `pi_event` envelopes containing the node execution,
+node path, attempt ID and number, and a normalized event with its persisted line index.
+The normalized schema preserves assistant text/thinking deltas, complete assistant messages,
+tool call arguments/partial results/final results, lifecycle events, retries, and failures.
+Clients deduplicate historical and live Pi events by attempt and event index. Raw redacted
+JSONL remains available through the node output endpoint.
 
 Heartbeat:
 
@@ -3238,6 +3252,28 @@ Features:
 - Download stdout/stderr.
 - Attempt selector.
 - Clear indication when live lines were dropped and full output must be loaded from disk.
+
+### Pi activity
+
+Prompt nodes with an execution are selectable in the graph. Selecting one replaces the
+right-hand run-log view with a contextual **Pi activity** view; a **Run log** tab returns to
+the orchestration stream. Do not describe this view as chat while prompt nodes remain
+one-shot JSON-mode processes with no user steering.
+
+The activity view:
+
+- identifies the node path, attempt, and current status;
+- merges normalized historical events with the live WebSocket stream;
+- streams assistant text into one message instead of one row per delta;
+- keeps reasoning collapsed by default;
+- groups tool start, update, and end records by Pi `toolCallId`;
+- summarizes common tool arguments while collapsed;
+- exposes complete formatted input and output when a tool call is expanded;
+- shows retry, compaction, lifecycle, and error records separately; and
+- supports auto-follow, jump-to-latest, attempt selection, and fullscreen display.
+
+The global run log may show concise Pi lifecycle and tool-boundary messages, but must not
+render raw Pi JSON lines or individual assistant/tool-update deltas.
 
 ### Feedback panel
 

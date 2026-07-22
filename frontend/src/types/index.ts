@@ -139,9 +139,20 @@ export type RunGraph = {
     id: string;
     invocation_id: string;
     node_id: string;
+    node_path: string;
+    node_type: NodeType;
     status: string;
+    current_attempt: number;
   }>;
-  attempts: Array<Record<string, unknown>>;
+  attempts: Array<{
+    id: string;
+    node_execution_id: string;
+    attempt_number: number;
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+    exit_code: number | null;
+  }>;
   edge_evaluations: Array<Record<string, unknown>>;
   feedback: Array<{ node_execution_id: string; iteration: number; message: string; event_type: string }>;
   gates: GateInstance[];
@@ -213,4 +224,41 @@ export type LogEvent = {
   source?: string;
   line?: string;
   message?: string;
+  node_execution_id?: string;
+  attempt_id?: string;
+  attempt_number?: number;
+  event?: PiActivityEvent;
+};
+
+export type PiActivityEvent = {
+  event_index: number;
+  pi_event_type: string;
+  kind:
+    | "assistant_delta"
+    | "assistant_end"
+    | "tool_start"
+    | "tool_update"
+    | "tool_end"
+    | "lifecycle"
+    | "error";
+  stream?: "text" | "thinking";
+  delta?: string;
+  text?: string;
+  thinking?: string;
+  stop_reason?: string | null;
+  error?: string | null;
+  usage?: unknown;
+  tool_call_id?: string;
+  tool_name?: string;
+  args?: unknown;
+  partial_result?: unknown;
+  result?: unknown;
+  is_error?: boolean;
+  message?: string;
+};
+
+export type PiEventsResponse = {
+  attempt: number;
+  status: string;
+  events: PiActivityEvent[];
 };

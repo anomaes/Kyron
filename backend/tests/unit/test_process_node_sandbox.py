@@ -19,6 +19,7 @@ class CapturingRunner(ProcessRunner):
         self.secret_values: list[str] = []
         self.scratch_root: Path | None = None
         self.stdout_lines: list[str] = []
+        self.broadcast_stdout = True
 
     async def execute(
         self,
@@ -30,6 +31,7 @@ class CapturingRunner(ProcessRunner):
         self.command = list(spec.command)
         self.environment = dict(spec.environment)
         self.secret_values = list(secret_values)
+        self.broadcast_stdout = spec.broadcast_stdout
         bind_indexes = [
             index for index, value in enumerate(self.command) if value == "--bind"
         ]
@@ -58,7 +60,9 @@ def request(tmp_path: Path, secrets: dict[str, str]) -> NodeExecutionRequest:
     worktree.mkdir(exist_ok=True)
     return NodeExecutionRequest(
         run_id=uuid.uuid4(),
+        node_execution_id=uuid.uuid4(),
         attempt_id=uuid.uuid4(),
+        attempt_number=1,
         node_path="root/node",
         worktree=worktree,
         output_directory=tmp_path / "output",
@@ -95,6 +99,7 @@ async def test_prompt_node_is_write_confined_and_uses_ephemeral_pi_state(tmp_pat
     assert runner.secret_values == ["secret"]
     assert runner.scratch_root is not None
     assert not runner.scratch_root.exists()
+    assert not runner.broadcast_stdout
     assert secrets == {}
 
 
@@ -112,6 +117,7 @@ async def test_bash_node_does_not_use_pi_write_confinement(tmp_path: Path) -> No
     assert runner.command == ["/bin/bash", "-lc", "pwd"]
     assert "PI_CODING_AGENT_DIR" not in runner.environment
     assert "--bind" not in runner.command
+    assert runner.broadcast_stdout
 
 
 async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: Path) -> None:

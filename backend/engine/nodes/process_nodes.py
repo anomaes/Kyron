@@ -10,6 +10,7 @@ from backend.engine.pi.command import build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.renderer import render_event
 from backend.engine.pi.sandbox import sandboxed_command
+from backend.engine.pi.ui_events import normalize_pi_event
 from backend.engine.process_runner import (
     DIAGNOSTIC_TAIL_BYTES,
     BoundedTail,
@@ -24,7 +25,9 @@ from backend.schemas.workflow import BashNode, PromptNode, ScriptNode
 @dataclass(slots=True)
 class NodeExecutionRequest:
     run_id: uuid.UUID
+    node_execution_id: uuid.UUID
     attempt_id: uuid.UUID
+    attempt_number: int
     node_path: str
     worktree: Path
     output_directory: Path
@@ -89,14 +92,21 @@ class ProcessNodeExecutor:
                     before = len(collector.events)
                     await collector.accept(source, line)
                     if len(collector.events) > before:
-                        await self.runner.broadcaster.publish(
-                            request.run_id,
-                            {
-                                "type": "pi_event",
-                                "node_path": request.node_path,
-                                "message": render_event(collector.events[-1]),
-                            },
-                        )
+                        event_index = collector.line_count
+                        ui_event = normalize_pi_event(collector.events[-1], event_index)
+                        if ui_event is not None:
+                            await self.runner.broadcaster.publish(
+                                request.run_id,
+                                {
+                                    "type": "pi_event",
+                                    "node_execution_id": str(request.node_execution_id),
+                                    "node_path": request.node_path,
+                                    "attempt_id": str(request.attempt_id),
+                                    "attempt_number": request.attempt_number,
+                                    "event": ui_event,
+                                    "message": render_event(collector.events[-1]),
+                                },
+                            )
 
                 callback = collect_and_publish
                 stdout_filename = "pi_events.jsonl"
@@ -133,6 +143,7 @@ class ProcessNodeExecutor:
                     timeout_seconds=timeout,
                     max_preview_bytes=request.max_preview_bytes,
                     stdout_filename=stdout_filename,
+                    broadcast_stdout=not isinstance(node, PromptNode),
                 ),
                 secret_values=list(request.secrets.values()),
                 line_callback=callback,

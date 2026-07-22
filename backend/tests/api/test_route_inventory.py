@@ -32,6 +32,7 @@ def test_required_http_and_websocket_routes_are_registered() -> None:
         "/api/runs/{run_id}/graph",
         "/api/runs/{run_id}/report",
         "/api/runs/{run_id}/logs",
+        "/api/runs/{run_id}/nodes/{node_execution_id}/pi-events",
         "/api/runs/{run_id}/cancel",
         "/api/runs/{run_id}/resume",
         "/api/runs/{run_id}/approve",

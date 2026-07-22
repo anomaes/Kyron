@@ -73,6 +73,47 @@ async def test_process_result_keeps_bounded_redacted_diagnostic_tail(tmp_path: P
     assert "[REDACTED] final diagnostic" in result.stderr_tail
 
 
+async def test_stdout_can_be_persisted_and_parsed_without_broadcasting_raw_lines(
+    tmp_path: Path,
+) -> None:
+    run_id = uuid.uuid4()
+    broadcaster = LogBroadcaster()
+    subscription = broadcaster.subscribe(run_id)
+    callback_lines: list[tuple[str, str]] = []
+
+    async def capture(source: str, line: str) -> None:
+        callback_lines.append((source, line))
+
+    result = await ProcessRunner(ProcessRegistry(), broadcaster).execute(
+        ProcessSpec(
+            run_id=run_id,
+            attempt_id=uuid.uuid4(),
+            node_path="root/prompt",
+            command=[
+                sys.executable,
+                "-c",
+                "import sys; print('{\"type\":\"agent_start\"}'); "
+                "print('warning', file=sys.stderr)",
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "pi-output",
+            timeout_seconds=5,
+            max_preview_bytes=100,
+            stdout_filename="pi_events.jsonl",
+            broadcast_stdout=False,
+        ),
+        line_callback=capture,
+    )
+
+    events = []
+    while not subscription.queue.empty():
+        events.append(subscription.queue.get_nowait())
+    assert result.stdout_path.read_text() == '{"type":"agent_start"}\n'
+    assert ("stdout", '{"type":"agent_start"}\n') in callback_lines
+    assert [event["source"] for event in events] == ["stderr"]
+
+
 async def test_timeout_terminates_the_process_group(tmp_path: Path) -> None:
     runner = ProcessRunner(ProcessRegistry(), LogBroadcaster(), 0.1)
     result = await runner.execute(

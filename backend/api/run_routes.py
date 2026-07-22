@@ -59,6 +59,8 @@ from backend.db.models import (
 from backend.db.statuses import RunStatus
 from backend.dependencies import Cipher
 from backend.engine.cancellation import cancel_run
+from backend.engine.output_paths import node_attempt_directory
+from backend.engine.pi.ui_events import parse_pi_ui_events
 from backend.engine.process_registry import process_registry
 from backend.engine.resume import ResumeError, prepare_resume
 from backend.integrations.code_host import create_code_host_client, provider_display_name
@@ -266,24 +268,70 @@ async def node_output(
     selected_attempt = attempt or node.current_attempt
     if selected_attempt < 1:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
-    current_relative = node.stdout_path if stream != "stderr" else node.stderr_path
-    if not current_relative:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
-    current_path = Path(current_relative)
     filename = {
         "stdout": "stdout.log",
         "stderr": "stderr.log",
         "pi_events": "pi_events.jsonl",
     }[stream]
-    relative = current_path.parent.parent / f"attempt-{selected_attempt}" / filename
     root = await asyncio.to_thread(Path(run.run_data_path).resolve)
-    output = await asyncio.to_thread((root / relative).resolve)
+    output = await asyncio.to_thread(
+        (node_attempt_directory(root, node.node_path, selected_attempt) / filename).resolve
+    )
     if not output.is_relative_to(root) or not await asyncio.to_thread(output.is_file):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
     content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
     if tail_lines:
         content = "\n".join(content.splitlines()[-tail_lines:])
     return Response(content, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/{run_id}/nodes/{node_execution_id}/pi-events")
+async def node_pi_events(
+    run_id: uuid.UUID,
+    node_execution_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    attempt: Annotated[int | None, Query(ge=1)] = None,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    node = await db.scalar(
+        select(NodeExecution).where(
+            NodeExecution.id == node_execution_id, NodeExecution.run_id == run_id
+        )
+    )
+    if run is None or node is None or not run.run_data_path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pi activity does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
+    if node.node_type != "prompt":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Node is not a prompt node")
+
+    selected_attempt = attempt or node.current_attempt
+    attempt_row = await db.scalar(
+        select(NodeAttempt).where(
+            NodeAttempt.node_execution_id == node.id,
+            NodeAttempt.attempt_number == selected_attempt,
+        )
+    )
+    if attempt_row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pi attempt does not exist")
+
+    root = await asyncio.to_thread(Path(run.run_data_path).resolve)
+    output = await asyncio.to_thread(
+        (
+            node_attempt_directory(root, node.node_path, selected_attempt)
+            / "pi_events.jsonl"
+        ).resolve
+    )
+    if not output.is_relative_to(root):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pi activity does not exist")
+    content = ""
+    if await asyncio.to_thread(output.is_file):
+        content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
+    return {
+        "attempt": selected_attempt,
+        "status": attempt_row.status,
+        "events": parse_pi_ui_events(content),
+    }
 
 
 @router.post("/{run_id}/cancel", response_model=RunResponse)

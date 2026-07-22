@@ -52,6 +52,7 @@ headers and secrets.
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}` | Node and attempt history |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}/output` | Safe stdout/stderr/Pi event retrieval |
+| GET | `/api/runs/{run_id}/nodes/{node_execution_id}/pi-events` | Normalized, replayable Pi activity for one prompt attempt |
 | POST | `/api/runs/{run_id}/cancel` | Cancel processes and the registered run task |
 | POST | `/api/runs/{run_id}/resume` | Restore the failed wave as a new attempt |
 | POST | `/api/runs/{run_id}/approve` | Continue the current human checkpoint |
@@ -64,6 +65,9 @@ headers and secrets.
 `GET /api/runs` accepts `project_id`, `root_workflow_id`, `status`,
 `triggered_by`, `created_after`, and `created_before`. Output retrieval accepts
 `attempt`, `stream=stdout|stderr|pi_events`, and `tail_lines`.
+The normalized Pi-activity endpoint accepts `attempt` and returns the selected attempt
+status with structured assistant, tool, lifecycle, and error events. Its `event_index`
+matches the corresponding persisted JSONL record for live/replay deduplication.
 `DELETE /api/runs/{run_id}` accepts only completed, failed, interrupted, or
 cancelled runs. It removes the local worktree and branch, output, logs, report,
 and execution hierarchy while retaining a separate authorization audit event.

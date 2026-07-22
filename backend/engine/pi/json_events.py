@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 KNOWN_EVENT_TYPES = {
+    "session",
     "agent_start",
     "agent_end",
     "agent_settled",
@@ -19,6 +20,9 @@ KNOWN_EVENT_TYPES = {
     "auto_retry_start",
     "auto_retry_end",
     "extension_error",
+    "queue_update",
+    "compaction_start",
+    "compaction_end",
 }
 
 
@@ -74,10 +78,12 @@ def parse_event(line: str) -> dict[str, Any]:
 class PiEventCollector:
     events: list[dict[str, Any]] = field(default_factory=list)
     errors: list[PiProtocolError] = field(default_factory=list)
+    line_count: int = 0
 
     async def accept(self, source: str, line: str) -> None:
         if source != "stdout":
             return
+        self.line_count += 1
         try:
             self.events.append(parse_event(line))
         except PiProtocolError as exc:

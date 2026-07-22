@@ -10,6 +10,7 @@ from backend.engine.pi.command import (
 )
 from backend.engine.pi.json_events import PiEventCollector, PiProtocolError, parse_event
 from backend.engine.pi.renderer import render_event
+from backend.engine.pi.ui_events import normalize_pi_event, parse_pi_ui_events
 from backend.schemas.pi import PiSettings
 
 
@@ -171,3 +172,61 @@ def test_failed_tool_result_includes_guard_reason() -> None:
 def test_malformed_json_is_a_protocol_error() -> None:
     with pytest.raises(PiProtocolError):
         parse_event("not-json")
+
+
+def test_pi_ui_events_preserve_streaming_text_and_tool_details() -> None:
+    content = "\n".join(
+        [
+            '{"type":"message_update","assistantMessageEvent":'
+            '{"type":"text_delta","delta":"Checking files"},"message":{}}',
+            '{"type":"message_end","message":{"role":"assistant","content":'
+            '[{"type":"text","text":"Checking files"}],"stopReason":"toolUse"}}',
+            '{"type":"tool_execution_start","toolCallId":"call-1",'
+            '"toolName":"read","args":{"path":"backend/main.py"}}',
+            '{"type":"tool_execution_end","toolCallId":"call-1",'
+            '"toolName":"read","result":{"content":[{"type":"text",'
+            '"text":"from fastapi import FastAPI"}]},"isError":false}',
+        ]
+    )
+
+    events = parse_pi_ui_events(content)
+
+    assert events[0] == {
+        "event_index": 1,
+        "pi_event_type": "message_update",
+        "kind": "assistant_delta",
+        "stream": "text",
+        "delta": "Checking files",
+    }
+    assert events[1]["kind"] == "assistant_end"
+    assert events[1]["text"] == "Checking files"
+    assert events[2]["args"] == {"path": "backend/main.py"}
+    assert events[3]["result"]["content"][0]["text"] == "from fastapi import FastAPI"
+
+
+def test_pi_ui_events_drop_repeated_partial_messages_but_keep_thinking_delta() -> None:
+    event = normalize_pi_event(
+        {
+            "type": "message_update",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "all"}]},
+            "assistantMessageEvent": {"type": "thinking_delta", "delta": "Inspecting"},
+        },
+        4,
+    )
+
+    assert event == {
+        "event_index": 4,
+        "pi_event_type": "message_update",
+        "kind": "assistant_delta",
+        "stream": "thinking",
+        "delta": "Inspecting",
+    }
+
+
+def test_malformed_pi_ui_line_becomes_visible_protocol_error() -> None:
+    assert parse_pi_ui_events('{"type":"agent_start"}\nnot-json')[-1] == {
+        "event_index": 2,
+        "pi_event_type": "protocol_error",
+        "kind": "error",
+        "message": "Pi emitted malformed JSONL",
+    }
