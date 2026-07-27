@@ -162,3 +162,12 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .inspector-resize-handle:hover::after,.inspector-resize-handle:focus-visible::after { left: 2px; width: 3px; background: #8c9f62; }
 body.inspector-resizing,body.inspector-resizing * { cursor: col-resize !important; user-select: none !important; }
 @media (max-width: 1200px) { .builder-shell { grid-template-columns: 190px minmax(0, 1fr) 7px var(--inspector-width, 310px); } }
+
+/* Wave numbering restarts per invocation, so waves are grouped under the invocation they belong to. */
+.wave-group td { padding: 9px 16px; background: #f4f3ee; }
+.wave-group td > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.wave-group strong { font-size: 11px; }
+.wave-group code { margin-left: 8px; color: var(--muted); font-size: 10px; }
+.wave-group small { flex: 0 0 auto; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+.wave-group:hover { background: none; }
+.wave-empty { margin: 0; padding: 26px 17px; color: var(--muted); font-size: 12px; text-align: center; }

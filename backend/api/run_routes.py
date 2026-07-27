@@ -144,7 +144,13 @@ async def run_graph(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict
     invocations = list(
         await db.scalars(select(WorkflowInvocation).where(WorkflowInvocation.run_id == run_id))
     )
-    waves = list(await db.scalars(select(ExecutionWave).where(ExecutionWave.run_id == run_id)))
+    waves = list(
+        await db.scalars(
+            select(ExecutionWave)
+            .where(ExecutionWave.run_id == run_id)
+            .order_by(ExecutionWave.started_at, ExecutionWave.wave_index)
+        )
+    )
     nodes = list(await db.scalars(select(NodeExecution).where(NodeExecution.run_id == run_id)))
     attempts = (
         list(

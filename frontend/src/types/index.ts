@@ -134,7 +134,17 @@ export type RunGraph = {
     loop_iteration: number;
     status: string;
   }>;
-  waves: Array<Record<string, unknown>>;
+  waves: Array<{
+    id: string;
+    invocation_id: string;
+    wave_index: number;
+    status: string;
+    start_commit_sha: string;
+    end_commit_sha: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    error_message: string | null;
+  }>;
   nodes: Array<{
     id: string;
     invocation_id: string;
