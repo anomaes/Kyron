@@ -18,7 +18,6 @@ export function AppShell() {
           <NavLink to="/credentials">Credentials</NavLink>
           {user.data?.is_system_admin && <NavLink to="/admin">Administration</NavLink>}
         </nav>
-        <div className="trust-note">Trusted internal execution</div>
         <div className="user-card">
           {user.data?.avatar_url ? <img src={user.data.avatar_url} alt="" /> : <span className="avatar">{user.data?.display_name?.[0] ?? "?"}</span>}
           <div><strong>{user.data?.display_name ?? "Loading…"}</strong><small>{user.data ? `${user.data.provider} · @${user.data.provider_username}` : ""}</small><a href="/auth/logout">Sign out</a></div>
