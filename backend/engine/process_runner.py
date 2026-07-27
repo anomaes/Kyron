@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +18,21 @@ logger = logging.getLogger(__name__)
 
 LineCallback = Callable[[str, str], Awaitable[None]]
 DIAGNOSTIC_TAIL_BYTES = 4096
+STREAM_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def iter_stream_lines(stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
+    """Frame lines from fixed-size reads without StreamReader's per-line limit."""
+
+    pending = bytearray()
+    while chunk := await stream.read(STREAM_READ_CHUNK_BYTES):
+        pending.extend(chunk)
+        while (newline := pending.find(b"\n")) >= 0:
+            line_end = newline + 1
+            yield bytes(pending[:line_end])
+            del pending[:line_end]
+    if pending:
+        yield bytes(pending)
 
 
 @dataclass(slots=True)
@@ -147,7 +162,7 @@ class ProcessRunner:
             tail: BoundedTail,
         ) -> None:
             async with aiofiles.open(path, "w", encoding="utf-8") as output:
-                while chunk := await stream.readline():
+                async for chunk in iter_stream_lines(stream):
                     text = redactor.redact(chunk.decode("utf-8", errors="replace"))
                     await output.write(text)
                     preview.append(text)

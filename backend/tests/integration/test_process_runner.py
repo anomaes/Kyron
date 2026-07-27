@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import sys
 import uuid
 from pathlib import Path
 
+from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.process_registry import ProcessRegistry
 from backend.engine.process_runner import ProcessRunner, ProcessSpec
 from backend.services.log_broadcaster import LogBroadcaster
@@ -112,6 +114,64 @@ async def test_stdout_can_be_persisted_and_parsed_without_broadcasting_raw_lines
     assert result.stdout_path.read_text() == '{"type":"agent_start"}\n'
     assert ("stdout", '{"type":"agent_start"}\n') in callback_lines
     assert [event["source"] for event in events] == ["stderr"]
+
+
+async def test_oversized_pi_event_is_drained_before_following_tool_error(
+    tmp_path: Path,
+) -> None:
+    collector = PiEventCollector()
+
+    result = await ProcessRunner(ProcessRegistry(), LogBroadcaster(), 0.1).execute(
+        ProcessSpec(
+            run_id=uuid.uuid4(),
+            attempt_id=uuid.uuid4(),
+            node_path="root/prompt",
+            command=[
+                sys.executable,
+                "-c",
+                (
+                    "import json\n"
+                    "events = [\n"
+                    "  {'type': 'tool_execution_end', 'toolCallId': 'large-read', "
+                    "'toolName': 'read', 'result': {'content': [{'type': 'text', "
+                    "'text': 'Rückrollschutz ' * 10_000}]}, 'isError': False},\n"
+                    "  {'type': 'tool_execution_end', 'toolCallId': 'failed-read', "
+                    "'toolName': 'read', 'result': {'content': [{'type': 'text', "
+                    "'text': 'document is too large'}]}, 'isError': True},\n"
+                    "  {'type': 'agent_end', 'messages': [{'role': 'assistant', "
+                    "'content': [{'type': 'text', 'text': 'continued'}], "
+                    "'stopReason': 'stop'}], 'willRetry': False},\n"
+                    "]\n"
+                    "for event in events:\n"
+                    "    print(json.dumps(event, ensure_ascii=False), flush=True)\n"
+                ),
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "oversized-pi-output",
+            timeout_seconds=5,
+            max_preview_bytes=100,
+            stdout_filename="pi_events.jsonl",
+            broadcast_stdout=False,
+        ),
+        line_callback=collector.accept,
+    )
+
+    persisted_events = [
+        json.loads(line) for line in result.stdout_path.read_text().splitlines()
+    ]
+    assert result.exit_code == 0
+    assert (
+        persisted_events[0]["result"]["content"][0]["text"]
+        == "Rückrollschutz " * 10_000
+    )
+    assert [event["type"] for event in collector.events] == [
+        "tool_execution_end",
+        "tool_execution_end",
+        "agent_end",
+    ]
+    assert collector.events[1]["isError"]
+    assert collector.failure_message is None
 
 
 async def test_timeout_terminates_the_process_group(tmp_path: Path) -> None:
