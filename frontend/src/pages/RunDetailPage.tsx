@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Background, Controls, MarkerType, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router";
 import { api, json } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { PiActivityPanel, type PiNodeSelection } from "../components/PiActivityPanel";

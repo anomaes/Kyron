@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api, json } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import type { Project, User } from "../types";

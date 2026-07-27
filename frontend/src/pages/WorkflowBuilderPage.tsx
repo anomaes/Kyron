@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type K
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Background, Controls, MarkerType, MiniMap, ReactFlow, ReactFlowProvider, type Connection, type Edge, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router";
 import { api, json } from "../api/client";
 import type { ApprovalPolicy, DefinitionChangeStatus, NodeTemplate, NodeType, User, Workflow } from "../types";
 import { CompositeNodeConfig } from "../workflow-builder/CompositeNodeConfig";

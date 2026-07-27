@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import { api, json } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import type { DefinitionChangeStatus, Project, ProjectAccess, User, WorkflowListItem } from "../types";
