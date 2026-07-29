@@ -566,6 +566,7 @@ Every retry or resume creates a new attempt and preserves history.
 | `finished_at` | TIMESTAMPTZ NULL | |
 | `error_type` | VARCHAR(100) NULL | |
 | `error_message` | TEXT NULL | Sanitized |
+| `pi_usage` | JSONB NULL | Aggregate provider-reported token usage and estimated cost for prompt attempts |
 
 Constraint:
 
@@ -2150,6 +2151,7 @@ GET  /api/runs
 GET  /api/runs/{run_id}
 GET  /api/runs/{run_id}/graph
 GET  /api/runs/{run_id}/logs
+GET  /api/runs/{run_id}/usage
 GET  /api/runs/{run_id}/nodes/{node_execution_id}
 GET  /api/runs/{run_id}/nodes/{node_execution_id}/output
 GET  /api/runs/{run_id}/nodes/{node_execution_id}/pi-events
@@ -2182,6 +2184,13 @@ The Pi-events endpoint accepts an optional positive `attempt`, parses the corres
 redacted `pi_events.jsonl`, and returns Kyron's stable UI event schema plus attempt status.
 It is valid for an active attempt to return an empty event list before Pi emits its first
 record. Non-prompt nodes are rejected.
+
+The run-usage endpoint sums every assistant `message_end` usage record across every prompt
+node and attempt, including failed, interrupted, cancelled, and superseded attempts. It
+returns input, output, cache-read, cache-write, total-token, model-call, and estimated-cost
+values with node and attempt breakdowns. Completed attempts persist their aggregate in
+`node_attempts.pi_usage`; active attempts and historical rows without an aggregate fall
+back to their validated `pi_events.jsonl` path.
 
 ## 14.8 Approve
 
@@ -3240,6 +3249,7 @@ Header:
 - Current HEAD.
 - MR link.
 - Started and elapsed time.
+- Aggregate Pi token usage and estimated cost across all attempts.
 
 ### Graph view
 
@@ -3312,6 +3322,11 @@ The activity view:
 
 The global run log may show concise Pi lifecycle and tool-boundary messages, but must not
 render raw Pi JSON lines or individual assistant/tool-update deltas.
+
+The run summary shows total Pi tokens and estimated cost. Expanding it shows input, output,
+cache-read, cache-write, and model-call totals plus per-node and per-attempt rows. Failed
+attempts remain visible because provider usage is consumed even when Kyron rolls back the
+wave.
 
 ### Feedback panel
 

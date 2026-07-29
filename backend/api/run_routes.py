@@ -75,6 +75,7 @@ from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
+from backend.services.pi_usage_service import PiUsageService
 from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -231,6 +232,19 @@ async def run_report(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dic
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
     await authorize_project(db, user, run.project_id, REPORT_VIEW)
     return await ReportService(db).get(run)
+
+
+@router.get("/{run_id}/usage")
+async def run_usage(
+    run_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, RUN_VIEW)
+    return await PiUsageService(db).get_run_usage(run)
 
 
 @router.get("/{run_id}/logs")

@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.engine.pi.usage import aggregate_pi_usage_events
+
 KNOWN_EVENT_TYPES = {
     "session",
     "agent_start",
@@ -102,3 +104,7 @@ class PiEventCollector:
             if failure is not None:
                 return failure
         return None
+
+    @property
+    def usage(self) -> dict[str, Any]:
+        return aggregate_pi_usage_events(self.events)

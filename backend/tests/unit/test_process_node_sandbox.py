@@ -4,6 +4,8 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
+
 from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNodeExecutor
 from backend.engine.process_runner import LineCallback, ProcessResult, ProcessRunner, ProcessSpec
 from backend.schemas.pi import PiSettings
@@ -142,3 +144,34 @@ async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: P
     assert result.exit_code == 1
     assert "Pi reported failure: 401 invalid API key" in result.stderr_preview
     assert "Pi reported failure: 401 invalid API key" in result.stderr_tail
+
+
+async def test_prompt_node_returns_usage_for_every_pi_model_call(tmp_path: Path) -> None:
+    runner = CapturingRunner()
+    runner.stdout_lines = [
+        '{"type":"message_end","message":{"role":"assistant","content":'
+        '[{"type":"toolCall","name":"read","id":"call-1","arguments":{}}],'
+        '"stopReason":"toolUse","usage":{"input":100,"output":20,"cacheRead":50,'
+        '"cacheWrite":0,"totalTokens":170,"cost":{"input":0.1,"output":0.2,'
+        '"cacheRead":0.01,"cacheWrite":0,"total":0.31}}}}\n',
+        '{"type":"message_end","message":{"role":"assistant","content":'
+        '[{"type":"text","text":"Done"}],"stopReason":"stop","usage":'
+        '{"input":200,"output":30,"cacheRead":0,"cacheWrite":10,'
+        '"totalTokens":240,"cost":{"input":0.2,"output":0.3,'
+        '"cacheRead":0,"cacheWrite":0.02,"total":0.52}}}}\n',
+    ]
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        request(tmp_path, {}),
+    )
+
+    assert result.pi_usage is not None
+    assert result.pi_usage["requestCount"] == 2
+    assert result.pi_usage["totalTokens"] == 410
+    assert result.pi_usage["cost"]["total"] == pytest.approx(0.83)

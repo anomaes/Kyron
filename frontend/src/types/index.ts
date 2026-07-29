@@ -15,6 +15,42 @@ export type PiSettings = {
   skill?: string | null;
 };
 
+export type PiUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  requestCount: number;
+};
+
+export type RunUsage = {
+  usage: PiUsage;
+  prompt_node_count: number;
+  attempt_count: number;
+  nodes: Array<{
+    node_execution_id: string;
+    node_id: string;
+    node_path: string;
+    status: string;
+    usage: PiUsage;
+    attempts: Array<{
+      attempt_id: string;
+      attempt_number: number;
+      status: string;
+      usage: PiUsage;
+      source: "persisted" | "events" | "none";
+    }>;
+  }>;
+};
+
 export type Project = {
   id: string;
   name: string;

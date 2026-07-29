@@ -148,6 +148,8 @@ class ProcessNodeExecutor:
                 secret_values=list(request.secrets.values()),
                 line_callback=callback,
             )
+            if collector is not None:
+                result.pi_usage = collector.usage
         finally:
             request.secrets.clear()
             environment.clear()
@@ -177,5 +179,6 @@ class ProcessNodeExecutor:
                     ),
                     timed_out=result.timed_out,
                     cancelled=result.cancelled,
+                    pi_usage=result.pi_usage,
                 )
         return result

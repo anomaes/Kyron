@@ -25,6 +25,7 @@ from backend.engine.context import expand_public_variables, output_variables
 from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNodeExecutor
 from backend.engine.output_paths import node_attempt_directory
 from backend.engine.pi.command import resolve_pi_settings
+from backend.engine.pi.usage import aggregate_pi_usage_content
 from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
@@ -322,9 +323,16 @@ class WaveExecutor:
             if node_id in results:
                 result = results[node_id]
                 attempt.exit_code = result.exit_code
+                attempt.pi_usage = result.pi_usage
                 execution.exit_code = result.exit_code
                 execution.stdout_path = str(result.stdout_path.relative_to(run_data))
                 execution.stderr_path = str(result.stderr_path.relative_to(run_data))
+            if execution.node_type == "prompt" and attempt.pi_usage is None:
+                attempt.pi_usage = await _read_pi_attempt_usage(
+                    run_data,
+                    execution.node_path,
+                    attempt.attempt_number,
+                )
 
             if self.engine_logs is not None:
                 level = "INFO" if execution.status == NodeStatus.SUCCESS else "ERROR"
@@ -484,6 +492,18 @@ class WaveExecutor:
             end_sha[:12],
         )
         return wave
+
+
+async def _read_pi_attempt_usage(
+    run_data: Path,
+    node_path: str,
+    attempt_number: int,
+) -> dict[str, object] | None:
+    output = node_attempt_directory(run_data, node_path, attempt_number) / "pi_events.jsonl"
+    if not await asyncio.to_thread(output.is_file):
+        return None
+    content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
+    return aggregate_pi_usage_content(content)
 
 
 def _failure_diagnostics(result: ProcessResult) -> str:

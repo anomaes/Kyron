@@ -102,7 +102,15 @@ export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
       let assistant = [...items].reverse().find(
         (item): item is AssistantItem => item.kind === "assistant" && item.open,
       );
-      if (!assistant && (event.text || event.thinking || event.error)) {
+      if (
+        !assistant &&
+        (
+          event.text ||
+          event.thinking ||
+          event.error ||
+          (event.usage !== undefined && event.usage !== null)
+        )
+      ) {
         assistant = {
           kind: "assistant",
           key: `assistant-${event.event_index}`,

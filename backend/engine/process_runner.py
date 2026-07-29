@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import aiofiles
 
@@ -64,6 +65,7 @@ class ProcessResult:
     stderr_tail_truncated: bool = False
     timed_out: bool = False
     cancelled: bool = False
+    pi_usage: dict[str, Any] | None = None
 
 
 class BoundedPreview:
