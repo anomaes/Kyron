@@ -59,7 +59,9 @@ The following assumptions are intentional:
 4. The first authenticated user is bootstrapped as global system administrator. Global
    administrators and project administrators manage project memberships, roles, approval
    policies, and governance profiles.
-5. Parallel nodes may share the same worktree. The workflow author is responsible for ensuring that nodes scheduled in parallel do not conflict.
+5. Process nodes in one wave share their invocation workspace. Parallel
+   sub-workflows use separate worktrees and branches, so mutable filesystem and
+   rollback state never crosses a child boundary.
 6. Bash and Python nodes are trusted to execute within the backend environment. Pi nodes
    retain read, network, environment, and compute access, while Bubblewrap confines
    filesystem writes to the run worktree and ephemeral Pi state. Container-per-node
@@ -77,16 +79,19 @@ Supported node types are:
 2. `script` — execute a Python script from the repository.
 3. `prompt` — execute Pi in non-interactive JSON mode.
 4. `human_feedback` — create or update a merge request and pause for approval or feedback.
-5. `subworkflow` — invoke another workflow once within the same run and worktree.
+5. `subworkflow` — invoke another workflow once in a shared, isolated, or
+   isolated-parallel execution workspace.
 6. `review_loop` — invoke a child workflow, request review, and repeat a child workflow when changes are requested.
 
 Arbitrary graph cycles are not supported. Repetition is represented explicitly by a `review_loop` node. This keeps workflow execution, persistence, resume, and visualization deterministic while still supporting iterative AI-review workflows.
 
 When a workflow is triggered, the engine:
 
-1. Fetches the GitLab repository.
-2. Resolves the exact commit SHA of the selected base ref.
-3. Loads the root workflow and all transitively referenced sub-workflows from that exact commit.
+1. Fetches the configured code-host repository.
+2. Resolves the selected branch or change-request subject to an exact source commit SHA.
+3. Resolves the trusted workflow-definition revision. Delivery workflows normally
+   use the subject revision; report-only workflows use the project default branch
+   or an authorized local definition snapshot.
 4. Validates and snapshots the complete workflow bundle.
 5. Creates an isolated branch and Git worktree from the pinned commit SHA.
 6. Executes ready nodes in waves, respecting conditions and join semantics.
@@ -99,7 +104,9 @@ When a workflow is triggered, the engine:
 12. Continues only when the active gate policy's complete quorum is satisfied, or an
     authorized project administrator records a reasoned override.
 13. Resets the intermediate GitLab approval before continuing so a new approval is required for final merge.
-14. On completion, commits and pushes final changes and leaves the worktree available until the merge request is merged or closed.
+14. On completion, delivery workflows commit and push final changes and leave the
+    worktree available until the change request is merged or closed. Report-only
+    workflows retain their report and local artifacts without pushing Git state.
 15. On failure or restart, resumes from the start of the failed or interrupted execution wave.
 
 ## 1.4 Key Requirements
@@ -111,11 +118,15 @@ When a workflow is triggered, the engine:
 - Credential values decrypted only immediately before process execution.
 - Credential plaintext never persisted in workflow snapshots, checkpoints, graph state, logs, API responses, or node output metadata.
 - Exact repository commit SHA pinned for every run.
+- Branch and open change-request subjects with distinct immutable code and
+  workflow-definition revisions.
+- Definition-owned `propose_changes` and `report_only` delivery modes, with
+  report-only credential access resolving to none by default.
 - Workflow and transitive sub-workflow bundle snapshotted at trigger time.
 - Visual workflow builder with reusable sub-workflows.
 - Explicit `review_loop` control node for iterative review and revision.
 - Parallel fan-out and AND/OR joins inside acyclic workflows.
-- Shared worktree for all nodes in one run.
+- A root worktree plus invocation-owned workspaces for isolated sub-workflows.
 - Git checkpoint per execution wave.
 - Deterministic resume by resetting the worktree to the failed wave's start commit and rerunning that wave.
 - GitLab merge request creation, reviewer assignment, comments, approval detection, approval reset, and cleanup webhooks.
@@ -364,7 +375,11 @@ The project token must be a GitLab project access token represented by a bot use
 | `status_version` | INTEGER | Incremented on atomic transitions |
 | `base_ref` | VARCHAR(255) | Usually default branch |
 | `base_commit_sha` | CHAR(40) | Exact repository revision |
-| `workflow_definition_commit_sha` | CHAR(40) | Same as base SHA in v1 |
+| `subject_*` | Subject metadata fields | Branch/change-request identity, immutable source SHA, target, freshness, and availability |
+| `delivery_mode` | VARCHAR(30) | `PROPOSE_CHANGES` or `REPORT_ONLY` |
+| `effective_credential_policy` | JSONB | Secret-free policy resolved from the trusted definition |
+| `verification_*` | Verification metadata fields | Conclusion, freshness, and publication time |
+| `workflow_definition_commit_sha` | CHAR(40) | Exact revision containing the executable workflow bundle |
 | `workflow_bundle_snapshot` | JSONB | Root and all referenced workflows, without secrets |
 | `public_context` | JSONB | Persistable non-secret variables only |
 | `branch_name` | VARCHAR(255) NULL | Run branch |
@@ -435,7 +450,10 @@ An invocation represents one execution of the root workflow or a sub-workflow.
 | `parent_node_execution_id` | UUID NULL | Calling subworkflow/review-loop node |
 | `loop_iteration` | INTEGER | `1` outside loops |
 | `input_context` | JSONB | Non-secret mapped inputs |
+| `public_context` | JSONB | Invocation-local non-secret variables and node outputs |
 | `output_context` | JSONB | Non-secret exported outputs |
+| `workspace_id` | UUID FK NULL | Workspace used by this invocation |
+| `scheduler_version` | INTEGER | Durable scheduling version |
 | `status` | VARCHAR(50) | `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `CANCELLED` |
 | `started_at` | TIMESTAMPTZ NULL | |
 | `finished_at` | TIMESTAMPTZ NULL | |
@@ -443,6 +461,35 @@ An invocation represents one execution of the root workflow or a sub-workflow.
 Constraints:
 
 - Unique `(run_id, invocation_path)`.
+
+## 4.5.1 `invocation_workspaces`
+
+An invocation workspace owns one mutable Git branch and worktree. The root
+invocation owns the run workspace; shared descendants reference that workspace.
+Each isolated invocation owns a child workspace whose `base_commit_sha` is the
+exact clean checkpoint of its immediate parent.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | Opaque workspace identity |
+| `run_id` | UUID FK | Owning run |
+| `owner_invocation_id` | UUID FK UNIQUE | Invocation that owns the boundary |
+| `parent_workspace_id` | UUID FK NULL | Immediate integration target |
+| `mode` | VARCHAR | `ROOT`, `ISOLATED`, `ISOLATED_PARALLEL` |
+| `status` | VARCHAR | Creation, execution, feedback, integration, or terminal state |
+| `base_commit_sha` | CHAR(40) | Immutable fork point |
+| `current_head_sha` | CHAR(40) | Latest durable checkpoint |
+| `integrated_head_sha` | CHAR(40) NULL | Parent head after integration |
+| `branch_name` | VARCHAR | Sanitized child or root branch |
+| `worktree_path` | TEXT | Validated path below the worktree root |
+| timestamps and error fields | | Recovery and audit evidence |
+
+`subworkflow_batches` freeze a parent invocation and workspace at one commit.
+Their member rows link parent control executions to child invocations and
+workspaces, record node-ID integration order, and retain the exact integrated
+commit. `run_change_requests` records final and workspace-review requests with
+their exact source branch, immediate target branch, provider number, and head.
+Gates link directly to both workspace and change-request identities.
 
 ## 4.6 `execution_waves`
 
@@ -1081,6 +1128,7 @@ A standalone human-feedback node does not itself repeat previous nodes. Iterativ
   "type": "subworkflow",
   "config": {
     "workflow_id": "test_and_validate",
+    "execution_mode": "shared",
     "inputs": {
       "TARGET_DIR": "${TARGET_DIR}"
     },
@@ -1095,20 +1143,38 @@ A standalone human-feedback node does not itself repeat previous nodes. Iterativ
 Behavior:
 
 1. Resolve `workflow_id` from the run's snapshotted workflow bundle.
-2. Create a new `workflow_invocations` record.
+2. Create a new `workflow_invocations` record with invocation-local public
+   context.
 3. Build the child public context:
    - Child workflow variable defaults.
    - Mapped child inputs.
    - Built-in run variables.
-   - Parent node output variables that were explicitly mapped or already public.
-4. Execute the child graph in the same worktree and run branch.
-5. Do not create a separate worktree, branch, merge request, or workflow run.
-6. Export declared child outputs through `output_mapping`.
-7. Mark the sub-workflow node successful only when the child invocation succeeds.
+   - Workspace identity and exact base commit.
+4. Select the execution boundary:
+   - `shared` references the parent workspace and executes serially.
+   - `isolated` forks a child branch/worktree and executes serially.
+   - `isolated_parallel` forks a child branch/worktree and may run with ready
+     siblings in the same mode.
+5. Keep the parent workspace frozen while an isolated parallel batch is active.
+6. If an isolated child opens a gate, publish or update its workspace review
+   request from the child branch to the immediate parent branch. Multiple child
+   gates and review requests may remain open concurrently and are routed by gate
+   identity.
+7. Integrate successful child heads into the parent with explicit merge commits
+   in ascending parent node-ID order. A conflict restores the exact parent batch
+   base and publishes no outputs.
+8. Export declared child outputs through `output_mapping` only after successful
+   integration.
+9. Mark the sub-workflow node successful only when the child invocation succeeds
+   and, for an isolated child, integration completes.
 
 Child workflows may call further child workflows up to `max_subworkflow_depth`.
 
 Recursive workflow references are invalid, even if the recursion would be reached only conditionally.
+
+Two unordered `isolated_parallel` siblings may not map outputs to the same parent
+variable. Bundle validation rejects the ambiguous publication before a run is
+queued. All sibling inputs are expanded from the same frozen parent context.
 
 ## 6.6 Review Loop Node
 
@@ -1333,13 +1399,17 @@ A wave may contain:
 - Script nodes.
 - Prompt nodes.
 
-Composite and pause-capable nodes are executed as control boundaries, one at a time:
+Composite and pause-capable nodes are control boundaries:
 
-- Sub-workflow nodes.
+- Shared and isolated-serial sub-workflow nodes execute one at a time.
+- When the lowest ready control is `isolated_parallel`, every currently ready
+  sub-workflow in that mode forms one batch.
 - Human-feedback nodes.
 - Review-loop nodes.
 
-A sub-workflow owns its child invocation's internal waves and Git checkpoints. Executing a sub-workflow as an isolated control boundary prevents a child checkpoint commit from accidentally staging changes made by a parallel sibling node.
+A sub-workflow owns its child invocation's internal waves and Git checkpoints.
+Every wave resolves its worktree and public context from the invocation, never
+from a mutable run-global child pointer.
 
 ### Wave start
 
@@ -1354,7 +1424,9 @@ Before starting a wave:
 
 All nodes in the wave are launched concurrently.
 
-They share one worktree. This is an intentional trusted-workflow design. The workflow author must only place nodes in parallel when their commands and file changes do not conflict.
+Nodes within one wave share that invocation's worktree. This is an intentional
+trusted-workflow design. Separate isolated sub-workflow batches never share a
+mutable worktree.
 
 ### Wave success
 
@@ -2369,7 +2441,12 @@ async def execute_invocation(invocation_id: UUID) -> InvocationResult:
     return InvocationResult(outputs=outputs)
 ```
 
-If multiple control nodes become ready simultaneously, execute them in deterministic node-ID order, one at a time. This prevents multiple simultaneous MR checkpoints for one run.
+If multiple controls become ready simultaneously, sort them by node ID. A lowest
+ready shared, isolated-serial, feedback, or review-loop control executes alone. A
+lowest ready `isolated_parallel` control starts a batch containing all ready
+siblings in that mode. Batch members execute with independent database sessions
+and workspaces; their results integrate in node-ID order, independent of finish
+or approval order.
 
 ## 15.5 Finalization
 

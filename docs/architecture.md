@@ -13,10 +13,29 @@ is reflected in run, invocation, wave, execution, attempt, edge-evaluation, and
 log rows. Startup marks in-flight work interrupted and leaves feedback waits
 unchanged.
 
-Each run has one branch and worktree created from an exact fetched SHA. Root and
-transitive workflow JSON are read with `git show <sha>:<path>` and stored as a
-secret-free snapshot. All invocations share the run worktree. Process nodes can
-run concurrently only within a checkpointed wave; control nodes are serialized.
+Each run starts with a root branch and worktree created from an exact fetched
+SHA. Root and transitive workflow JSON are read with `git show <sha>:<path>` and
+stored as a secret-free snapshot. Shared invocations reference the nearest
+owning workspace. Isolated invocations fork a child branch and worktree from the
+parent's exact clean checkpoint; isolated-parallel siblings can execute
+concurrently without sharing mutable filesystem, Git staging, or rollback
+state.
+
+The code subject and executable workflow bundle have independent pinned
+revisions. Delivery runs normally select the same revision for both.
+Report-only runs use a branch or change-request source commit as the subject and
+load workflow definitions and credential policy from the trusted project
+default branch or an authorized local snapshot. Their workspaces remain local,
+and terminal evidence records both revisions.
+
+An isolated parallel batch freezes its parent workspace until every required
+member succeeds or the batch fails. Successful child heads are merged into the
+parent with explicit merge commits in stable parent node-ID order. The complete
+merge sequence is atomic from the scheduler's perspective: a conflict resets
+and cleans the parent back to the batch base before failure is recorded. Child
+outputs become visible to the parent only after that integration succeeds.
+Process nodes inside any one invocation may still run concurrently within a
+checkpointed wave and share that invocation's workspace.
 
 Prompt nodes add a process-local filesystem boundary around Pi. Bubblewrap presents a
 recursively read-only view of the backend container and rebinds only the resolved run
@@ -30,10 +49,10 @@ selection always describe the same default-branch revision returned by the workf
 API. Tags have no execution semantics.
 
 The run graph is reconstructed from the immutable workflow bundle plus durable
-invocation and node-execution rows. The root graph and each child invocation are
-rendered as separate instances; parent execution IDs establish invocation edges and
-loop iteration numbers order review rounds. No visualization-only execution state is
-persisted.
+invocation, workspace, batch, gate, and node-execution rows. The root graph and
+each child invocation are rendered as separate instances; parent execution IDs
+establish invocation edges and loop iteration numbers order review rounds. No
+visualization-only execution state is persisted.
 
 Secret values occupy a separate lifetime from public workflow context. Stored
 Fernet ciphertext is decrypted immediately before process or code-host use, added
@@ -57,3 +76,10 @@ definitions. An opened gate snapshots the resolved policy and provider identitie
 membership changes cannot rewrite an in-flight decision boundary. Gate decisions and
 authorization audit events are append-only. Run reports combine this state with durable
 invocation paths, so child-workflow gates retain their execution hierarchy.
+
+Every isolated workspace owns at most one open workspace-review request. Its
+source is the child branch and its target is the immediate parent branch. Gates
+link directly to that request and workspace, so approvals and revision comments
+advance only the addressed child even when sibling gates are open. The root
+final request is a separate record targeting the configured base ref; only its
+merge or close triggers whole-run resource cleanup.

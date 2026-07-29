@@ -193,6 +193,53 @@ class GitManager:
             raise
         return branch, worktree, run_data
 
+    async def create_invocation_worktree(
+        self,
+        repository_path: Path,
+        run_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        node_id: str,
+        base_commit_sha: str,
+    ) -> tuple[str, Path]:
+        """Create an isolated child branch from an exact parent checkpoint."""
+
+        safe_node_id = "".join(
+            character if character.isalnum() or character == "_" else "_"
+            for character in node_id
+        )
+        branch = f"workflow/{run_id.hex[:8]}/{workspace_id.hex[:8]}_{safe_node_id}"
+        worktree = self.worktree_base_path / str(workspace_id)
+        self.assert_beneath(repository_path, self.clone_base_path)
+        self.assert_beneath(worktree, self.worktree_base_path)
+        self.worktree_base_path.mkdir(parents=True, exist_ok=True)
+        local_ref = await self.run(
+            ["show-ref", "--verify", f"refs/heads/{branch}"],
+            cwd=repository_path,
+            check=False,
+        )
+        remote_ref = await self.run(
+            ["show-ref", "--verify", f"refs/remotes/origin/{branch}"],
+            cwd=repository_path,
+            check=False,
+        )
+        if local_ref or remote_ref:
+            raise GitError(f"Invocation branch '{branch}' already exists")
+        await self.run(
+            ["worktree", "add", "-b", branch, str(worktree), base_commit_sha],
+            cwd=repository_path,
+        )
+        try:
+            await self.run(["config", "user.name", "Workflow Engine"], cwd=worktree)
+            await self.run(
+                ["config", "user.email", "workflow-engine@noreply.local"], cwd=worktree
+            )
+            if await self.head_sha(worktree) != base_commit_sha:
+                raise GitError("Invocation worktree did not start at its persisted base commit")
+        except Exception:
+            await self.remove_worktree(repository_path, worktree, branch)
+            raise
+        return branch, worktree
+
     async def head_sha(self, worktree: Path) -> str:
         return await self.run(["rev-parse", "HEAD"], cwd=worktree)
 
@@ -213,6 +260,29 @@ class GitManager:
         await self.run(["clean", "-fd"], cwd=worktree)
         if await self.head_sha(worktree) != start_commit_sha:
             raise GitError("Worktree recovery did not restore the wave start commit")
+
+    async def integrate_heads(
+        self,
+        parent_worktree: Path,
+        base_commit_sha: str,
+        child_heads: Sequence[str],
+    ) -> str:
+        """Merge exact child heads and restore the parent completely on conflict."""
+
+        await self.ensure_clean(parent_worktree)
+        if await self.head_sha(parent_worktree) != base_commit_sha:
+            raise GitError("Parent workspace moved while its sub-workflow batch was active")
+        try:
+            for child_head in child_heads:
+                await self.run(
+                    ["merge", "--no-ff", "--no-edit", child_head],
+                    cwd=parent_worktree,
+                )
+        except Exception:
+            await self.run(["merge", "--abort"], cwd=parent_worktree, check=False)
+            await self.reset_wave(parent_worktree, base_commit_sha)
+            raise
+        return await self.head_sha(parent_worktree)
 
     async def push(
         self,

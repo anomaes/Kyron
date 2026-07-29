@@ -80,12 +80,101 @@ def validate_workflow_bundle(
     for workflow_id, workflow in workflows.items():
         errors.extend(_validate_dag(workflow_id, workflow))
         errors.extend(_validate_limits(workflow_id, workflow, max_timeout, max_review_iterations))
+        errors.extend(_validate_parallel_output_mappings(workflow_id, workflow))
 
     graph = {
         workflow_id: direct_references(workflow) for workflow_id, workflow in workflows.items()
     }
     errors.extend(_validate_references(workflows, graph, max_subworkflow_depth))
+    if root.settings.delivery_mode == "report_only":
+        for workflow_id in _reachable_workflows(root_workflow_id, graph):
+            reachable_workflow = workflows.get(workflow_id)
+            if reachable_workflow is None:
+                continue
+            for index, node in enumerate(reachable_workflow.nodes):
+                if isinstance(node, (HumanFeedbackNode, ReviewLoopNode)):
+                    errors.append(
+                        ValidationIssue(
+                            path=f"workflows.{workflow_id}.nodes[{index}]",
+                            code="REPORT_ONLY_FEEDBACK_UNSUPPORTED",
+                            message=(
+                                "Report-only workflows cannot contain human feedback "
+                                "or review loops"
+                            ),
+                        )
+                    )
     return WorkflowValidationResponse(valid=not errors, errors=errors)
+
+
+def _reachable_workflows(root: str, graph: dict[str, list[str]]) -> set[str]:
+    reachable: set[str] = set()
+    pending = [root]
+    while pending:
+        workflow_id = pending.pop()
+        if workflow_id in reachable:
+            continue
+        reachable.add(workflow_id)
+        pending.extend(graph.get(workflow_id, []))
+    return reachable
+
+
+def _validate_parallel_output_mappings(
+    workflow_id: str, workflow: WorkflowDefinition
+) -> list[ValidationIssue]:
+    """Reject ambiguous publications from concurrently runnable children.
+
+    A pair of parallel nodes can overlap unless one is reachable from the other.
+    The conservative rule intentionally rejects mappings from independent branches
+    even when edge conditions might make one branch unlikely at runtime.
+    """
+
+    parallel_nodes = [
+        (index, node)
+        for index, node in enumerate(workflow.nodes)
+        if isinstance(node, SubworkflowNode)
+        and node.config.execution_mode == "isolated_parallel"
+    ]
+    if len(parallel_nodes) < 2:
+        return []
+
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in workflow.edges:
+        adjacency[edge.source].append(edge.target)
+
+    reachable: dict[str, set[str]] = {}
+    for _, node in parallel_nodes:
+        seen: set[str] = set()
+        queue = deque(adjacency[node.id])
+        while queue:
+            candidate = queue.popleft()
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            queue.extend(adjacency[candidate])
+        reachable[node.id] = seen
+
+    errors: list[ValidationIssue] = []
+    for left_offset, (_, left) in enumerate(parallel_nodes):
+        left_targets = set(left.config.output_mapping.values())
+        for right_index, right in parallel_nodes[left_offset + 1 :]:
+            if right.id in reachable[left.id] or left.id in reachable[right.id]:
+                continue
+            collisions = sorted(left_targets & set(right.config.output_mapping.values()))
+            for target in collisions:
+                errors.append(
+                    ValidationIssue(
+                        path=(
+                            f"workflows.{workflow_id}.nodes[{right_index}]"
+                            f".config.output_mapping"
+                        ),
+                        code="PARALLEL_OUTPUT_COLLISION",
+                        message=(
+                            f"Parallel sub-workflows '{left.id}' and '{right.id}' "
+                            f"both publish parent variable '{target}'"
+                        ),
+                    )
+                )
+    return errors
 
 
 def _validate_dag(workflow_id: str, workflow: WorkflowDefinition) -> list[ValidationIssue]:

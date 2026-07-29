@@ -144,6 +144,7 @@ class SubworkflowConfig(StrictModel):
     inputs: dict[Identifier, str] = Field(default_factory=dict)
     output_mapping: dict[Identifier, Identifier] = Field(default_factory=dict)
     allow_failure: bool = False
+    execution_mode: Literal["shared", "isolated", "isolated_parallel"] = "shared"
 
 
 class ReviewLoopConfig(StrictModel):
@@ -202,8 +203,39 @@ WorkflowNode = Annotated[
 ]
 
 
+class WorkflowCredentialAccess(StrictModel):
+    mode: Literal["default", "none", "all", "allowlist"] = "default"
+    keys: list[Identifier] = Field(default_factory=list)
+
+    @field_validator("keys")
+    @classmethod
+    def keys_match_mode(cls, value: list[str], info: Any) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("credential access keys must be unique")
+        mode = info.data.get("mode", "default")
+        if mode == "allowlist" and not value:
+            raise ValueError("allowlist credential access requires at least one key")
+        if mode != "allowlist" and value:
+            raise ValueError("credential access keys are only valid with allowlist mode")
+        return value
+
+
+class VerificationPublication(StrictModel):
+    publish_commit_status: bool = True
+    post_change_request_summary: bool = True
+    publication_required: bool = True
+
+
 class WorkflowSettings(StrictModel):
+
     pi: PiSettings = Field(default_factory=PiSettings)
+    delivery_mode: Literal["propose_changes", "report_only"] = "propose_changes"
+    credential_access: WorkflowCredentialAccess = Field(
+        default_factory=WorkflowCredentialAccess
+    )
+    verification_publication: VerificationPublication = Field(
+        default_factory=VerificationPublication
+    )
     auto_commit_after_wave: bool = True
     wave_commit_message_template: str = "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}"
     final_commit_message_template: str = "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}"

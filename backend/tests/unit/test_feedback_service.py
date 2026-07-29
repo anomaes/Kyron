@@ -20,7 +20,7 @@ from backend.db.statuses import NodeStatus, RunStatus
 from backend.integrations.gitlab_client import GitLabClient, GitLabError
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
 from backend.services.crypto import SecretCipher
-from backend.services.feedback_service import FeedbackService
+from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.tests.fixtures.workflows import workflow
 
 
@@ -235,6 +235,78 @@ async def test_approval_reset_failure_leaves_run_waiting(
                 author_username="reviewer",
             )
     assert run.status == RunStatus.AWAITING_FEEDBACK
+
+
+async def test_legacy_gate_lookup_rejects_ambiguity_and_explicit_gate_is_stable(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    cipher = SecretCipher(Fernet.generate_key())
+    run, _, first_execution = await waiting_run(db_session, tmp_path, cipher)
+    second_invocation = WorkflowInvocation(
+        run_id=run.id,
+        workflow_id="root",
+        invocation_path="root/isolated_b",
+        status="RUNNING",
+    )
+    db_session.add(second_invocation)
+    await db_session.flush()
+    second_execution = NodeExecution(
+        run_id=run.id,
+        invocation_id=second_invocation.id,
+        node_id="wait",
+        node_path="root/isolated_b/wait",
+        node_type="human_feedback",
+        status=NodeStatus.AWAITING_FEEDBACK,
+        output_values={"review_iteration": 1},
+    )
+    db_session.add(second_execution)
+    await db_session.flush()
+    second_gate = GateInstance(
+        run_id=run.id,
+        invocation_id=second_invocation.id,
+        node_execution_id=second_execution.id,
+        iteration=1,
+        checkpoint_commit_sha="c" * 40,
+        policy_key="review",
+        policy_snapshot={},
+        eligible_snapshot={},
+        status="OPEN",
+    )
+    db_session.add(second_gate)
+    await db_session.commit()
+    service = FeedbackService(
+        db_session,
+        cipher,
+        GitLabClient("https://gitlab.example", httpx.AsyncClient()),
+        lambda _: _noop(),
+    )
+    with pytest.raises(FeedbackError, match="multiple open gates"):
+        await service._open_gate(run.id, None)
+    first_gate = await service._open_gate(
+        run.id,
+        next(
+            gate.id
+            for gate in await _all_open_gates(db_session, run.id)
+            if gate.node_execution_id == first_execution.id
+        ),
+    )
+    assert first_gate.node_execution_id == first_execution.id
+    await service.code_host.close()
+
+
+async def _all_open_gates(
+    session: AsyncSession, run_id: uuid.UUID
+) -> list[GateInstance]:
+    from sqlalchemy import select
+
+    return list(
+        await session.scalars(
+            select(GateInstance).where(
+                GateInstance.run_id == run_id,
+                GateInstance.status == "OPEN",
+            )
+        )
+    )
 
 
 async def _noop() -> None:

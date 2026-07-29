@@ -89,7 +89,8 @@ async def test_github_approval_is_normalized_with_review_id(
             "source": "github",
             "author_provider": "github",
             "author_provider_user_id": "7",
-            "author_username": "alice",
-            "provider_review_id": "99",
-        }
+                "author_username": "alice",
+                "provider_review_id": "99",
+                "provider_head_sha": None,
+            }
     ]

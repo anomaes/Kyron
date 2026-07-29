@@ -103,6 +103,18 @@ export type Run = {
   status_version: number;
   base_ref: string;
   base_commit_sha: string;
+  subject_type: "BRANCH" | "CHANGE_REQUEST";
+  subject_ref: string;
+  subject_change_request_number: number | null;
+  subject_change_request_url: string | null;
+  subject_target_ref: string | null;
+  subject_commit_sha: string;
+  subject_target_commit_sha: string | null;
+  subject_current_head_sha: string | null;
+  delivery_mode: "PROPOSE_CHANGES" | "REPORT_ONLY";
+  effective_credential_policy: { mode: string; keys: string[] };
+  verification_conclusion: string | null;
+  verification_freshness: string | null;
   local_definition_test: boolean;
   branch_name: string | null;
   current_head_sha: string | null;
@@ -167,6 +179,10 @@ export type RunGraph = {
   feedback: Array<{ node_execution_id: string; iteration: number; message: string; event_type: string }>;
   gates: GateInstance[];
   gate_decisions: GateDecision[];
+  workspaces: Array<Record<string, unknown>>;
+  subworkflow_batches: Array<Record<string, unknown>>;
+  subworkflow_batch_members: Array<Record<string, unknown>>;
+  change_requests: Array<Record<string, unknown>>;
 };
 
 export type ProjectAccess = { permissions: string[]; is_system_admin: boolean };
@@ -194,6 +210,7 @@ export type ApprovalPolicy = {
 
 export type GateInstance = {
   id: string; run_id: string; invocation_id: string; node_execution_id: string; iteration: number;
+  workspace_id: string | null; change_request_id: string | null;
   checkpoint_commit_sha: string; policy_key: string; status: string; opened_at: string;
   resolved_at: string | null;
   policy_snapshot: {

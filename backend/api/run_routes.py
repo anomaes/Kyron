@@ -48,10 +48,14 @@ from backend.db.models import (
     FeedbackEvent,
     GateDecision,
     GateInstance,
+    InvocationWorkspace,
     NodeAttempt,
     NodeExecution,
     ProviderIdentity,
+    RunChangeRequest,
     RunLog,
+    SubworkflowBatch,
+    SubworkflowBatchMember,
     User,
     WorkflowInvocation,
     WorkflowRun,
@@ -166,6 +170,32 @@ async def run_graph(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict
     edges = list(await db.scalars(select(EdgeEvaluation).where(EdgeEvaluation.run_id == run_id)))
     feedback = list(await db.scalars(select(FeedbackEvent).where(FeedbackEvent.run_id == run_id)))
     gates = list(await db.scalars(select(GateInstance).where(GateInstance.run_id == run_id)))
+    workspaces = list(
+        await db.scalars(
+            select(InvocationWorkspace).where(InvocationWorkspace.run_id == run_id)
+        )
+    )
+    batches = list(
+        await db.scalars(
+            select(SubworkflowBatch).where(SubworkflowBatch.run_id == run_id)
+        )
+    )
+    batch_members = (
+        list(
+            await db.scalars(
+                select(SubworkflowBatchMember).where(
+                    SubworkflowBatchMember.batch_id.in_([item.id for item in batches])
+                )
+            )
+        )
+        if batches
+        else []
+    )
+    change_requests = list(
+        await db.scalars(
+            select(RunChangeRequest).where(RunChangeRequest.run_id == run_id)
+        )
+    )
     decisions = (
         list(
             await db.scalars(
@@ -187,6 +217,10 @@ async def run_graph(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict
         "feedback": [_model(item) for item in feedback],
         "gates": [_model(item) for item in gates],
         "gate_decisions": [_model(item) for item in decisions],
+        "workspaces": [_model(item) for item in workspaces],
+        "subworkflow_batches": [_model(item) for item in batches],
+        "subworkflow_batch_members": [_model(item) for item in batch_members],
+        "change_requests": [_model(item) for item in change_requests],
     }
 
 
@@ -485,6 +519,94 @@ async def feedback_service(
 
 
 FeedbackDependency = Annotated[FeedbackService, Depends(feedback_service)]
+
+
+@router.post("/{run_id}/gates/{gate_id}/approve")
+async def approve_gate(
+    run_id: uuid.UUID,
+    gate_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    feedback: FeedbackDependency,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await _authorize_gate_response(db, user, run)
+    try:
+        event = await feedback.accept(
+            run_id,
+            gate_id=gate_id,
+            event_type="approval",
+            source="frontend",
+            author_provider=user.provider,
+            author_user_id=user.id,
+            author_provider_user_id=user.provider_user_id,
+            author_username=user.display_name,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return _model(event)
+
+
+@router.post("/{run_id}/gates/{gate_id}/feedback")
+async def submit_gate_feedback(
+    run_id: uuid.UUID,
+    gate_id: uuid.UUID,
+    request: FeedbackRequest,
+    user: CurrentUser,
+    db: DbSession,
+    feedback: FeedbackDependency,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await _authorize_gate_response(db, user, run)
+    try:
+        event = await feedback.accept(
+            run_id,
+            gate_id=gate_id,
+            event_type="comment",
+            source="frontend",
+            author_provider=user.provider,
+            author_user_id=user.id,
+            author_provider_user_id=user.provider_user_id,
+            author_username=user.display_name,
+            message=request.message,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return _model(event)
+
+
+@router.post("/{run_id}/gates/{gate_id}/override")
+async def override_addressed_gate(
+    run_id: uuid.UUID,
+    gate_id: uuid.UUID,
+    request: GateOverrideRequest,
+    user: CurrentUser,
+    db: DbSession,
+    feedback: FeedbackDependency,
+) -> dict[str, Any]:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, GATE_OVERRIDE)
+    try:
+        event = await feedback.override(
+            run_id,
+            gate_id=gate_id,
+            reason=request.reason,
+            actor_user_id=user.id,
+            actor_snapshot=actor_snapshot(user),
+        )
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return _model(event)
 
 
 @router.post("/{run_id}/approve")

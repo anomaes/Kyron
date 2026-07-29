@@ -15,7 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings
-from backend.db.models import Project, ResourceAuditLog, RunLog, WorkflowRun
+from backend.db.models import (
+    InvocationWorkspace,
+    Project,
+    ResourceAuditLog,
+    RunLog,
+    WorkflowRun,
+)
 from backend.db.statuses import (
     ACTIVE_RUN_STATUSES,
     RESUMABLE_RUN_STATUSES,
@@ -24,7 +30,12 @@ from backend.db.statuses import (
 )
 from backend.engine.process_registry import ProcessRegistry
 from backend.engine.task_registry import TaskRegistry
-from backend.integrations.code_host import CodeHostError, code_host_client, repository_locator
+from backend.integrations.code_host import (
+    CodeHostError,
+    code_host_client,
+    git_username,
+    repository_locator,
+)
 from backend.integrations.git_manager import GitError, GitManager, project_git_locks
 from backend.services.cleanup_service import CleanupService
 from backend.services.crypto import EncryptionError, SecretCipher
@@ -74,6 +85,7 @@ class ReconciliationService:
                 select(WorkflowRun).where(
                     (WorkflowRun.worktree_path.is_not(None))
                     | (WorkflowRun.run_data_path.is_not(None))
+                    | (WorkflowRun.delivery_mode == "REPORT_ONLY")
                 )
             )
         )
@@ -83,6 +95,8 @@ class ReconciliationService:
             project = projects.get(run.project_id)
             if project is None:
                 continue
+            if run.delivery_mode == "REPORT_ONLY":
+                await self._reconcile_verification_subject(run, project, now)
             status = RunStatus(run.status)
             change_request_state = await self._change_request_state(run, project)
             try:
@@ -158,6 +172,62 @@ class ReconciliationService:
         await self.session.commit()
         await self._prune_projects(projects.values())
 
+    async def _reconcile_verification_subject(
+        self, run: WorkflowRun, project: Project, now: datetime
+    ) -> None:
+        if self.cipher is None:
+            return
+        token = ""
+        try:
+            token = self.cipher.decrypt(project.encrypted_access_token)
+            if run.subject_type == "CHANGE_REQUEST":
+                if run.subject_change_request_number is None:
+                    return
+                async with code_host_client(project.provider, self.settings) as provider:
+                    subject = await provider.get_change_request(
+                        repository_locator(
+                            project.provider,
+                            project.provider_project_id,
+                            project.provider_project_path,
+                        ),
+                        run.subject_change_request_number,
+                        token,
+                    )
+                run.subject_availability = (
+                    "ACTIVE"
+                    if subject.state.casefold() in {"open", "opened"}
+                    else "UNAVAILABLE"
+                )
+                current_head = subject.head_sha
+            else:
+                async with project_git_locks.for_project(project.id):
+                    repository = Path(project.local_path)
+                    await self.git.fetch(
+                        repository,
+                        token,
+                        username=git_username(project.provider),
+                    )
+                    current_head = await self.git.resolve_remote_sha(
+                        repository, run.subject_ref
+                    )
+                run.subject_availability = "ACTIVE"
+            if current_head:
+                run.subject_current_head_sha = current_head
+                run.verification_freshness = (
+                    "CURRENT"
+                    if current_head == run.subject_commit_sha
+                    else "STALE"
+                )
+            run.subject_checked_at = now
+        except (EncryptionError, CodeHostError, GitError):
+            run.subject_availability = "UNAVAILABLE"
+            run.subject_checked_at = now
+            logger.warning(
+                "Could not reconcile verification subject for run %s", run.id
+            )
+        finally:
+            token = ""
+
     async def _change_request_state(self, run: WorkflowRun, project: Project) -> str | None:
         if run.change_request_number is None or run.worktree_path is None:
             return None
@@ -225,10 +295,14 @@ class ReconciliationService:
         if not await asyncio.to_thread(root.is_dir):
             return
         resolved_root = root.resolve()
+        workspace_paths = list(
+            await self.session.scalars(select(InvocationWorkspace.worktree_path))
+        )
         referenced = await asyncio.to_thread(
             lambda: {
                 Path(run.worktree_path).resolve() for run in runs if run.worktree_path is not None
             }
+            | {Path(path).resolve() for path in workspace_paths}
         )
         registered = await self._registered_worktrees(projects)
         candidates = await asyncio.to_thread(lambda: list(root.iterdir()))

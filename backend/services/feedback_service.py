@@ -14,8 +14,10 @@ from backend.db.models import (
     FeedbackEvent,
     GateDecision,
     GateInstance,
+    InvocationWorkspace,
     NodeExecution,
     Project,
+    RunChangeRequest,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -64,14 +66,16 @@ class FeedbackService:
         author_user_id: uuid.UUID | None = None,
         provider_comment_id: str | None = None,
         provider_review_id: str | None = None,
+        gate_id: uuid.UUID | None = None,
+        provider_head_sha: str | None = None,
     ) -> GateDecision:
         run = await self.session.scalar(
             select(WorkflowRun).where(WorkflowRun.id == run_id).with_for_update()
         )
         if run is None:
             raise LookupError("Run does not exist")
-        if run.status != RunStatus.AWAITING_FEEDBACK:
-            raise FeedbackError("Run is not awaiting feedback")
+        if run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_FEEDBACK}:
+            raise FeedbackError("Run has no active feedback checkpoint")
         if author_provider != run.reviewer_provider:
             raise PermissionError("Sign in with the run's code-host provider")
         if source != "frontend" and source != run.reviewer_provider:
@@ -81,10 +85,14 @@ class FeedbackService:
         clean_message = message.strip()
         if event_type == "comment" and not clean_message:
             raise FeedbackError("Feedback message must not be empty")
-        if not run.current_node_execution_id or not run.current_invocation_id:
-            raise FeedbackError("Run has no waiting checkpoint")
-        execution = await self.session.get(NodeExecution, run.current_node_execution_id)
-        invocation = await self.session.get(WorkflowInvocation, run.current_invocation_id)
+        gate = await self._open_gate(run.id, gate_id)
+        if (
+            provider_head_sha is not None
+            and provider_head_sha != gate.checkpoint_commit_sha
+        ):
+            raise FeedbackError("Approval or feedback refers to a stale checkpoint")
+        execution = await self.session.get(NodeExecution, gate.node_execution_id)
+        invocation = await self.session.get(WorkflowInvocation, gate.invocation_id)
         project = await self.session.get(Project, run.project_id)
         if execution is None or invocation is None or project is None:
             raise FeedbackError("Waiting checkpoint state is incomplete")
@@ -96,18 +104,7 @@ class FeedbackService:
                 raise FeedbackError("This gate does not accept approvals")
             if event_type == "comment" and not node.config.allow_comment_feedback:
                 raise FeedbackError("This gate does not accept revision feedback")
-        iteration = int(execution.output_values.get("review_iteration", 1))
-        gate = await self.session.scalar(
-            select(GateInstance)
-            .where(
-                GateInstance.node_execution_id == execution.id,
-                GateInstance.iteration == iteration,
-                GateInstance.status == "OPEN",
-            )
-            .with_for_update()
-        )
-        if gate is None:
-            raise FeedbackError("Run has no open gate instance")
+        iteration = gate.iteration
         requirement_keys = actor_requirement_keys(
             gate.eligible_snapshot, author_provider, author_provider_user_id
         )
@@ -166,13 +163,23 @@ class FeedbackService:
             gate.policy_snapshot, gate.eligible_snapshot, approvals
         )
 
+        change_request = (
+            await self.session.get(RunChangeRequest, gate.change_request_id)
+            if gate.change_request_id
+            else None
+        )
+        provider_number = (
+            change_request.provider_number
+            if change_request is not None
+            else run.change_request_number
+        )
         token = (
             self.cipher.decrypt(project.encrypted_access_token)
-            if gate_satisfied and run.change_request_number
+            if gate_satisfied and provider_number
             else ""
         )
         try:
-            if gate_satisfied and run.change_request_number:
+            if gate_satisfied and provider_number:
                 repository = repository_locator(
                     project.provider,
                     project.provider_project_id,
@@ -187,7 +194,7 @@ class FeedbackService:
                     latest = approval_decisions[-1]
                     await self.code_host.consume_approval(
                         repository,
-                        run.change_request_number,
+                        provider_number,
                         token,
                         ProviderUser(
                             id=str(latest.actor_snapshot["provider_user_id"]),
@@ -199,7 +206,7 @@ class FeedbackService:
                     for approval in approval_decisions:
                         await self.code_host.consume_approval(
                             repository,
-                            run.change_request_number,
+                            provider_number,
                             token,
                             ProviderUser(
                                 id=str(approval.actor_snapshot["provider_user_id"]),
@@ -243,12 +250,14 @@ class FeedbackService:
                 },
             )
         )
-        run.public_context = {
-            **run.public_context,
+        invocation.public_context = {
+            **invocation.public_context,
             "FEEDBACK": clean_message,
             "FEEDBACK_TYPE": event_type,
             "FEEDBACK_AUTHOR": author_username,
         }
+        if invocation.parent_invocation_id is None:
+            run.public_context = dict(invocation.public_context)
         if event_type == "approval" and not gate_satisfied:
             await self.session.commit()
             return decision
@@ -284,20 +293,23 @@ class FeedbackService:
                     "max_iterations": maximum,
                 }
                 execution.finished_at = None
-                run.public_context = {
-                    **run.public_context,
+                invocation.public_context = {
+                    **invocation.public_context,
                     "REVIEW_ITERATION": next_iteration,
                 }
+                if invocation.parent_invocation_id is None:
+                    run.public_context = dict(invocation.public_context)
         else:
             execution.status = NodeStatus.SUCCESS
             execution.finished_at = datetime.now(UTC)
             await self._persist_edges(run, invocation, execution, workflow)
-        run.current_node_execution_id = None
-        run.current_wave_id = None
+        if run.current_node_execution_id == execution.id:
+            run.current_node_execution_id = None
+            run.current_wave_id = None
         await self.session.commit()
 
         try:
-            if source == "frontend" and run.change_request_number:
+            if source == "frontend" and provider_number:
                 if event_type == "approval":
                     note = (
                         f"Approved via Workflow Engine by {author_username}.\n"
@@ -315,7 +327,7 @@ class FeedbackService:
                         project.provider_project_id,
                         project.provider_project_path,
                     ),
-                    run.change_request_number,
+                    provider_number,
                     token,
                     note,
                 )
@@ -335,30 +347,21 @@ class FeedbackService:
         reason: str,
         actor_user_id: uuid.UUID,
         actor_snapshot: dict[str, object],
+        gate_id: uuid.UUID | None = None,
     ) -> GateDecision:
         run = await self.session.scalar(
             select(WorkflowRun).where(WorkflowRun.id == run_id).with_for_update()
         )
-        if run is None or run.status != RunStatus.AWAITING_FEEDBACK:
-            raise FeedbackError("Run is not awaiting feedback")
-        if not run.current_node_execution_id or not run.current_invocation_id:
-            raise FeedbackError("Run has no waiting checkpoint")
-        execution = await self.session.get(NodeExecution, run.current_node_execution_id)
-        invocation = await self.session.get(WorkflowInvocation, run.current_invocation_id)
+        if run is None or run.status not in {
+            RunStatus.RUNNING,
+            RunStatus.AWAITING_FEEDBACK,
+        }:
+            raise FeedbackError("Run has no active feedback checkpoint")
+        gate = await self._open_gate(run.id, gate_id)
+        execution = await self.session.get(NodeExecution, gate.node_execution_id)
+        invocation = await self.session.get(WorkflowInvocation, gate.invocation_id)
         if execution is None or invocation is None:
             raise FeedbackError("Waiting checkpoint state is incomplete")
-        iteration = int(execution.output_values.get("review_iteration", 1))
-        gate = await self.session.scalar(
-            select(GateInstance)
-            .where(
-                GateInstance.node_execution_id == execution.id,
-                GateInstance.iteration == iteration,
-                GateInstance.status == "OPEN",
-            )
-            .with_for_update()
-        )
-        if gate is None:
-            raise FeedbackError("Run has no open gate instance")
         decision = GateDecision(
             gate_instance_id=gate.id,
             event_type="override",
@@ -378,8 +381,9 @@ class FeedbackService:
         await self._persist_edges(run, invocation, execution, workflow)
         run.status = RunStatus.RUNNING
         run.status_version += 1
-        run.current_node_execution_id = None
-        run.current_wave_id = None
+        if run.current_node_execution_id == execution.id:
+            run.current_node_execution_id = None
+            run.current_wave_id = None
         self.session.add(
             AuthorizationAuditEvent(
                 project_id=run.project_id,
@@ -399,6 +403,26 @@ class FeedbackService:
         await self.schedule_continuation(run.id)
         return decision
 
+    async def _open_gate(
+        self, run_id: uuid.UUID, gate_id: uuid.UUID | None
+    ) -> GateInstance:
+        query = (
+            select(GateInstance)
+            .where(GateInstance.run_id == run_id, GateInstance.status == "OPEN")
+            .with_for_update()
+        )
+        if gate_id is not None:
+            gate = await self.session.scalar(query.where(GateInstance.id == gate_id))
+            if gate is None:
+                raise FeedbackError("Gate is not open")
+            return gate
+        gates = list(await self.session.scalars(query))
+        if not gates:
+            raise FeedbackError("Run has no open gate instance")
+        if len(gates) > 1:
+            raise FeedbackError("Run has multiple open gates; address a gate explicitly")
+        return gates[0]
+
     async def _persist_edges(
         self,
         run: WorkflowRun,
@@ -406,7 +430,14 @@ class FeedbackService:
         execution: NodeExecution,
         workflow: WorkflowDefinition,
     ) -> None:
-        assert run.worktree_path
+        workspace = (
+            await self.session.get(InvocationWorkspace, invocation.workspace_id)
+            if invocation.workspace_id
+            else None
+        )
+        worktree_path = workspace.worktree_path if workspace else run.worktree_path
+        if not worktree_path:
+            raise FeedbackError("Feedback invocation has no workspace")
         for edge in workflow.edges:
             if edge.source != execution.node_id:
                 continue
@@ -415,8 +446,8 @@ class FeedbackService:
                 exit_code=0,
                 stdout="",
                 stderr="",
-                public_context=run.public_context,
-                worktree=Path(run.worktree_path),
+                public_context=invocation.public_context,
+                worktree=Path(worktree_path),
             )
             self.session.add(
                 EdgeEvaluation(

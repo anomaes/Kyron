@@ -129,6 +129,7 @@ Invokes one child workflow from the run's immutable bundle.
   "label": "Run quality checks",
   "config": {
     "workflow_id": "quality_checks",
+    "execution_mode": "shared",
     "inputs": {
       "STRICT": "${STRICT}"
     },
@@ -142,7 +143,9 @@ Invokes one child workflow from the run's immutable bundle.
 
 Input mapping keys identify child inputs and their values are parent expressions. Output mapping
 keys identify child outputs and their values are the new public names in the parent. Definitions
-are resolved from the same base commit. See [composition](/workflows/composition).
+are resolved from the same base commit. `shared` executes in the parent workspace;
+`isolated` uses a child branch and worktree; `isolated_parallel` also batches ready
+siblings for concurrent execution. See [composition](/workflows/composition).
 
 ## Review loop
 
@@ -178,6 +181,6 @@ Use this node instead of a graph back edge. Read [review loops](/workflows/revie
 | Category | Nodes | Scheduling |
 | --- | --- | --- |
 | Process | Bash, Script, Prompt | Ready siblings may execute together in a wave |
-| Control | Human feedback, Sub-workflow, Review loop | Serialized so durable orchestration transitions remain unambiguous |
+| Control | Human feedback, Sub-workflow, Review loop | Serialized, except ready `isolated_parallel` sub-workflows form one isolated batch |
 
 This distinction explains why adding a control node changes the execution boundaries even when the graph looks parallel.

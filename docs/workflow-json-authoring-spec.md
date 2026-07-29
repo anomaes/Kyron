@@ -260,6 +260,9 @@ Public built-ins available during a normal run are:
 | `WORKFLOW_NAME` | Current invocation's workflow name. |
 | `INVOCATION_ID` | Current invocation UUID. |
 | `INVOCATION_PATH` | Current invocation path, for example `root/child`. |
+| `WORKSPACE_ID` | Isolated workspace UUID; empty in a shared child. |
+| `WORKSPACE_BRANCH` | Isolated child branch; empty in a shared child. |
+| `WORKSPACE_BASE_COMMIT_SHA` | Exact parent checkpoint from which an isolated workspace forked. |
 | `PROJECT_ID` | Project UUID. |
 | `PROJECT_NAME` | Project display name. |
 | `BASE_REF` | Base ref selected for the run. |
@@ -498,6 +501,7 @@ when the workflow later needs independent reviewers or a larger quorum.
   "join": "and",
   "config": {
     "workflow_id": "validate_change",
+    "execution_mode": "shared",
     "inputs": {
       "TARGET_DIR": "${TARGET_DIR}"
     },
@@ -513,6 +517,7 @@ when the workflow later needs independent reviewers or a larger quorum.
 | Config field | Type | Required | Default / meaning |
 |---|---|---:|---|
 | `workflow_id` | identifier | yes | Child workflow file ID. |
+| `execution_mode` | `shared`, `isolated`, or `isolated_parallel` | no | `shared` |
 | `inputs` | identifier-to-string object | no | `{}`; child input name to parent template. |
 | `output_mapping` | identifier-to-identifier object | no | `{}`; child output name to new parent public-variable name. |
 | `allow_failure` | boolean | no | `false` |
@@ -525,8 +530,34 @@ output_mapping: CHILD_OUTPUT -> PARENT_VARIABLE
 ```
 
 Every required child input without a non-null default must be present in `inputs`.
-Every output-mapping key must be declared by the child workflow. The child executes in
-the same run worktree and branch.
+Every output-mapping key must be declared by the child workflow.
+
+Execution modes define the child's Git and scheduling boundary:
+
+- `shared` executes serially in the parent workspace and branch. This is the
+  backward-compatible default and has no additional worktree overhead.
+- `isolated` forks a child branch and worktree from the parent's exact clean
+  checkpoint, executes the child serially, and merges the successful child head
+  into the parent.
+- `isolated_parallel` uses the same Git isolation and may execute concurrently
+  with ready sibling nodes in that mode. The parent workspace remains frozen
+  until the complete batch is ready to integrate.
+
+Ready parallel siblings receive inputs expanded from the same frozen parent context.
+They cannot observe each other's process outputs. Their successful heads are merged
+into the parent in ascending parent node-ID order. Integration is atomic: a conflict
+restores the parent to the batch's exact starting commit, publishes no mapped output,
+and fails the batch.
+
+Independent `isolated_parallel` nodes must map outputs to distinct parent variables.
+Kyron rejects a workflow when unordered parallel children both target the same parent
+variable. Place a graph edge between children when one must run after the other.
+
+An isolated child that reaches a human checkpoint uses a workspace review request
+whose source is the child branch and whose target is the immediate parent workspace
+branch. Later checkpoints in that child reuse the same review request and require a
+fresh gate decision. The root run's final change request remains separate and targets
+`base_ref`.
 
 ### 6.6 Review loop
 
@@ -689,8 +720,11 @@ Every individual workflow graph must satisfy all of these rules:
 - The graph has no directed cycle, including self-edges.
 - Multiple start nodes and fan-out are allowed.
 
-Ready Bash, Script, and Prompt nodes execute concurrently in a wave. Sub-workflow,
-human-feedback, and review-loop nodes execute one at a time as control boundaries.
+Ready Bash, Script, and Prompt nodes execute concurrently in a wave. Shared and
+isolated-serial sub-workflows, human-feedback nodes, and review-loop nodes execute one
+at a time as control boundaries. When the lowest ready control is an
+`isolated_parallel` sub-workflow, every ready sibling in that mode forms one isolated
+batch.
 Process output variables are published after the wave completes, so data dependencies
 between process nodes must be represented by graph edges rather than parallel siblings.
 
@@ -711,6 +745,9 @@ All settings are optional. These are the accepted fields and model defaults:
 | Field | Type | Default | Constraint / use |
 |---|---|---|---|
 | `pi` | Pi settings object | `{}` | Workflow-wide provider, model, and skill defaults. |
+| `delivery_mode` | `propose_changes` or `report_only` | `propose_changes` | Controls whether Git changes are delivered or the pinned subject is only examined. |
+| `credential_access` | credential policy object | `{"mode":"default","keys":[]}` | Resolves to all credentials for delivery workflows and no credentials for report-only workflows. |
+| `verification_publication` | verification publication object | all fields `true` | Controls commit status and subject change-request summary publication. |
 | `auto_commit_after_wave` | boolean | `true` | Commit after every successful process wave. |
 | `wave_commit_message_template` | string | `workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}` | Public template. |
 | `final_commit_message_template` | string | `workflow(${WORKFLOW_ID}): complete run ${RUN_ID}` | Public template. |
@@ -731,6 +768,16 @@ Canonical explicit settings object:
     "model": "anthropic/claude-sonnet-4-5",
     "skill": ".agents/skills/implementation/SKILL.md"
   },
+  "delivery_mode": "propose_changes",
+  "credential_access": {
+    "mode": "default",
+    "keys": []
+  },
+  "verification_publication": {
+    "publish_commit_status": true,
+    "post_change_request_summary": true,
+    "publication_required": true
+  },
   "auto_commit_after_wave": true,
   "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
   "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}",
@@ -744,9 +791,25 @@ Canonical explicit settings object:
 }
 ```
 
+`credential_access.mode` is `default`, `none`, `all`, or `allowlist`.
+`allowlist` requires a non-empty, duplicate-free `keys` array; every other mode
+requires an empty array. The resolved `default` is `all` for `propose_changes`
+and `none` for `report_only`.
+
+A report-only root examines the selected branch or change-request source commit
+in disposable worktrees. It may create local commits as checkpoints, but it does
+not push a result branch or create a change request. Its workflow bundle comes
+from the trusted project default branch (or an authorized local definition
+snapshot), independently of the code commit under examination. Human-feedback
+and review-loop nodes are invalid anywhere in its transitive workflow bundle.
+Isolated sub-workflows remain local and retain the same integration semantics.
+
 ## 10. Cross-file composition rules
 
-All workflows in one run are loaded from the exact same pinned Git commit. For a root
+All workflows in one run are loaded from the exact same pinned definition commit.
+For ordinary delivery runs this is normally the code subject commit. For report-only
+runs it is the trusted project default-branch commit, while the root worktree starts
+at the separately pinned subject commit. For a root
 workflow, Kyron recursively loads every workflow referenced by `subworkflow` and
 `review_loop` nodes from the file indexed for that workflow ID anywhere below
 `.workflowEngine/`.
@@ -760,15 +823,14 @@ which defaults to 8 and counts the root as depth 1.
 
 These fields are accepted by schema but do not yet alter current runtime behavior:
 
-- `subworkflow.config.allow_failure`: a failed child currently fails its parent node.
-- `human_feedback.config.allow_comment_feedback` and `allow_approval`: both feedback
-  paths are currently accepted by the feedback service.
+- `subworkflow.config.allow_failure` applies to isolated batches; a failed shared
+  child still fails its parent node.
 - `settings.propagate_skips`: skipped nodes currently persist false outgoing edges.
 - `settings.max_subworkflow_depth`: the deployment-wide maximum is used for bundle
   validation.
 
-An LLM should keep the first three behavior flags at their defaults and should not
-promise behavior based on changing them.
+An LLM should keep reserved behavior flags at their defaults and should not promise
+behavior based on changing them.
 
 Validation currently checks that `${...}` syntax is well formed only when the value is
 expanded during execution. Therefore, an author must independently check every
@@ -782,7 +844,8 @@ Use this deterministic procedure:
 1. Identify the root workflow and every child workflow required.
 2. Assign all workflow, node, edge, input, output, and variable identifiers before
    writing JSON. Check each against the identifier regex.
-3. Declare root trigger inputs and non-secret variables.
+3. Select the delivery and credential policies, then declare root trigger inputs
+   and non-secret variables.
 4. Define child workflow inputs and outputs before defining parent mappings.
 5. Select project, workflow, and node Pi defaults; verify every configured skill path
    against the repository tree.

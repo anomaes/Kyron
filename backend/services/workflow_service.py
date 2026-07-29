@@ -7,6 +7,7 @@ import logging
 import re
 import shutil
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -30,6 +31,7 @@ from backend.integrations.code_host import (
 )
 from backend.integrations.git_manager import GitManager, project_git_locks
 from backend.schemas.pi import PiSettings
+from backend.schemas.run import ChangeRequestRunSubject, RunSubject
 from backend.schemas.workflow import (
     NodeTemplate,
     WorkflowBundle,
@@ -412,30 +414,115 @@ class WorkflowService:
         project: Project,
         user: AuthenticatedUser,
         workflow_id: str,
-        base_ref: str,
         inputs: dict[str, Any],
         *,
+        subject: RunSubject | None = None,
+        base_ref: str | None = None,
         use_local_definitions: bool = False,
     ) -> WorkflowRun:
         if user.provider != project.provider:
             raise PermissionError("Authentication provider does not match project provider")
-        sha, bundle = await self.snapshot_for_run(
-            project,
-            workflow_id,
-            base_ref,
-            use_local_definitions=use_local_definitions,
-        )
+        legacy_trigger = subject is None and base_ref is not None
+        subject_type = "BRANCH"
+        subject_ref = base_ref or project.default_branch
+        subject_number: int | None = None
+        subject_url: str | None = None
+        subject_target_ref: str | None = None
+        subject_target_sha: str | None = None
+        expected_subject_sha: str | None = None
+        if isinstance(subject, ChangeRequestRunSubject):
+            token = self.cipher.decrypt(project.encrypted_access_token)
+            try:
+                async with code_host_client(project.provider, self.settings) as provider:
+                    change_request = await provider.get_change_request(
+                        repository_locator(
+                            project.provider,
+                            project.provider_project_id,
+                            project.provider_project_path,
+                        ),
+                        subject.number,
+                        token,
+                    )
+            finally:
+                token = ""
+            if change_request.state.casefold() not in {"open", "opened"}:
+                raise ValueError("Change-request subject must be open")
+            if not change_request.source_branch or not change_request.head_sha:
+                raise ValueError("Provider did not return the change-request source revision")
+            subject_type = "CHANGE_REQUEST"
+            subject_ref = change_request.source_branch
+            subject_number = change_request.number
+            subject_url = change_request.url
+            subject_target_ref = change_request.target_branch
+            subject_target_sha = change_request.target_sha
+            expected_subject_sha = change_request.head_sha
+        elif subject is not None:
+            subject_ref = subject.ref
+
+        try:
+            definition_sha, trusted_bundle = await self.snapshot_for_run(
+                project,
+                workflow_id,
+                project.default_branch,
+                use_local_definitions=use_local_definitions,
+            )
+        except Exception:
+            if not legacy_trigger:
+                raise
+            definition_sha, trusted_bundle = await self.snapshot_for_run(
+                project,
+                workflow_id,
+                subject_ref,
+                use_local_definitions=use_local_definitions,
+            )
+        trusted_workflow = trusted_bundle.workflows[workflow_id]
+        delivery_mode = trusted_workflow.settings.delivery_mode
+
+        if delivery_mode == "report_only" or use_local_definitions:
+            bundle = trusted_bundle
+            subject_sha = await self._resolve_subject_sha(project, subject_ref)
+        else:
+            subject_sha, bundle = await self.snapshot_for_run(
+                project, workflow_id, subject_ref
+            )
+            definition_sha = subject_sha
+        if expected_subject_sha and subject_sha != expected_subject_sha:
+            raise ValueError("Change-request source branch moved during trigger resolution")
+
         workflow = bundle.workflows[workflow_id]
         await ApprovalPolicyService(self.session).validate_bundle(project, bundle)
         validated_inputs = validate_trigger_inputs(workflow, inputs)
+        credential_access = trusted_workflow.settings.credential_access
+        effective_mode = credential_access.mode
+        if effective_mode == "default":
+            effective_mode = "none" if delivery_mode == "report_only" else "all"
+        effective_policy = {"mode": effective_mode, "keys": list(credential_access.keys)}
         run = WorkflowRun(
             root_workflow_id=workflow_id,
             project_id=project.id,
             triggered_by=user.id,
             status="QUEUED",
-            base_ref=base_ref,
-            base_commit_sha=sha,
-            workflow_definition_commit_sha=sha,
+            base_ref=subject_ref,
+            base_commit_sha=subject_sha,
+            subject_type=subject_type,
+            subject_ref=subject_ref,
+            subject_change_request_number=subject_number,
+            subject_change_request_url=subject_url,
+            subject_target_ref=subject_target_ref,
+            subject_commit_sha=subject_sha,
+            subject_target_commit_sha=subject_target_sha,
+            subject_current_head_sha=subject_sha,
+            subject_checked_at=datetime.now(UTC),
+            subject_availability="ACTIVE",
+            delivery_mode=delivery_mode.upper(),
+            effective_credential_policy=effective_policy,
+            verification_conclusion=(
+                "PENDING" if delivery_mode == "report_only" else None
+            ),
+            verification_freshness=(
+                "CURRENT" if delivery_mode == "report_only" else None
+            ),
+            workflow_definition_commit_sha=definition_sha,
             workflow_bundle_snapshot=bundle.model_dump(mode="json"),
             local_definition_test=use_local_definitions,
             public_context={**workflow.variables, **validated_inputs},
@@ -451,10 +538,22 @@ class WorkflowService:
             run.id,
             project.id,
             workflow_id,
-            sha[:12],
+            subject_sha[:12],
             use_local_definitions,
         )
         return run
+
+    async def _resolve_subject_sha(self, project: Project, ref: str) -> str:
+        token = self.cipher.decrypt(project.encrypted_access_token)
+        try:
+            async with project_git_locks.for_project(project.id):
+                repository = Path(project.local_path)
+                await self.git.fetch(
+                    repository, token, username=git_username(project.provider)
+                )
+                return await self.git.resolve_remote_sha(repository, ref)
+        finally:
+            token = ""
 
     def _validate_bundle(
         self, root_id: str, definitions: dict[str, WorkflowDefinition]

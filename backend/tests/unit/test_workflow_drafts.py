@@ -149,8 +149,13 @@ def test_local_definition_run_option_is_explicit() -> None:
 def test_local_definition_runs_never_publish() -> None:
     local = cast(WorkflowRun, SimpleNamespace(local_definition_test=True))
     reviewed = cast(WorkflowRun, SimpleNamespace(local_definition_test=False))
+    verification = cast(
+        WorkflowRun,
+        SimpleNamespace(local_definition_test=False, delivery_mode="REPORT_ONLY"),
+    )
     assert not should_publish_run(local)
     assert should_publish_run(reviewed)
+    assert not should_publish_run(verification)
 
 
 def test_local_definition_paths_reject_traversal() -> None:

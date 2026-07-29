@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import (
     ExecutionWave,
     GateInstance,
+    InvocationWorkspace,
     NodeAttempt,
     NodeExecution,
     RunLog,
     RunReport,
+    SubworkflowBatch,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -88,6 +90,20 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
     )
     if not run.worktree_path or not await asyncio.to_thread(Path(run.worktree_path).exists):
         raise ResumeError("Run worktree is missing")
+    workspaces = list(
+        await session.scalars(
+            select(InvocationWorkspace).where(InvocationWorkspace.run_id == run.id)
+        )
+    )
+    for workspace in workspaces:
+        path = Path(workspace.worktree_path)
+        if not await asyncio.to_thread(path.exists):
+            raise ResumeError(f"Invocation worktree is missing: {workspace.id}")
+        await git.reset_wave(path, workspace.current_head_sha)
+        if workspace.status in {"FAILED", "INTERRUPTED", "CANCELLED"}:
+            workspace.status = "READY"
+            workspace.error_type = None
+            workspace.error_message = None
     if run.pending_operation is not None:
         if not run.current_head_sha:
             raise ResumeError("Pending run operation has no durable Git checkpoint")
@@ -211,6 +227,22 @@ async def mark_interrupted_runs(session: AsyncSession) -> int:
         .where(ExecutionWave.run_id.in_(run_ids), ExecutionWave.status == WaveStatus.RUNNING)
         .values(status=WaveStatus.INTERRUPTED, finished_at=now)
     )
+    await session.execute(
+        update(InvocationWorkspace)
+        .where(
+            InvocationWorkspace.run_id.in_(run_ids),
+            InvocationWorkspace.status.in_(["CREATING", "READY", "RUNNING", "INTEGRATING"]),
+        )
+        .values(status="INTERRUPTED", finished_at=now)
+    )
+    await session.execute(
+        update(SubworkflowBatch)
+        .where(
+            SubworkflowBatch.run_id.in_(run_ids),
+            SubworkflowBatch.status.in_(["CREATING", "RUNNING", "INTEGRATING"]),
+        )
+        .values(status="INTERRUPTED", finished_at=now)
+    )
     node_ids = select(NodeExecution.id).where(
         NodeExecution.run_id.in_(run_ids), NodeExecution.status == NodeStatus.RUNNING
     )
@@ -253,6 +285,22 @@ async def mark_run_interrupted(
         update(ExecutionWave)
         .where(ExecutionWave.run_id == run.id, ExecutionWave.status == WaveStatus.RUNNING)
         .values(status=WaveStatus.INTERRUPTED, finished_at=now)
+    )
+    await session.execute(
+        update(InvocationWorkspace)
+        .where(
+            InvocationWorkspace.run_id == run.id,
+            InvocationWorkspace.status.in_(["CREATING", "READY", "RUNNING", "INTEGRATING"]),
+        )
+        .values(status="INTERRUPTED", finished_at=now)
+    )
+    await session.execute(
+        update(SubworkflowBatch)
+        .where(
+            SubworkflowBatch.run_id == run.id,
+            SubworkflowBatch.status.in_(["CREATING", "RUNNING", "INTEGRATING"]),
+        )
+        .values(status="INTERRUPTED", finished_at=now)
     )
     running_node_ids = select(NodeExecution.id).where(
         NodeExecution.run_id == run.id, NodeExecution.status == NodeStatus.RUNNING

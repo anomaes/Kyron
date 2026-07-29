@@ -58,6 +58,7 @@ Create `.workflowEngine/quality_checks.json`:
   "label": "Verify repository",
   "config": {
     "workflow_id": "quality_checks",
+    "execution_mode": "shared",
     "inputs": {
       "COMMAND": "${TEST_COMMAND}"
     },
@@ -72,6 +73,37 @@ Create `.workflowEngine/quality_checks.json`:
 The `inputs` object maps **child input name → parent template expression**. The `output_mapping` object maps **child output name → new parent variable name**.
 
 After the child completes, this example makes `${QUALITY_EXIT_CODE}` available to later nodes in the parent invocation.
+
+## Choose the execution boundary
+
+`execution_mode` controls where the child runs:
+
+| Mode | Workspace | Scheduling | Integration |
+|---|---|---|---|
+| `shared` | Parent worktree and branch | Serialized control boundary | None |
+| `isolated` | Child worktree and branch | Serialized control boundary | Child head merges into parent |
+| `isolated_parallel` | Child worktree and branch | Concurrent with ready siblings in the same mode | Complete batch merges in node-ID order |
+
+`shared` is the default. Use it for inexpensive composition when the child does
+not need a separate rollback or review boundary. Use `isolated` when the child
+should own its filesystem changes and checkpoint history. Use
+`isolated_parallel` for independent sibling changes that can be prepared at the
+same time.
+
+Kyron freezes the parent workspace while an isolated parallel batch is active.
+Every child starts from the same exact parent commit and receives inputs from
+the same parent-context snapshot. Successful heads integrate as explicit merge
+commits in parent node-ID order, independent of completion or approval order.
+If a merge conflicts, Kyron restores the exact parent start commit and publishes
+none of the batch's output mappings.
+
+Parallel siblings must map outputs to distinct parent variables. If one child
+needs another child's files or outputs, connect them with an edge instead of
+placing them in the same parallel batch.
+
+An isolated child review request targets the immediate parent workflow branch.
+This keeps its diff limited to that workspace. The final root review remains a
+separate request targeting the run's selected base ref.
 
 ## Exact-revision guarantee
 
@@ -96,6 +128,8 @@ The complete bundle is validated before a run is queued. Validation rejects:
 - nesting deeper than the configured maximum;
 - unknown input or output mapping names;
 - missing required child inputs; and
+- unordered isolated-parallel children that target the same parent output
+  variable; and
 - a template that cannot be resolved from the parent context.
 
 When proposing several related definitions together, pass them in `proposed_related_workflows` so the server validates the intended bundle rather than only the currently merged children.
@@ -107,6 +141,7 @@ A child is not flattened into the parent. It creates a durable invocation with:
 - its own workflow ID and invocation path;
 - a parent invocation and parent node execution;
 - node executions, waves, attempts, and outputs; and
+- an invocation-local public context and durable workspace identity; and
 - its own completion state.
 
 Run detail reconstructs this hierarchy from the immutable bundle plus durable invocation rows.
@@ -114,7 +149,8 @@ Run detail reconstructs this hierarchy from the immutable bundle plus durable in
 ## Design recommendations
 
 - Give reusable workflows small, explicit input and output contracts.
-- Keep code-host checkpoints near the root unless the child genuinely owns the review boundary.
+- Put a review checkpoint inside an isolated child when that child should own a
+  focused review request.
 - Avoid leaking a large number of child outputs into the parent.
 - Version parent and child changes in the same reviewed branch when their contract changes.
 - Use catalog tags such as `reusable`, `quality`, or `delivery` for discoverability; tags have no execution semantics.

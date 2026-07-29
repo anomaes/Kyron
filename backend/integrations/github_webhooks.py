@@ -5,7 +5,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import ChangeRequestLifecycleEvent, Project, WorkflowRun
+from backend.db.models import (
+    ChangeRequestLifecycleEvent,
+    GateInstance,
+    Project,
+    RunChangeRequest,
+    WorkflowRun,
+)
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 
@@ -33,10 +39,21 @@ async def route_github_event(
     number = pull_request.get("number") or (payload.get("issue") or {}).get("number")
     if not isinstance(number, int):
         return {"status": "ignored", "reason": "missing_pull_request"}
-    run = await session.scalar(
-        select(WorkflowRun).where(
-            WorkflowRun.project_id == project.id,
-            WorkflowRun.change_request_number == number,
+    managed_request = await session.scalar(
+        select(RunChangeRequest).where(
+            RunChangeRequest.project_id == project.id,
+            RunChangeRequest.provider == "github",
+            RunChangeRequest.provider_number == number,
+        )
+    )
+    run = (
+        await session.get(WorkflowRun, managed_request.run_id)
+        if managed_request is not None
+        else await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.project_id == project.id,
+                WorkflowRun.change_request_number == number,
+            )
         )
     )
     if run is None:
@@ -48,6 +65,16 @@ async def route_github_event(
         return {"status": "ignored", "reason": "missing_actor"}
 
     action = str(payload.get("action") or "")
+    gate = (
+        await session.scalar(
+            select(GateInstance).where(
+                GateInstance.change_request_id == managed_request.id,
+                GateInstance.status == "OPEN",
+            )
+        )
+        if managed_request is not None
+        else None
+    )
     if event_name == "pull_request_review" and action == "submitted":
         review = payload.get("review") or {}
         if str(review.get("state") or "").lower() != "approved":
@@ -61,6 +88,10 @@ async def route_github_event(
                 author_provider_user_id=str(actor_id),
                 author_username=actor_username,
                 provider_review_id=(str(review["id"]) if review.get("id") else None),
+                provider_head_sha=(
+                    str(review["commit_id"]) if review.get("commit_id") else None
+                ),
+                **({"gate_id": gate.id} if gate else {}),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
@@ -87,6 +118,7 @@ async def route_github_event(
                 author_username=actor_username,
                 message=message,
                 provider_comment_id=(str(comment["id"]) if comment.get("id") else None),
+                **({"gate_id": gate.id} if gate else {}),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
@@ -97,6 +129,7 @@ async def route_github_event(
         session.add(
             ChangeRequestLifecycleEvent(
                 run_id=run.id,
+                change_request_id=managed_request.id if managed_request else None,
                 event_type=lifecycle_action,
                 provider="github",
                 actor_provider_user_id=str(actor_id),
@@ -108,8 +141,11 @@ async def route_github_event(
                 ),
             )
         )
+        if managed_request is not None:
+            managed_request.status = "MERGED" if lifecycle_action == "merge" else "CLOSED"
         await session.commit()
-        await cleanup.cleanup_run(run.id)
+        if managed_request is None or managed_request.kind == "FINAL":
+            await cleanup.cleanup_run(run.id)
         return {
             "status": "processed",
             "action": lifecycle_action,

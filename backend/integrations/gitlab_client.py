@@ -291,10 +291,15 @@ class GitLabClient:
 
     async def get_change_request(self, repository: str, number: int, token: str) -> ChangeRequest:
         data = await self.get_merge_request(int(repository), number, token)
+        diff_refs = data.get("diff_refs") or {}
         return ChangeRequest(
             number=int(data["iid"]),
             url=str(data.get("web_url") or ""),
             state=str(data["state"]),
+            source_branch=str(data.get("source_branch") or ""),
+            target_branch=str(data.get("target_branch") or ""),
+            head_sha=str(data.get("sha") or diff_refs.get("head_sha") or ""),
+            target_sha=str(diff_refs.get("base_sha") or ""),
         )
 
     async def post_comment(
@@ -302,6 +307,32 @@ class GitLabClient:
     ) -> ProviderComment:
         data = await self.post_note(int(repository), number, token, body)
         return ProviderComment(id=str(data["id"]))
+
+    async def publish_commit_status(
+        self,
+        repository: str,
+        commit_sha: str,
+        token: str,
+        *,
+        state: str,
+        description: str,
+        target_url: str,
+    ) -> None:
+        payload = {
+            "state": state,
+            "description": description,
+            "name": "Kyron verification",
+        }
+        if target_url:
+            payload["target_url"] = target_url
+        await self.request(
+            "POST",
+            f"/projects/{quote(repository, safe='')}/statuses/{commit_sha}",
+            token,
+            category="commit status",
+            json=payload,
+            retry_get=False,
+        )
 
     async def consume_approval(
         self,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from backend.schemas.workflow import WorkflowDefinition, WorkflowNode
+from backend.schemas.workflow import SubworkflowNode, WorkflowDefinition, WorkflowNode
 
 
 class LogicalStatus(StrEnum):
@@ -82,6 +82,21 @@ class DagScheduler:
             (node for node in ready if node.type in CONTROL_TYPES), key=lambda node: node.id
         )
         if control_nodes:
+            first = control_nodes[0]
+            if (
+                isinstance(first, SubworkflowNode)
+                and first.config.execution_mode == "isolated_parallel"
+            ):
+                return ScheduleDecision(
+                    [
+                        node
+                        for node in control_nodes
+                        if isinstance(node, SubworkflowNode)
+                        and node.config.execution_mode == "isolated_parallel"
+                    ],
+                    skipped,
+                    control_boundary=True,
+                )
             return ScheduleDecision([control_nodes[0]], skipped, control_boundary=True)
         blocked = [
             node_id

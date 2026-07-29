@@ -81,3 +81,49 @@ def test_running_subworkflow_is_ready_for_continuation() -> None:
 
     assert [node.id for node in decision.nodes] == ["child"]
     assert decision.control_boundary
+
+
+def test_parallel_isolated_controls_are_batched_in_node_id_order() -> None:
+    def child(node_id: str, mode: str) -> dict[str, Any]:
+        return {
+            "id": node_id,
+            "type": "subworkflow",
+            "label": node_id,
+            "config": {"workflow_id": "other", "execution_mode": mode},
+        }
+
+    scheduler = scheduler_for(
+        [
+            child("a", "isolated_parallel"),
+            child("b", "isolated_parallel"),
+            child("c", "isolated"),
+        ],
+        [],
+    )
+    decision = scheduler.next({}, {})
+    assert [node.id for node in decision.nodes] == ["a", "b"]
+    assert decision.control_boundary
+
+
+def test_lower_shared_control_remains_a_serial_boundary() -> None:
+    scheduler = scheduler_for(
+        [
+            {
+                "id": "a",
+                "type": "subworkflow",
+                "label": "a",
+                "config": {"workflow_id": "other"},
+            },
+            {
+                "id": "b",
+                "type": "subworkflow",
+                "label": "b",
+                "config": {
+                    "workflow_id": "other",
+                    "execution_mode": "isolated_parallel",
+                },
+            },
+        ],
+        [],
+    )
+    assert [node.id for node in scheduler.next({}, {}).nodes] == ["a"]

@@ -74,3 +74,38 @@ replace that stable key with a project-managed policy.
 
 Terminal execution reports are immutable database snapshots. Provider merge/close events
 arriving after completion are append-only post-run lifecycle addenda.
+
+## D-009 — Parallel composition uses invocation-owned Git workspaces
+
+Accepted. A sub-workflow declares `shared`, `isolated`, or
+`isolated_parallel` execution. `shared` remains the default and preserves
+serialized execution in the parent workspace. Both isolated modes fork an exact
+parent checkpoint into a child branch and worktree; the parallel mode allows
+ready siblings to execute concurrently.
+
+The parent workspace is immutable for the lifetime of a parallel batch.
+Successful child heads integrate through explicit merge commits in parent
+node-ID order, and any conflict restores the exact batch base. Mapped outputs
+publish only after the complete Git transition succeeds. This makes filesystem,
+checkpoint, rollback, and public-context ownership coincide at the invocation
+boundary.
+
+Workspace review requests target the immediate parent branch and are distinct
+from the root final request. Gates link to workspace-review identities rather
+than a run-global current pointer, so simultaneous child approvals remain
+independent. Child request lifecycle events remain report evidence and never
+trigger whole-run cleanup.
+
+## D-010 — Verification separates the code subject from trusted definitions
+
+Accepted. A run subject is a branch or an open provider change request resolved
+to an immutable source commit. The executable workflow bundle has its own pinned
+definition revision. A `report_only` workflow takes that revision from the
+project default branch or an authorized Kyron local snapshot, so unreviewed
+subject code cannot replace the workflow or its credential policy.
+
+Report-only worktrees are disposable execution state: tools may write and Kyron
+may checkpoint locally, but no result branch or change request is published.
+Stored credentials resolve to none unless the trusted workflow explicitly
+selects an allowlist or all. Reports retain the subject identity, checked SHA,
+definition SHA, conclusion, and freshness as separate evidence.

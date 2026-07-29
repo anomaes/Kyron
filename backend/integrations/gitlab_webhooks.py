@@ -5,7 +5,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import ChangeRequestLifecycleEvent, Project, WorkflowRun
+from backend.db.models import (
+    ChangeRequestLifecycleEvent,
+    GateInstance,
+    Project,
+    RunChangeRequest,
+    WorkflowRun,
+)
 from backend.db.statuses import RunStatus
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
@@ -33,10 +39,21 @@ async def route_gitlab_event(
     mr_iid = merge_request.get("iid")
     if not isinstance(mr_iid, int):
         return {"status": "ignored", "reason": "missing_merge_request"}
-    run = await session.scalar(
-        select(WorkflowRun).where(
-            WorkflowRun.project_id == project.id,
-            WorkflowRun.change_request_number == mr_iid,
+    managed_request = await session.scalar(
+        select(RunChangeRequest).where(
+            RunChangeRequest.project_id == project.id,
+            RunChangeRequest.provider == "gitlab",
+            RunChangeRequest.provider_number == mr_iid,
+        )
+    )
+    run = (
+        await session.get(WorkflowRun, managed_request.run_id)
+        if managed_request is not None
+        else await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.project_id == project.id,
+                WorkflowRun.change_request_number == mr_iid,
+            )
         )
     )
     if run is None:
@@ -50,8 +67,18 @@ async def route_gitlab_event(
     object_kind = payload.get("object_kind")
     attributes = payload.get("object_attributes") or {}
     action = attributes.get("action")
+    gate = (
+        await session.scalar(
+            select(GateInstance).where(
+                GateInstance.change_request_id == managed_request.id,
+                GateInstance.status == "OPEN",
+            )
+        )
+        if managed_request is not None
+        else None
+    )
     if object_kind == "merge_request" and action in {"approval", "approved"}:
-        if action == "approved" and run.status != RunStatus.AWAITING_FEEDBACK:
+        if action == "approved" and gate is None and run.status != RunStatus.AWAITING_FEEDBACK:
             return {"status": "ignored", "reason": "duplicate_approved_event"}
         try:
             await feedback.accept(
@@ -61,6 +88,13 @@ async def route_gitlab_event(
                 author_provider="gitlab",
                 author_provider_user_id=str(actor_id),
                 author_username=actor_username,
+                provider_head_sha=(
+                    str(attributes["last_commit"]["id"])
+                    if isinstance(attributes.get("last_commit"), dict)
+                    and attributes["last_commit"].get("id")
+                    else None
+                ),
+                **({"gate_id": gate.id} if gate else {}),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
@@ -87,6 +121,7 @@ async def route_gitlab_event(
                 provider_comment_id=(
                     str(attributes["id"]) if attributes.get("id") is not None else None
                 ),
+                **({"gate_id": gate.id} if gate else {}),
             )
         except (PermissionError, FeedbackError) as exc:
             return {"status": "ignored", "reason": str(exc)}
@@ -96,6 +131,7 @@ async def route_gitlab_event(
         session.add(
             ChangeRequestLifecycleEvent(
                 run_id=run.id,
+                change_request_id=managed_request.id if managed_request else None,
                 event_type=action,
                 provider="gitlab",
                 actor_provider_user_id=str(actor_id),
@@ -107,7 +143,10 @@ async def route_gitlab_event(
                 ),
             )
         )
+        if managed_request is not None:
+            managed_request.status = "MERGED" if action == "merge" else "CLOSED"
         await session.commit()
-        await cleanup.cleanup_run(run.id)
+        if managed_request is None or managed_request.kind == "FINAL":
+            await cleanup.cleanup_run(run.id)
         return {"status": "processed", "action": action}
     return {"status": "ignored", "reason": "unhandled_event"}

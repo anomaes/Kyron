@@ -62,6 +62,10 @@ class ChangeRequest:
     number: int
     url: str
     state: str
+    source_branch: str | None = None
+    target_branch: str | None = None
+    head_sha: str | None = None
+    target_sha: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +116,17 @@ class CodeHostClient(Protocol):
     async def post_comment(
         self, repository: str, number: int, token: str, body: str
     ) -> ProviderComment: ...
+
+    async def publish_commit_status(
+        self,
+        repository: str,
+        commit_sha: str,
+        token: str,
+        *,
+        state: str,
+        description: str,
+        target_url: str,
+    ) -> None: ...
 
     async def consume_approval(
         self,

@@ -13,9 +13,13 @@ from backend.db.models import (
     ChangeRequestLifecycleEvent,
     GateDecision,
     GateInstance,
+    InvocationWorkspace,
     NodeExecution,
     Project,
+    RunChangeRequest,
     RunReport,
+    SubworkflowBatch,
+    SubworkflowBatchMember,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -101,8 +105,47 @@ class ReportService:
                 .order_by(AuthorizationAuditEvent.id)
             )
         )
+        workspaces = list(
+            await self.session.scalars(
+                select(InvocationWorkspace)
+                .where(InvocationWorkspace.run_id == run.id)
+                .order_by(InvocationWorkspace.created_at)
+            )
+        )
+        batches = list(
+            await self.session.scalars(
+                select(SubworkflowBatch)
+                .where(SubworkflowBatch.run_id == run.id)
+                .order_by(SubworkflowBatch.created_at)
+            )
+        )
+        members = (
+            list(
+                await self.session.scalars(
+                    select(SubworkflowBatchMember)
+                    .where(
+                        SubworkflowBatchMember.batch_id.in_(
+                            [item.id for item in batches]
+                        )
+                    )
+                    .order_by(
+                        SubworkflowBatchMember.batch_id,
+                        SubworkflowBatchMember.integration_order,
+                    )
+                )
+            )
+            if batches
+            else []
+        )
+        change_requests = list(
+            await self.session.scalars(
+                select(RunChangeRequest)
+                .where(RunChangeRequest.run_id == run.id)
+                .order_by(RunChangeRequest.created_at)
+            )
+        )
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "run": {
                 "id": str(run.id),
                 "status": run.status,
@@ -111,6 +154,16 @@ class ReportService:
                 "project_name": project.name if project else "Unknown project",
                 "base_ref": run.base_ref,
                 "base_commit_sha": run.base_commit_sha,
+                "subject_type": run.subject_type,
+                "subject_ref": run.subject_ref,
+                "subject_change_request_number": run.subject_change_request_number,
+                "subject_change_request_url": run.subject_change_request_url,
+                "subject_target_ref": run.subject_target_ref,
+                "subject_commit_sha": run.subject_commit_sha,
+                "subject_current_head_sha": run.subject_current_head_sha,
+                "delivery_mode": run.delivery_mode,
+                "verification_conclusion": run.verification_conclusion,
+                "verification_freshness": run.verification_freshness,
                 "workflow_definition_commit_sha": run.workflow_definition_commit_sha,
                 "final_commit_sha": run.final_commit_sha,
                 "branch_name": run.branch_name,
@@ -123,6 +176,10 @@ class ReportService:
                 "error_message": run.error_message,
             },
             "invocations": [_row(item) for item in invocations],
+            "workspaces": [_row(item) for item in workspaces],
+            "subworkflow_batches": [_row(item) for item in batches],
+            "subworkflow_batch_members": [_row(item) for item in members],
+            "change_requests": [_row(item) for item in change_requests],
             "gates": gate_items,
             "audit_events": [_row(item) for item in audit],
         }

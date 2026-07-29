@@ -188,7 +188,17 @@ class GitHubClient:
         )
         assert isinstance(data, dict)
         state = "merged" if data.get("merged") is True else str(data["state"])
-        return ChangeRequest(number=number, url=str(data["html_url"]), state=state)
+        head = data.get("head") or {}
+        base = data.get("base") or {}
+        return ChangeRequest(
+            number=number,
+            url=str(data["html_url"]),
+            state=state,
+            source_branch=str(head.get("ref") or ""),
+            target_branch=str(base.get("ref") or ""),
+            head_sha=str(head.get("sha") or ""),
+            target_sha=str(base.get("sha") or ""),
+        )
 
     async def post_comment(
         self, repository: str, number: int, token: str, body: str
@@ -203,6 +213,32 @@ class GitHubClient:
         )
         assert isinstance(data, dict)
         return ProviderComment(id=str(data["id"]))
+
+    async def publish_commit_status(
+        self,
+        repository: str,
+        commit_sha: str,
+        token: str,
+        *,
+        state: str,
+        description: str,
+        target_url: str,
+    ) -> None:
+        payload = {
+            "state": state,
+            "description": description[:140],
+            "context": "Kyron verification",
+        }
+        if target_url:
+            payload["target_url"] = target_url
+        await self.request(
+            "POST",
+            f"/repos/{self._repository_path(repository)}/statuses/{commit_sha}",
+            token,
+            category="commit status",
+            json=payload,
+            retry_get=False,
+        )
 
     async def consume_approval(
         self,

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import (
     EdgeEvaluation,
     ExecutionWave,
+    InvocationWorkspace,
     NodeAttempt,
     NodeExecution,
     WorkflowInvocation,
@@ -72,9 +73,12 @@ class WaveExecutor:
         nodes: list[ProcessWorkflowNode],
         project_pi: PiSettings | None = None,
     ) -> ExecutionWave:
-        if not run.worktree_path or not run.run_data_path:
+        if not invocation.workspace_id or not run.run_data_path:
             raise WaveExecutionError(uuid.uuid4(), "Run filesystem paths are not configured")
-        worktree = Path(run.worktree_path)
+        workspace = await self.session.get(InvocationWorkspace, invocation.workspace_id)
+        if workspace is None:
+            raise WaveExecutionError(uuid.uuid4(), "Invocation workspace does not exist")
+        worktree = Path(workspace.worktree_path)
         run_data = Path(run.run_data_path)
         await self.git.ensure_clean(worktree)
         start_sha = await self.git.head_sha(worktree)
@@ -89,6 +93,7 @@ class WaveExecutor:
         wave = ExecutionWave(
             run_id=run.id,
             invocation_id=invocation.id,
+            workspace_id=workspace.id,
             wave_index=wave_index,
             status=WaveStatus.RUNNING,
             start_commit_sha=start_sha,
@@ -129,8 +134,9 @@ class WaveExecutor:
             self.session.add(attempt)
             executions[node.id] = execution
             attempts[node.id] = attempt
-        run.current_invocation_id = invocation.id
-        run.current_wave_id = wave.id
+        if workspace.mode == "ROOT":
+            run.current_invocation_id = invocation.id
+            run.current_wave_id = wave.id
         if self.engine_logs is not None:
             await self.engine_logs.write(
                 run.id,
@@ -180,7 +186,14 @@ class WaveExecutor:
                 node.type,
                 attempt.attempt_number,
             )
-            secrets = await self.credential_loader(run.triggered_by)
+            policy = run.effective_credential_policy or {"mode": "all", "keys": []}
+            if policy.get("mode") == "none":
+                secrets = {}
+            else:
+                secrets = await self.credential_loader(run.triggered_by)
+            if policy.get("mode") == "allowlist":
+                allowed = set(policy.get("keys", []))
+                secrets = {key: value for key, value in secrets.items() if key in allowed}
             node_pi = (
                 PiSettings(
                     provider=node.config.provider,
@@ -202,7 +215,7 @@ class WaveExecutor:
                     output_directory=node_attempt_directory(
                         run_data, execution.node_path, attempt.attempt_number
                     ),
-                    public_context=dict(run.public_context),
+                    public_context=dict(invocation.public_context),
                     secrets=secrets,
                     default_timeout=workflow.settings.timeout_per_node_seconds,
                     max_preview_bytes=workflow.settings.max_output_variable_bytes,
@@ -344,9 +357,13 @@ class WaveExecutor:
             try:
                 await self.git.reset_wave(worktree, start_sha)
             except Exception as exc:
-                run.status = RunStatus.FAILED
-                run.error_type = "WORKTREE_RECOVERY_FAILED"
-                run.error_message = str(exc)
+                workspace.status = "FAILED"
+                workspace.error_type = "WORKTREE_RECOVERY_FAILED"
+                workspace.error_message = str(exc)
+                if workspace.mode == "ROOT":
+                    run.status = RunStatus.FAILED
+                    run.error_type = "WORKTREE_RECOVERY_FAILED"
+                    run.error_message = str(exc)
                 await self.session.commit()
                 logger.exception(
                     "Wave rollback failed (run=%s, wave=%s, commit=%s): %s",
@@ -357,10 +374,14 @@ class WaveExecutor:
                 )
                 raise WaveExecutionError(wave.id, str(exc)) from exc
             wave.status = WaveStatus.ROLLED_BACK
-            run.status = RunStatus.FAILED
-            run.error_type = "NODE_FAILURE"
-            run.error_message = wave.error_message
-            run.current_node_execution_id = executions[failed_node_id].id
+            workspace.status = "FAILED"
+            workspace.error_type = "NODE_FAILURE"
+            workspace.error_message = wave.error_message
+            if workspace.mode == "ROOT":
+                run.status = RunStatus.FAILED
+                run.error_type = "NODE_FAILURE"
+                run.error_message = wave.error_message
+                run.current_node_execution_id = executions[failed_node_id].id
             if self.engine_logs is not None:
                 await self.engine_logs.write(
                     run.id,
@@ -397,7 +418,9 @@ class WaveExecutor:
                 relative_stderr,
             )
             execution.output_values = values
-            run.public_context = {**run.public_context, **values}
+            invocation.public_context = {**invocation.public_context, **values}
+            if invocation.parent_invocation_id is None:
+                run.public_context = dict(invocation.public_context)
             for edge in workflow.edges:
                 if edge.source != node.id:
                     continue
@@ -406,7 +429,7 @@ class WaveExecutor:
                     exit_code=result.exit_code,
                     stdout=result.stdout_preview,
                     stderr=result.stderr_preview,
-                    public_context=run.public_context,
+                    public_context=invocation.public_context,
                     worktree=worktree,
                 )
                 self.session.add(
@@ -424,7 +447,7 @@ class WaveExecutor:
         commit_message = expand_public_variables(
             workflow.settings.wave_commit_message_template,
             {
-                **run.public_context,
+                **invocation.public_context,
                 "WORKFLOW_ID": workflow.id,
                 "WAVE_INDEX": wave.wave_index,
             },
@@ -437,7 +460,10 @@ class WaveExecutor:
         wave.end_commit_sha = end_sha
         wave.status = WaveStatus.SUCCESS
         wave.finished_at = datetime.now(UTC)
-        run.current_head_sha = end_sha
+        workspace.current_head_sha = end_sha
+        workspace.status = "RUNNING"
+        if workspace.mode == "ROOT":
+            run.current_head_sha = end_sha
         if self.engine_logs is not None:
             await self.engine_logs.write(
                 run.id,

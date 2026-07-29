@@ -293,6 +293,63 @@ def test_reference_depth_limit_is_enforced() -> None:
     assert "MAX_SUBWORKFLOW_DEPTH" in codes(report)
 
 
+def test_subworkflow_execution_modes_are_backward_compatible() -> None:
+    for mode in ("shared", "isolated", "isolated_parallel"):
+        config: dict[str, Any] = {"workflow_id": "child"}
+        if mode != "shared":
+            config["execution_mode"] = mode
+        definition = parsed(
+            workflow(
+                nodes=[
+                    {
+                        "id": "call",
+                        "type": "subworkflow",
+                        "label": "call",
+                        "config": config,
+                    }
+                ]
+            )
+        )
+        node = definition.nodes[0]
+        assert node.type == "subworkflow"
+        assert node.config.execution_mode == mode
+
+
+def test_parallel_output_collisions_are_rejected_unless_nodes_are_ordered() -> None:
+    child = parsed(
+        workflow(
+            "child",
+            outputs={"RESULT": {"type": "string", "source": "${VALUE}"}},
+        )
+    )
+
+    def parallel_node(node_id: str) -> dict[str, Any]:
+        return {
+            "id": node_id,
+            "type": "subworkflow",
+            "label": node_id,
+            "config": {
+                "workflow_id": "child",
+                "execution_mode": "isolated_parallel",
+                "output_mapping": {"RESULT": "PARENT_RESULT"},
+            },
+        }
+
+    siblings = parsed(workflow(nodes=[parallel_node("a"), parallel_node("b")]))
+    report = validate_workflow_bundle("root", {"root": siblings, "child": child})
+    assert "PARALLEL_OUTPUT_COLLISION" in codes(report)
+
+    ordered = parsed(
+        workflow(
+            nodes=[parallel_node("a"), parallel_node("b")],
+            edges=[edge("a", "b")],
+        )
+    )
+    assert validate_workflow_bundle(
+        "root", {"root": ordered, "child": child}
+    ).valid
+
+
 def test_typed_trigger_inputs_apply_defaults_and_reject_wrong_types() -> None:
     definition = parsed(
         workflow(
@@ -308,3 +365,38 @@ def test_typed_trigger_inputs_apply_defaults_and_reject_wrong_types() -> None:
     }
     with pytest.raises(ValueError, match="wrong type"):
         validate_trigger_inputs(definition, {"TASK": 2})
+
+
+def test_report_only_rejects_transitive_feedback_nodes() -> None:
+    root_data = workflow(
+        nodes=[
+            {
+                "id": "child",
+                "type": "subworkflow",
+                "label": "child",
+                "config": {"workflow_id": "gated"},
+            }
+        ],
+    )
+    root_data["settings"] = {"delivery_mode": "report_only"}
+    root = parsed(root_data)
+    gated = parsed(
+        workflow(
+            "gated",
+            nodes=[
+                {
+                    "id": "approval",
+                    "type": "human_feedback",
+                    "label": "approval",
+                    "config": {},
+                }
+            ],
+        )
+    )
+
+    report = validate_workflow_bundle(
+        root.id, {root.id: root, gated.id: gated}
+    )
+
+    assert root.settings.credential_access.mode == "default"
+    assert "REPORT_ONLY_FEEDBACK_UNSUPPORTED" in codes(report)

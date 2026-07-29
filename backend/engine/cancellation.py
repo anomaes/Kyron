@@ -6,7 +6,15 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import ExecutionWave, NodeAttempt, NodeExecution, WorkflowRun
+from backend.db.models import (
+    ExecutionWave,
+    GateInstance,
+    InvocationWorkspace,
+    NodeAttempt,
+    NodeExecution,
+    SubworkflowBatch,
+    WorkflowRun,
+)
 from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
 from backend.engine.process_registry import ProcessRegistry
 from backend.engine.task_registry import TaskRegistry
@@ -49,7 +57,34 @@ async def cancel_run(
         .where(ExecutionWave.run_id == run.id, ExecutionWave.status == WaveStatus.RUNNING)
         .values(status=WaveStatus.CANCELLED, finished_at=now)
     )
+    await session.execute(
+        update(InvocationWorkspace)
+        .where(
+            InvocationWorkspace.run_id == run.id,
+            InvocationWorkspace.status.in_(
+                ["CREATING", "READY", "RUNNING", "AWAITING_FEEDBACK", "INTEGRATING"]
+            ),
+        )
+        .values(status="CANCELLED", finished_at=now)
+    )
+    await session.execute(
+        update(SubworkflowBatch)
+        .where(
+            SubworkflowBatch.run_id == run.id,
+            SubworkflowBatch.status.in_(
+                ["CREATING", "RUNNING", "BLOCKED", "INTEGRATING"]
+            ),
+        )
+        .values(status="CANCELLED", finished_at=now)
+    )
+    await session.execute(
+        update(GateInstance)
+        .where(GateInstance.run_id == run.id, GateInstance.status == "OPEN")
+        .values(status="CANCELLED", resolved_at=now)
+    )
     run.status = RunStatus.CANCELLED
+    if run.delivery_mode == "REPORT_ONLY":
+        run.verification_conclusion = "CANCELLED"
     run.finished_at = now
     await session.commit()
     return run

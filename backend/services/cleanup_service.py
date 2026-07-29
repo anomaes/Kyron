@@ -18,11 +18,15 @@ from backend.db.models import (
     FeedbackEvent,
     GateDecision,
     GateInstance,
+    InvocationWorkspace,
     NodeAttempt,
     NodeExecution,
     Project,
+    RunChangeRequest,
     RunLog,
     RunReport,
+    SubworkflowBatch,
+    SubworkflowBatchMember,
     WorkflowInvocation,
     WorkflowRun,
 )
@@ -121,6 +125,21 @@ class CleanupService:
         )
         await self.session.execute(delete(NodeExecution).where(NodeExecution.run_id == run_id))
         await self.session.execute(delete(ExecutionWave).where(ExecutionWave.run_id == run_id))
+        batch_ids = select(SubworkflowBatch.id).where(SubworkflowBatch.run_id == run_id)
+        await self.session.execute(
+            delete(SubworkflowBatchMember).where(
+                SubworkflowBatchMember.batch_id.in_(batch_ids)
+            )
+        )
+        await self.session.execute(
+            delete(SubworkflowBatch).where(SubworkflowBatch.run_id == run_id)
+        )
+        await self.session.execute(
+            delete(RunChangeRequest).where(RunChangeRequest.run_id == run_id)
+        )
+        await self.session.execute(
+            delete(InvocationWorkspace).where(InvocationWorkspace.run_id == run_id)
+        )
         await self.session.execute(
             delete(WorkflowInvocation).where(WorkflowInvocation.run_id == run_id)
         )
@@ -135,11 +154,27 @@ class CleanupService:
 
     async def cleanup_worktree(self, run: WorkflowRun) -> None:
         project = await self.session.get(Project, run.project_id)
-        if project and run.worktree_path:
+        workspaces = list(
+            await self.session.scalars(
+                select(InvocationWorkspace)
+                .where(InvocationWorkspace.run_id == run.id)
+                .order_by(InvocationWorkspace.mode)
+            )
+        )
+        if project:
             async with project_git_locks.for_project(project.id):
-                await self.git.remove_worktree(
-                    Path(project.local_path), Path(run.worktree_path), run.branch_name
-                )
+                removed_paths: set[str] = set()
+                for workspace in workspaces:
+                    await self.git.remove_worktree(
+                        Path(project.local_path),
+                        Path(workspace.worktree_path),
+                        workspace.branch_name,
+                    )
+                    removed_paths.add(workspace.worktree_path)
+                if run.worktree_path and run.worktree_path not in removed_paths:
+                    await self.git.remove_worktree(
+                        Path(project.local_path), Path(run.worktree_path), run.branch_name
+                    )
             run.worktree_path = None
 
     async def cleanup_output(

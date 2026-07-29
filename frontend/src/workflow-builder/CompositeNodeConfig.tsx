@@ -62,6 +62,11 @@ export function CompositeNodeConfig({ node, workflows, onChange }: Props) {
     const child = workflowFor("workflow_id");
     return <div className="structured-config">
       <WorkflowPicker id={`${node.id}-child`} label="Child workflow" value={String(config.workflow_id ?? "")} workflows={workflows} onChange={(value) => set("workflow_id", value)} />
+      <label>Execution workspace<select value={String(config.execution_mode ?? "shared")} onChange={(event) => set("execution_mode", event.target.value)}>
+        <option value="shared">Shared — serialized in parent</option>
+        <option value="isolated">Isolated — separate branch</option>
+        <option value="isolated_parallel">Isolated parallel — concurrent siblings</option>
+      </select><span className="field-help">Isolation creates a child worktree and rollback boundary. Parallel siblings run concurrently and integrate in node-ID order.</span></label>
       <MappingFields title="Input mappings" definitions={child?.inputs ?? {}} values={record(config.inputs)} valuePlaceholder="${PARENT_VARIABLE}" help="Each row is a declared child input. Enter the parent value or expression passed into it." onChange={(value) => set("inputs", value)} />
       <MappingFields title="Output mappings" definitions={child?.outputs ?? {}} values={record(config.output_mapping)} valuePlaceholder="PARENT_VARIABLE" help="Each row is a declared child output. Enter the variable name it should receive in this parent." onChange={(value) => set("output_mapping", value)} />
       <label className="check-field"><input type="checkbox" checked={Boolean(config.allow_failure)} onChange={(event) => set("allow_failure", event.target.checked)} />Allow failure</label>

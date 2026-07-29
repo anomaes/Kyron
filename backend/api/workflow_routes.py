@@ -281,8 +281,9 @@ async def trigger_workflow(
             project,
             user,
             workflow_id,
-            request.base_ref,
             request.inputs,
+            subject=request.subject,
+            base_ref=request.base_ref,
             use_local_definitions=request.use_local_definitions,
         )
     except (ValueError, RuntimeError) as exc:
@@ -300,7 +301,14 @@ async def trigger_workflow(
         )
     )
     await db.commit()
-    return RunTriggerResponse(run_id=run.id, status=run.status, base_commit_sha=run.base_commit_sha)
+    return RunTriggerResponse(
+        run_id=run.id,
+        status=run.status,
+        base_commit_sha=run.base_commit_sha,
+        delivery_mode=run.delivery_mode,
+        subject_commit_sha=run.subject_commit_sha,
+        workflow_definition_commit_sha=run.workflow_definition_commit_sha,
+    )
 
 
 @router.put("/{workflow_id}")

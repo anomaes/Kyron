@@ -47,7 +47,7 @@ headers and secrets.
 | GET | `/api/runs` | Filtered, paginated run list |
 | GET | `/api/runs/{run_id}` | Durable run state |
 | DELETE | `/api/runs/{run_id}` | Permanently remove an inactive run and its local resources; requires `run.delete` |
-| GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, waves, nodes, attempts, edges, feedback |
+| GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, workspaces, batches, change requests, waves, nodes, attempts, edges, and gates |
 | GET | `/api/runs/{run_id}/report` | Live or immutable terminal traceability report plus post-run lifecycle addenda |
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}` | Node and attempt history |
@@ -58,6 +58,9 @@ headers and secrets.
 | POST | `/api/runs/{run_id}/approve` | Continue the current human checkpoint |
 | POST | `/api/runs/{run_id}/feedback` | Submit revision feedback and continue |
 | POST | `/api/runs/{run_id}/override-gate` | Audited project-administrator gate override with reason |
+| POST | `/api/runs/{run_id}/gates/{gate_id}/approve` | Record an approval for one open gate |
+| POST | `/api/runs/{run_id}/gates/{gate_id}/feedback` | Submit revision feedback to one open gate |
+| POST | `/api/runs/{run_id}/gates/{gate_id}/override` | Audited project-administrator override for one open gate |
 | POST | `/api/webhook/gitlab` | Authenticated, idempotent GitLab events |
 | POST | `/api/webhook/github` | Authenticated, idempotent GitHub events |
 | WS | `/api/ws/runs/{run_id}/logs?after_id=N` | Replayed then live run events |
@@ -79,10 +82,16 @@ contains complete definitions so the builder can populate searchable child-workf
 selectors and generate input/output mapping controls from each child's declared
 schema.
 
-The run-graph response includes every invocation and node execution, not only the
-root invocation. The frontend uses `parent_invocation_id`,
-`parent_node_execution_id`, `loop_iteration`, and `invocation_path` to expand child
-workflow instances and order review-loop rounds.
+The run-graph response includes every invocation, workspace, sub-workflow batch,
+managed change request, gate, and node execution, not only the root invocation.
+The frontend uses `parent_invocation_id`, `parent_node_execution_id`,
+`loop_iteration`, and `invocation_path` to expand child workflow instances and
+order review-loop rounds.
+
+The run-only approval, feedback, and override routes are compatibility
+endpoints. They return `409 Conflict` when zero or multiple open gates make the
+target ambiguous. New clients address `gate_id` explicitly, including while a
+sibling isolated workspace is still running.
 
 ## Common workflows
 
@@ -96,18 +105,27 @@ POST /api/projects/<project-id>/workflows/validate
 }
 ```
 
-Triggering resolves the requested ref to an exact SHA before the run row is
-committed. Set `use_local_definitions` only for a local test; Kyron then creates an
-exact local definition commit and disables push/change-request creation for that run:
+Triggering accepts either a branch or an open provider change request and resolves
+its source to an exact SHA before the run row is committed. `base_ref` remains a
+deprecated branch-subject shorthand. Set `use_local_definitions` only for a local
+test; Kyron then creates an exact local definition commit and disables
+push/change-request creation for that run:
 
 ```json
 POST /api/projects/<project-id>/workflows/full_review/runs
 {
-  "base_ref": "main",
+  "subject": { "type": "branch", "ref": "main" },
   "use_local_definitions": false,
   "inputs": { "TASK": "Add validation to the import endpoint" }
 }
 ```
+
+A change-request subject uses
+`{"type":"change_request","number":42}`. The response identifies
+`delivery_mode`, `subject_commit_sha`, and `workflow_definition_commit_sha`.
+Report-only workflows load definitions from the trusted default branch, execute
+against the pinned subject commit, and never publish a result branch or create a
+change request.
 
 Reconnect log clients with the last received engine-log sequence. The server
 replays durable events with larger IDs and then switches to live delivery.

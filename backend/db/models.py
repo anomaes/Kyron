@@ -275,6 +275,29 @@ class WorkflowRun(Base):
     status_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     base_ref: Mapped[str] = mapped_column(String(255), nullable=False)
     base_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject_type: Mapped[str] = mapped_column(String(30), nullable=False, default="BRANCH")
+    subject_ref: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    subject_change_request_number: Mapped[int | None] = mapped_column(Integer)
+    subject_change_request_url: Mapped[str | None] = mapped_column(Text)
+    subject_target_ref: Mapped[str | None] = mapped_column(String(255))
+    subject_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    subject_target_commit_sha: Mapped[str | None] = mapped_column(String(40))
+    subject_current_head_sha: Mapped[str | None] = mapped_column(String(40))
+    subject_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    subject_availability: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="ACTIVE"
+    )
+    delivery_mode: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="PROPOSE_CHANGES"
+    )
+    effective_credential_policy: Mapped[dict[str, Any]] = mapped_column(
+        JSON_TYPE, nullable=False, default=dict
+    )
+    verification_conclusion: Mapped[str | None] = mapped_column(String(30))
+    verification_freshness: Mapped[str | None] = mapped_column(String(30))
+    verification_published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     workflow_definition_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
     workflow_bundle_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSON_TYPE, nullable=False, default=dict
@@ -324,10 +347,131 @@ class WorkflowInvocation(Base):
     parent_node_execution_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     loop_iteration: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     input_context: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    public_context: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     output_context: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="SET NULL"), index=True
+    )
+    scheduler_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InvocationWorkspace(Base):
+    __tablename__ = "invocation_workspaces"
+    __table_args__ = (
+        UniqueConstraint("owner_invocation_id"),
+        Index("ix_invocation_workspaces_run_status", "run_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    owner_invocation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_invocations.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="CASCADE")
+    )
+    mode: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="CREATING")
+    base_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    current_head_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    integrated_head_sha: Mapped[str | None] = mapped_column(String(40))
+    branch_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    worktree_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_type: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class SubworkflowBatch(Base):
+    __tablename__ = "subworkflow_batches"
+    __table_args__ = (
+        Index("ix_subworkflow_batches_run_status", "run_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    parent_invocation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_invocations.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    base_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="CREATING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_type: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class SubworkflowBatchMember(Base):
+    __tablename__ = "subworkflow_batch_members"
+    __table_args__ = (
+        UniqueConstraint("parent_node_execution_id"),
+        UniqueConstraint("child_invocation_id"),
+        UniqueConstraint("child_workspace_id"),
+        UniqueConstraint("batch_id", "integration_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subworkflow_batches.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    parent_node_execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("node_executions.id", ondelete="CASCADE"), nullable=False
+    )
+    child_invocation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_invocations.id", ondelete="CASCADE"), nullable=False
+    )
+    child_workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    integration_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    allow_failure: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="PENDING")
+    integrated_commit_sha: Mapped[str | None] = mapped_column(String(40))
+
+
+class RunChangeRequest(Base):
+    __tablename__ = "run_change_requests"
+    __table_args__ = (
+        UniqueConstraint("project_id", "provider", "provider_number"),
+        Index("ix_run_change_requests_run_status", "run_id", "status"),
+        Index("ix_run_change_requests_source_target", "source_branch", "target_branch"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_branch: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_branch: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
+    head_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_sha: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class ExecutionWave(Base):
@@ -338,6 +482,9 @@ class ExecutionWave(Base):
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
     invocation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("workflow_invocations.id", ondelete="CASCADE"), index=True
+    )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="SET NULL"), index=True
     )
     wave_index: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
@@ -441,6 +588,12 @@ class GateInstance(Base):
     node_execution_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("node_executions.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invocation_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    change_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("run_change_requests.id", ondelete="SET NULL"), index=True
+    )
     iteration: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     checkpoint_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
     policy_key: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -510,6 +663,9 @@ class ChangeRequestLifecycleEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    change_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("run_change_requests.id", ondelete="SET NULL"), index=True
     )
     event_type: Mapped[str] = mapped_column(String(30), nullable=False)
     provider: Mapped[str] = mapped_column(String(30), nullable=False)
