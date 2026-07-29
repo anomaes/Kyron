@@ -68,12 +68,12 @@ def validate_workflow_bundle(
                 )
             ],
         )
-    if filename and filename != f"{root.id}.json":
+    if filename and filename != f"{root.id}.yaml":
         errors.append(
             ValidationIssue(
                 path="workflow.id",
                 code="FILENAME_MISMATCH",
-                message=f"Workflow filename must be '{root.id}.json'",
+                message=f"Workflow filename must be '{root.id}.yaml'",
             )
         )
 

@@ -12,22 +12,21 @@ exact commit, a snapshotted project approval policy, and the active change reque
 
 Use `human_feedback` when the workflow should stop once, present the current branch for review, and then continue on approval or comment feedback.
 
-```json
-{
-  "id": "review",
-  "type": "human_feedback",
-  "label": "Review implementation",
-  "join": "and",
-  "config": {
-    "approval_policy": "default",
-    "commit_message": "Checkpoint: implementation ready for review",
-    "mr_title": "Review ${WORKFLOW_NAME}",
-    "mr_description": "Inspect run ${RUN_ID} at ${BASE_COMMIT_SHA}.",
-    "allow_comment_feedback": true,
-    "allow_approval": true
-  },
-  "position": { "x": 620, "y": 120 }
-}
+```yaml
+id: review
+type: human_feedback
+label: Review implementation
+join: and
+config:
+  approval_policy: default
+  commit_message: 'Checkpoint: implementation ready for review'
+  mr_title: Review ${WORKFLOW_NAME}
+  mr_description: Inspect run ${RUN_ID} at ${BASE_COMMIT_SHA}.
+  allow_comment_feedback: true
+  allow_approval: true
+position:
+  x: 620
+  y: 120
 ```
 
 When reached, Kyron commits pending work, resolves the selected approval policy, snapshots

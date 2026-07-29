@@ -83,7 +83,7 @@ Kyron validates the provider metadata, stores canonical project identity, encryp
 
 Workflow files live in the registered repository at:
 
-<span class="doc-path">.workflowEngine/&lt;workflow_id&gt;.json</span>
+<span class="doc-path">.workflowEngine/&lt;workflow_id&gt;.yaml</span>
 
 Commit the [first workflow](/getting-started/first-workflow) to the repository's default branch. Refresh the workflow catalog, choose **Run**, select a base ref, and supply the required inputs.
 

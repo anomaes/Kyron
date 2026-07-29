@@ -678,22 +678,22 @@ later iteration resolves current membership into a new snapshot at its new check
 
 ## 5.1 Storage Location
 
-Workflow files are JSON documents stored in the repository:
+Workflow files are YAML documents stored in the repository:
 
 ```text
 repo-root/
 └── .workflowEngine/
     ├── delivery/
-    │   ├── full_review.json
-    │   └── implement_changes.json
+    │   ├── full_review.yaml
+    │   └── implement_changes.yaml
     ├── quality/
-    │   ├── revise_from_feedback.json
-    │   └── test_and_validate.json
+    │   ├── revise_from_feedback.yaml
+    │   └── test_and_validate.yaml
     └── templates/
-        └── print_text.json
+        └── print_text.yaml
 ```
 
-Node templates are project-scoped JSON documents. Each template contains an ID,
+Node templates are project-scoped YAML documents. Each template contains an ID,
 display name, description, and one fully validated workflow node. Inserting a
 template clones the node and assigns a unique node ID and canvas position.
 
@@ -720,7 +720,12 @@ Workflow IDs, node IDs, input names, output names, and variable names must match
 ^[A-Za-z][A-Za-z0-9_]*$
 ```
 
-Workflow filenames must equal `<workflow_id>.json`.
+Workflow filenames must equal `<workflow_id>.yaml`.
+
+Each file contains one YAML document with a top-level mapping. Parsing uses safe,
+deterministic scalar resolution. Mapping keys must be unique; aliases, anchors,
+merge keys, and custom tags are rejected. Multiline strings are serialized as
+literal block scalars so prompts and commands remain readable in code review.
 
 Workflow definitions may be placed at any depth below `.workflowEngine/`. The relative
 folder path is catalog metadata and the UI mirrors that hierarchy. The top-level
@@ -736,70 +741,63 @@ resolution.
 
 ## 5.3 Root Schema
 
-```json
-{
-  "id": "full_review",
-  "name": "Full AI Review",
-  "description": "Implements a task, validates it, and repeats revisions after review feedback.",
-  "version": 2,
-  "created_by": "user@example.com",
-  "tags": ["implementation", "team-platform"],
+```yaml
+id: full_review
+name: Full AI Review
+description: Implements a task, validates it, and repeats revisions after review feedback.
+version: 2
+created_by: user@example.com
+tags:
+  - implementation
+  - team-platform
+inputs:
+  TASK:
+    type: string
+    required: true
+    description: Task to implement
+outputs:
+  FINAL_TEST_STATUS:
+    type: string
+    source: ${NODE_final_tests_EXIT_CODE}
+variables:
+  TARGET_DIR: src/
+  TEST_COMMAND: python -m pytest -q
+nodes: []
+edges: []
+settings:
+  pi:
+    provider: anthropic
+    model: anthropic/claude-sonnet-4-5
+    skill: .agents/skills/implementation/SKILL.md
+  auto_commit_after_wave: true
+  wave_commit_message_template: 'workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}'
+  final_commit_message_template: 'workflow(${WORKFLOW_ID}): complete run ${RUN_ID}'
+  mr_title_template: 'Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})'
+  mr_description_template: |-
+    Automated workflow run triggered by ${USER_NAME}.
 
-  "inputs": {
-    "TASK": {
-      "type": "string",
-      "required": true,
-      "description": "Task to implement"
-    }
-  },
-
-  "outputs": {
-    "FINAL_TEST_STATUS": {
-      "type": "string",
-      "source": "${NODE_final_tests_EXIT_CODE}"
-    }
-  },
-
-  "variables": {
-    "TARGET_DIR": "src/",
-    "TEST_COMMAND": "python -m pytest -q"
-  },
-
-  "nodes": [],
-  "edges": [],
-
-  "settings": {
-    "pi": {
-      "provider": "anthropic",
-      "model": "anthropic/claude-sonnet-4-5",
-      "skill": ".agents/skills/implementation/SKILL.md"
-    },
-    "auto_commit_after_wave": true,
-    "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
-    "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}",
-    "mr_title_template": "Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})",
-    "mr_description_template": "Automated workflow run triggered by ${USER_NAME}.\n\nWorkflow: ${WORKFLOW_NAME}\nBase commit: ${BASE_COMMIT_SHA}\nRun: ${RUN_ID}",
-    "timeout_per_node_seconds": 1800,
-    "max_review_iterations": 5,
-    "max_subworkflow_depth": 8,
-    "max_output_variable_bytes": 65536
-  }
-}
+    Workflow: ${WORKFLOW_NAME}
+    Base commit: ${BASE_COMMIT_SHA}
+    Run: ${RUN_ID}
+  timeout_per_node_seconds: 1800
+  max_review_iterations: 5
+  max_subworkflow_depth: 8
+  max_output_variable_bytes: 65536
 ```
 
 ## 5.4 Node Common Fields
 
 Every node contains:
 
-```json
-{
-  "id": "node_id",
-  "type": "bash",
-  "label": "Human-readable label",
-  "join": "and",
-  "config": {},
-  "position": { "x": 100, "y": 100 }
-}
+```yaml
+id: node_id
+type: bash
+label: Human-readable label
+join: and
+config: {}
+position:
+  x: 100
+  y: 100
 ```
 
 Common rules:
@@ -811,121 +809,94 @@ Common rules:
 
 ## 5.5 Edge Schema
 
-```json
-{
-  "id": "edge_tests_to_review",
-  "source": "tests",
-  "target": "review",
-  "condition": {
-    "type": "exit_code",
-    "operator": "equals",
-    "value": 0
-  }
-}
+```yaml
+id: edge_tests_to_review
+source: tests
+target: review
+condition:
+  type: exit_code
+  operator: equals
+  value: 0
 ```
 
 Edges are directed. The graph inside each workflow file must be acyclic.
 
 ## 5.6 Complete Example with Sub-Workflow and Review Loop
 
-```json
-{
-  "id": "implement_and_review",
-  "name": "Implement and Review",
-  "description": "Runs an implementation child workflow and repeats revisions until approved.",
-  "version": 2,
-  "created_by": "user@example.com",
-
-  "inputs": {
-    "TASK": {
-      "type": "string",
-      "required": true
-    }
-  },
-
-  "variables": {
-    "TARGET_DIR": "src/"
-  },
-
-  "nodes": [
-    {
-      "id": "prepare",
-      "type": "bash",
-      "label": "Prepare repository",
-      "config": {
-        "command": "git status --short && python -m pip install -r requirements.txt",
-        "timeout": 900,
-        "allow_failure": false
-      },
-      "position": { "x": 100, "y": 100 }
-    },
-    {
-      "id": "implementation_review",
-      "type": "review_loop",
-      "label": "Implement and review",
-      "config": {
-        "initial_workflow_id": "implement_changes",
-        "revision_workflow_id": "revise_from_feedback",
-        "inputs": {
-          "TASK": "${TASK}",
-          "TARGET_DIR": "${TARGET_DIR}"
-        },
-        "revision_inputs": {
-          "TASK": "${TASK}",
-          "TARGET_DIR": "${TARGET_DIR}",
-          "FEEDBACK": "${FEEDBACK}"
-        },
-        "commit_message": "Checkpoint: implementation iteration ${REVIEW_ITERATION}",
-        "mr_title": "Implement: ${TASK}",
-        "mr_description": "Approve or comment with `@kyron` followed by feedback.",
-        "max_iterations": 5
-      },
-      "position": { "x": 100, "y": 260 }
-    },
-    {
-      "id": "final_validation",
-      "type": "subworkflow",
-      "label": "Final validation",
-      "config": {
-        "workflow_id": "test_and_validate",
-        "inputs": {
-          "TARGET_DIR": "${TARGET_DIR}"
-        },
-        "output_mapping": {
-          "TEST_STATUS": "FINAL_TEST_STATUS"
-        }
-      },
-      "position": { "x": 100, "y": 430 }
-    }
-  ],
-
-  "edges": [
-    {
-      "id": "e1",
-      "source": "prepare",
-      "target": "implementation_review",
-      "condition": null
-    },
-    {
-      "id": "e2",
-      "source": "implementation_review",
-      "target": "final_validation",
-      "condition": null
-    }
-  ],
-
-  "settings": {
-    "auto_commit_after_wave": true,
-    "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
-    "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete",
-    "mr_title_template": "Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})",
-    "mr_description_template": "Triggered by ${USER_NAME} from ${BASE_COMMIT_SHA}.",
-    "timeout_per_node_seconds": 1800,
-    "max_review_iterations": 5,
-    "max_subworkflow_depth": 8,
-    "max_output_variable_bytes": 65536
-  }
-}
+```yaml
+id: implement_and_review
+name: Implement and Review
+description: Runs an implementation child workflow and repeats revisions until approved.
+version: 2
+created_by: user@example.com
+inputs:
+  TASK:
+    type: string
+    required: true
+variables:
+  TARGET_DIR: src/
+nodes:
+  - id: prepare
+    type: bash
+    label: Prepare repository
+    config:
+      command: git status --short && python -m pip install -r requirements.txt
+      timeout: 900
+      allow_failure: false
+    position:
+      x: 100
+      y: 100
+  - id: implementation_review
+    type: review_loop
+    label: Implement and review
+    config:
+      initial_workflow_id: implement_changes
+      revision_workflow_id: revise_from_feedback
+      inputs:
+        TASK: ${TASK}
+        TARGET_DIR: ${TARGET_DIR}
+      revision_inputs:
+        TASK: ${TASK}
+        TARGET_DIR: ${TARGET_DIR}
+        FEEDBACK: ${FEEDBACK}
+      commit_message: 'Checkpoint: implementation iteration ${REVIEW_ITERATION}'
+      mr_title: 'Implement: ${TASK}'
+      mr_description: Approve or comment with `@kyron` followed by feedback.
+      max_iterations: 5
+    position:
+      x: 100
+      y: 260
+  - id: final_validation
+    type: subworkflow
+    label: Final validation
+    config:
+      workflow_id: test_and_validate
+      inputs:
+        TARGET_DIR: ${TARGET_DIR}
+      output_mapping:
+        TEST_STATUS: FINAL_TEST_STATUS
+    position:
+      x: 100
+      y: 430
+edges:
+  - id: e1
+    source: prepare
+    target: implementation_review
+    condition: null
+  - id: e2
+    source: implementation_review
+    target: final_validation
+    condition: null
+settings:
+  auto_commit_after_wave: true
+  wave_commit_message_template: 'workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}'
+  final_commit_message_template: 'workflow(${WORKFLOW_ID}): complete'
+  mr_title_template: 'Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})'
+  mr_description_template: Triggered by ${USER_NAME} from ${BASE_COMMIT_SHA}.
+  timeout_per_node_seconds: 1800
+  max_review_iterations: 5
+  max_subworkflow_depth: 8
+  max_output_variable_bytes: 65536
 ```
 
 ---
@@ -934,16 +905,13 @@ Edges are directed. The graph inside each workflow file must be acyclic.
 
 ## 6.1 Bash Node
 
-```json
-{
-  "type": "bash",
-  "config": {
-    "command": "python -m pytest ${TEST_ARGS}",
-    "timeout": 1800,
-    "allow_failure": false,
-    "shell": "/bin/bash"
-  }
-}
+```yaml
+type: bash
+config:
+  command: python -m pytest ${TEST_ARGS}
+  timeout: 1800
+  allow_failure: false
+  shell: /bin/bash
 ```
 
 Behavior:
@@ -972,17 +940,17 @@ Do not pass the access token in the command line.
 
 ## 6.2 Script Node
 
-```json
-{
-  "type": "script",
-  "config": {
-    "script": "scripts/validate.py",
-    "python": "python3",
-    "args": ["--strict", "--output", "results.json"],
-    "timeout": 1800,
-    "allow_failure": false
-  }
-}
+```yaml
+type: script
+config:
+  script: scripts/validate.py
+  python: python3
+  args:
+    - --strict
+    - --output
+    - results.json
+  timeout: 1800
+  allow_failure: false
 ```
 
 Behavior:
@@ -995,19 +963,21 @@ Behavior:
 
 ## 6.3 Prompt Node
 
-```json
-{
-  "type": "prompt",
-  "config": {
-    "prompt": "Implement the following task: ${TASK}",
-    "provider": "anthropic",
-    "model": "anthropic/claude-sonnet-4-5",
-    "skill": ".agents/skills/implementation/SKILL.md",
-    "timeout": 1800,
-    "allow_failure": false,
-    "project_trust": "never"
-  }
-}
+```yaml
+type: prompt
+config:
+  prompt: |-
+    Implement the following task:
+
+    ${TASK}
+
+    Keep the change scoped and run relevant tests.
+  provider: anthropic
+  model: anthropic/claude-sonnet-4-5
+  skill: .agents/skills/implementation/SKILL.md
+  timeout: 1800
+  allow_failure: false
+  project_trust: never
 ```
 
 Pi must be invoked in JSON event-stream mode so that the backend can parse structured agent events.
@@ -1074,18 +1044,15 @@ permits the required namespace and mount operations.
 
 ## 6.4 Human Feedback Node
 
-```json
-{
-  "type": "human_feedback",
-  "config": {
-    "approval_policy": "default",
-    "commit_message": "Checkpoint: awaiting review",
-    "mr_title": "Workflow: ${WORKFLOW_NAME}",
-    "mr_description": "Approve to continue or comment with `@kyron <feedback>`.",
-    "allow_comment_feedback": true,
-    "allow_approval": true
-  }
-}
+```yaml
+type: human_feedback
+config:
+  approval_policy: default
+  commit_message: 'Checkpoint: awaiting review'
+  mr_title: 'Workflow: ${WORKFLOW_NAME}'
+  mr_description: Approve to continue or comment with `@kyron <feedback>`.
+  allow_comment_feedback: true
+  allow_approval: true
 ```
 
 `approval_policy` defaults to `default` when omitted. Every project has this policy; it requires
@@ -1123,21 +1090,16 @@ A standalone human-feedback node does not itself repeat previous nodes. Iterativ
 
 ## 6.5 Sub-Workflow Node
 
-```json
-{
-  "type": "subworkflow",
-  "config": {
-    "workflow_id": "test_and_validate",
-    "execution_mode": "shared",
-    "inputs": {
-      "TARGET_DIR": "${TARGET_DIR}"
-    },
-    "output_mapping": {
-      "TEST_STATUS": "FINAL_TEST_STATUS"
-    },
-    "allow_failure": false
-  }
-}
+```yaml
+type: subworkflow
+config:
+  workflow_id: test_and_validate
+  execution_mode: shared
+  inputs:
+    TARGET_DIR: ${TARGET_DIR}
+  output_mapping:
+    TEST_STATUS: FINAL_TEST_STATUS
+  allow_failure: false
 ```
 
 Behavior:
@@ -1180,26 +1142,21 @@ queued. All sibling inputs are expanded from the same frozen parent context.
 
 The review loop is the only repeating control construct in version 1.
 
-```json
-{
-  "type": "review_loop",
-  "config": {
-    "approval_policy": "default",
-    "initial_workflow_id": "implement_changes",
-    "revision_workflow_id": "revise_from_feedback",
-    "inputs": {
-      "TASK": "${TASK}"
-    },
-    "revision_inputs": {
-      "TASK": "${TASK}",
-      "FEEDBACK": "${FEEDBACK}"
-    },
-    "commit_message": "Checkpoint: review iteration ${REVIEW_ITERATION}",
-    "mr_title": "Implement: ${TASK}",
-    "mr_description": "Approve or request changes with `@kyron`.",
-    "max_iterations": 5
-  }
-}
+```yaml
+type: review_loop
+config:
+  approval_policy: default
+  initial_workflow_id: implement_changes
+  revision_workflow_id: revise_from_feedback
+  inputs:
+    TASK: ${TASK}
+  revision_inputs:
+    TASK: ${TASK}
+    FEEDBACK: ${FEEDBACK}
+  commit_message: 'Checkpoint: review iteration ${REVIEW_ITERATION}'
+  mr_title: 'Implement: ${TASK}'
+  mr_description: Approve or request changes with `@kyron`.
+  max_iterations: 5
 ```
 
 ### Review-loop algorithm
@@ -1229,12 +1186,9 @@ Every child execution receives a new invocation record and unique invocation pat
 
 A review-loop node may optionally export outputs from the last successful child invocation:
 
-```json
-{
-  "output_mapping": {
-    "SUMMARY": "IMPLEMENTATION_SUMMARY"
-  }
-}
+```yaml
+output_mapping:
+  SUMMARY: IMPLEMENTATION_SUMMARY
 ```
 
 Only the latest successful child invocation is used.
@@ -1301,12 +1255,10 @@ Supported conditions:
 
 ### Exit code
 
-```json
-{
-  "type": "exit_code",
-  "operator": "equals",
-  "value": 0
-}
+```yaml
+type: exit_code
+operator: equals
+value: 0
 ```
 
 Operators:
@@ -1320,36 +1272,30 @@ Operators:
 
 ### Output contains
 
-```json
-{
-  "type": "output_contains",
-  "value": "SUCCESS",
-  "stream": "stdout"
-}
+```yaml
+type: output_contains
+value: SUCCESS
+stream: stdout
 ```
 
 `stream` is `stdout`, `stderr`, or `combined`, defaulting to `stdout`.
 
 ### File exists
 
-```json
-{
-  "type": "file_exists",
-  "value": "reports/summary.json"
-}
+```yaml
+type: file_exists
+value: reports/summary.json
 ```
 
 The final resolved path must remain inside the worktree.
 
 ### Public variable comparison
 
-```json
-{
-  "type": "variable",
-  "name": "FINAL_TEST_STATUS",
-  "operator": "equals",
-  "value": "0"
-}
+```yaml
+type: variable
+name: FINAL_TEST_STATUS
+operator: equals
+value: '0'
 ```
 
 Credential values cannot be used in conditions.
@@ -1501,7 +1447,7 @@ Workflow paths are indexed directly from that commit, not from a mutable checked
 working directory. The resolved root path is then read with:
 
 ```bash
-git show <base_commit_sha>:.workflowEngine/<resolved folders>/<workflow_id>.json
+git show <base_commit_sha>:.workflowEngine/<resolved folders>/<workflow_id>.yaml
 ```
 
 All referenced child workflows are resolved using the same SHA.
@@ -1521,10 +1467,10 @@ The snapshot is a JSON object:
     "skill": ".agents/skills/implementation/SKILL.md"
   },
   "workflows": {
-    "implement_and_review": { "...": "full workflow JSON" },
-    "implement_changes": { "...": "full workflow JSON" },
-    "revise_from_feedback": { "...": "full workflow JSON" },
-    "test_and_validate": { "...": "full workflow JSON" }
+    "implement_and_review": { "...": "full workflow definition" },
+    "implement_changes": { "...": "full workflow definition" },
+    "revise_from_feedback": { "...": "full workflow definition" },
+    "test_and_validate": { "...": "full workflow definition" }
   },
   "reference_graph": {
     "implement_and_review": [
@@ -1634,7 +1580,7 @@ Public variables are merged in this order, lowest to highest priority:
 6. Node output variables.
 7. Current-node built-ins.
 
-A reserved built-in name cannot be overridden by workflow JSON.
+A reserved built-in name cannot be overridden by workflow YAML.
 
 ## 10.3 Built-In Variables
 
@@ -2124,7 +2070,7 @@ Request:
 
 ```json
 {
-  "workflow": { "...": "workflow JSON" },
+  "workflow": { "...": "workflow object" },
   "proposed_related_workflows": {}
 }
 ```
@@ -2999,7 +2945,7 @@ Flow:
 2. Resolve current default-branch SHA.
 3. Validate the workflow and all references.
 4. Create a temporary definition worktree from that SHA.
-5. Write the workflow's indexed `.workflowEngine/<folders>/<workflow_id>.json` path with stable formatting.
+5. Write the workflow's indexed `.workflowEngine/<folders>/<workflow_id>.yaml` path with stable formatting.
 6. Stage only the workflow file.
 7. Commit with:
 

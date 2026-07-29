@@ -9,30 +9,25 @@ Ordinary Kyron graphs are acyclic. A `review_loop` is the one deliberate repetit
 
 ## Structure
 
-```json
-{
-  "id": "implementation_loop",
-  "type": "review_loop",
-  "label": "Implement until approved",
-  "join": "and",
-  "config": {
-    "approval_policy": "default",
-    "initial_workflow_id": "implement_change",
-    "revision_workflow_id": "revise_change",
-    "inputs": {
-      "TASK": "${TASK}"
-    },
-    "revision_inputs": {
-      "TASK": "${TASK}",
-      "REVIEW_FEEDBACK": "${FEEDBACK}"
-    },
-    "commit_message": "Checkpoint: review iteration ${REVIEW_ITERATION}",
-    "mr_title": "Review ${WORKFLOW_NAME}",
-    "mr_description": "Iteration ${REVIEW_ITERATION} of run ${RUN_ID}",
-    "max_iterations": 4,
-    "output_mapping": {}
-  }
-}
+```yaml
+id: implementation_loop
+type: review_loop
+label: Implement until approved
+join: and
+config:
+  approval_policy: default
+  initial_workflow_id: implement_change
+  revision_workflow_id: revise_change
+  inputs:
+    TASK: ${TASK}
+  revision_inputs:
+    TASK: ${TASK}
+    REVIEW_FEEDBACK: ${FEEDBACK}
+  commit_message: 'Checkpoint: review iteration ${REVIEW_ITERATION}'
+  mr_title: Review ${WORKFLOW_NAME}
+  mr_description: Iteration ${REVIEW_ITERATION} of run ${RUN_ID}
+  max_iterations: 4
+  output_mapping: {}
 ```
 
 `revision_workflow_id` may be omitted to reuse the initial workflow for later iterations. Separate definitions are useful when the first pass and revision instructions have meaningfully different prompts or checks.
@@ -53,12 +48,11 @@ Each iteration is a separate durable child invocation. Run detail therefore show
 
 `${FEEDBACK}`, `${FEEDBACK_TYPE}`, and `${FEEDBACK_AUTHOR}` exist only after a feedback event. They are valid in `revision_inputs`, not initial `inputs`.
 
-```json
-"revision_inputs": {
-  "ORIGINAL_TASK": "${TASK}",
-  "REVIEW_FEEDBACK": "${FEEDBACK}",
-  "REVIEWER": "${FEEDBACK_AUTHOR}"
-}
+```yaml
+revision_inputs:
+  ORIGINAL_TASK: ${TASK}
+  REVIEW_FEEDBACK: ${FEEDBACK}
+  REVIEWER: ${FEEDBACK_AUTHOR}
 ```
 
 Make the revision child's input names explicit. This produces a much clearer prompt contract than having it infer which part of context changed.

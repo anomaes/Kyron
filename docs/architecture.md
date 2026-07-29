@@ -14,7 +14,7 @@ log rows. Startup marks in-flight work interrupted and leaves feedback waits
 unchanged.
 
 Each run starts with a root branch and worktree created from an exact fetched
-SHA. Root and transitive workflow JSON are read with `git show <sha>:<path>` and
+SHA. Root and transitive workflow YAML is read with `git show <sha>:<path>` and
 stored as a secret-free snapshot. Shared invocations reference the nearest
 owning workspace. Isolated invocations fork a child branch and worktree from the
 parent's exact clean checkpoint; isolated-parallel siblings can execute
@@ -43,7 +43,7 @@ worktree and ephemeral Pi state read-write. Pi and every child process share tha
 view and a private PID namespace. Bash and Script nodes retain direct backend-container
 execution.
 
-Workflow tags are versioned metadata inside those JSON definitions rather than
+Workflow tags are versioned metadata inside those YAML definitions rather than
 database state. Consequently catalog grouping, filtering, and builder child-workflow
 selection always describe the same default-branch revision returned by the workflow
 API. Tags have no execution semantics.

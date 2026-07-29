@@ -44,7 +44,7 @@ features:
 | Understand Kyron before installing it | [Read the core concepts](/getting-started/concepts) |
 | Bring up a local or production instance | [Follow the quick start](/getting-started/quick-start) |
 | Build a workflow in the UI | [Use the visual workflow builder](/guides/workflow-builder) |
-| Author workflow JSON directly | [Learn the workflow language](/workflows/) |
+| Author workflow YAML directly | [Learn the workflow language](/workflows/) |
 | Add approval or revision cycles | [Design a review loop](/workflows/review-loops) |
 | Diagnose or recover a failed run | [Use the recovery guide](/guides/recovery) |
 | Operate Kyron on a VM | [Open the deployment guide](/deployment/) |

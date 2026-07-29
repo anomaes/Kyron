@@ -15,7 +15,7 @@ Project and browser providers must match for mutations. A GitHub session cannot 
 
 ## Workflow definition
 
-A workflow is strict JSON stored at `.workflowEngine/[folders/]/<id>.json` in the project repository. It declares:
+A workflow is a strict YAML document stored at `.workflowEngine/[folders/]/<id>.yaml` in the project repository. It declares:
 
 - typed inputs and public variables;
 - declared outputs;

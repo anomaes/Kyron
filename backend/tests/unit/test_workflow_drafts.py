@@ -70,7 +70,7 @@ async def test_workflow_and_template_saves_are_project_local(
         dict[str, NodeTemplate],
         dict[str, str],
     ]:
-        return "a" * 40, {current.id: current}, {}, {current.id: "teams/platform/root.json"}
+        return "a" * 40, {current.id: current}, {}, {current.id: "teams/platform/root.yaml"}
 
     monkeypatch.setattr(service, "_load_remote", load_remote)
     test_project = project(tmp_path, cipher)
@@ -85,7 +85,7 @@ async def test_workflow_and_template_saves_are_project_local(
         / "workflows"
         / "teams"
         / "platform"
-        / "root.json"
+        / "root.yaml"
     ).is_file()
 
     template = NodeTemplate(
@@ -96,10 +96,18 @@ async def test_workflow_and_template_saves_are_project_local(
     )
     saved_template = await service.save_template(test_project, template, "a" * 40)
     assert saved_template["outgoing_changes"] == 2
+    assert (
+        settings.RUN_DATA_BASE_PATH
+        / "project_changes"
+        / str(test_project.id)
+        / "outgoing"
+        / "templates"
+        / "print_text.yaml"
+    ).is_file()
 
     _sha, workflows, templates, paths = await service._load_all(test_project)
     assert workflows["root"].description == "locally edited"
-    assert paths["root"] == "teams/platform/root.json"
+    assert paths["root"] == "teams/platform/root.yaml"
     assert templates["print_text"].node.type == "bash"
     _sha, catalog = await service.list_with_folders(test_project)
     assert [(item.id, folder) for item, folder in catalog] == [
@@ -124,20 +132,20 @@ async def test_applying_a_folder_move_removes_the_previous_workflow_file(
         GitManager(tmp_path / "repos"),
     )
     worktree = tmp_path / "worktree"
-    old_path = worktree / ".workflowEngine" / "old" / "root.json"
+    old_path = worktree / ".workflowEngine" / "old" / "root.yaml"
     old_path.parent.mkdir(parents=True)
     old_path.write_text("{}", encoding="utf-8")
-    template_path = worktree / ".workflowEngine" / "templates" / "root.json"
+    template_path = worktree / ".workflowEngine" / "templates" / "root.yaml"
     template_path.parent.mkdir(parents=True)
     template_path.write_text("{}", encoding="utf-8")
-    layer_path = tmp_path / "layer" / "workflows" / "new" / "root.json"
+    layer_path = tmp_path / "layer" / "workflows" / "new" / "root.yaml"
     layer_path.parent.mkdir(parents=True)
-    layer_path.write_text("{\"id\": \"root\"}", encoding="utf-8")
+    layer_path.write_text("id: root\n", encoding="utf-8")
 
     await service._apply_layer_to_worktree(worktree, tmp_path / "layer")
 
     assert not old_path.exists()
-    assert (worktree / ".workflowEngine" / "new" / "root.json").is_file()
+    assert (worktree / ".workflowEngine" / "new" / "root.yaml").is_file()
     assert template_path.is_file()
 
 

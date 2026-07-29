@@ -214,67 +214,64 @@ For backup, restore, retention, failure handling, and release checks, follow the
 
 ## Workflow example
 
-Create `.workflowEngine/implement_and_test.json` in a registered repository:
+Create `.workflowEngine/implement_and_test.yaml` in a registered repository:
 
-```json
-{
-  "id": "implement_and_test",
-  "name": "Implement and test",
-  "description": "Ask the coding agent to implement a task, then run the test suite.",
-  "version": 2,
-  "created_by": "platform@example.com",
-  "tags": ["implementation", "quality"],
-  "inputs": {
-    "TASK": {
-      "type": "string",
-      "required": true,
-      "description": "The change to implement"
-    }
-  },
-  "outputs": {},
-  "variables": {},
-  "nodes": [
-    {
-      "id": "implement",
-      "type": "prompt",
-      "label": "Implement the change",
-      "join": "and",
-      "config": {
-        "prompt": "Implement this task in the current repository: ${TASK}",
-        "allow_failure": false,
-        "project_trust": "never"
-      },
-      "position": { "x": 100, "y": 120 }
-    },
-    {
-      "id": "tests",
-      "type": "bash",
-      "label": "Run tests",
-      "join": "and",
-      "config": {
-        "command": "pytest",
-        "timeout": 900,
-        "allow_failure": false,
-        "shell": "/bin/bash"
-      },
-      "position": { "x": 430, "y": 120 }
-    }
-  ],
-  "edges": [
-    {
-      "id": "implement_to_tests",
-      "source": "implement",
-      "target": "tests",
-      "condition": null
-    }
-  ],
-  "settings": {}
-}
+```yaml
+id: implement_and_test
+name: Implement and test
+description: Ask the coding agent to implement a task, then run the test suite.
+version: 2
+created_by: platform@example.com
+tags:
+  - implementation
+  - quality
+inputs:
+  TASK:
+    type: string
+    required: true
+    description: The change to implement
+outputs: {}
+variables: {}
+nodes:
+  - id: implement
+    type: prompt
+    label: Implement the change
+    join: and
+    config:
+      prompt: |-
+        Implement this task in the current repository:
+
+        ${TASK}
+
+        Inspect the existing code first, keep the change scoped, and run relevant tests.
+      allow_failure: false
+      project_trust: never
+    position:
+      x: 100
+      y: 120
+  - id: tests
+    type: bash
+    label: Run tests
+    join: and
+    config:
+      command: pytest
+      timeout: 900
+      allow_failure: false
+      shell: /bin/bash
+    position:
+      x: 430
+      y: 120
+edges:
+  - id: implement_to_tests
+    source: implement
+    target: tests
+    condition: null
+settings: {}
 ```
 
 Merge the definition, refresh the workflow catalog, and trigger it with a `TASK` value. Kyron pins the selected base commit before queueing the run.
 
-See the [workflow JSON authoring specification](docs/workflow-json-authoring-spec.md) for the full schema, built-in variables, conditions, composition, review loops, and validation rules.
+See the [workflow YAML authoring specification](docs/workflow-yaml-authoring-spec.md) for the full schema, built-in variables, conditions, composition, review loops, and validation rules.
 
 ## Development
 
@@ -339,7 +336,7 @@ Start at the [documentation home](docs/index.md), or jump directly to a guide:
 | [Production deployment](docs/deployment/index.md) | Supported topology, configuration, provider setup, security, and troubleshooting |
 | [Reference index](docs/reference/index.md) | Variables, run states, API, architecture, and exact contracts |
 | [VM deployment guide](SETUP.md) | End-to-end single-VM setup, Caddy/TLS, OAuth, webhooks, upgrades, and backups |
-| [Workflow authoring specification](docs/workflow-json-authoring-spec.md) | Complete JSON contract for authors and LLMs |
+| [Workflow authoring specification](docs/workflow-yaml-authoring-spec.md) | Complete YAML contract for authors and LLMs |
 | [Architecture](docs/architecture.md) | Runtime components, persistence, execution, and secret boundaries |
 | [API guide](docs/api.md) | HTTP/WebSocket routes, authentication, and state conflicts |
 | [Operations runbook](docs/operations.md) | Deployment, backup, restore, incidents, and retention |

@@ -5,9 +5,9 @@ description: Learn the structure, context model, and authoring lifecycle of Kyro
 
 # Workflow authoring
 
-A Kyron workflow is strict, versioned JSON stored with the repository it changes:
+A Kyron workflow is a strict, versioned YAML document stored with the repository it changes:
 
-<span class="doc-path">.workflowEngine/[folders/]/&lt;workflow_id&gt;.json</span>
+<span class="doc-path">.workflowEngine/[folders/]/&lt;workflow_id&gt;.yaml</span>
 
 Workflow files can be organized into nested folders. Kyron mirrors that hierarchy in the
 catalog while keeping workflow references ID-based. IDs must be unique across the entire
@@ -17,21 +17,20 @@ Definitions are code-reviewable, resolved from an exact Git commit, and immutabl
 
 ## Root structure
 
-```json
-{
-  "id": "delivery",
-  "name": "Feature delivery",
-  "description": "Implement, verify, and present a change for review.",
-  "version": 2,
-  "created_by": "platform@example.com",
-  "tags": ["delivery"],
-  "inputs": {},
-  "outputs": {},
-  "variables": {},
-  "nodes": [],
-  "edges": [],
-  "settings": {}
-}
+```yaml
+id: delivery
+name: Feature delivery
+description: Implement, verify, and present a change for review.
+version: 2
+created_by: platform@example.com
+tags:
+  - delivery
+inputs: {}
+outputs: {}
+variables: {}
+nodes: []
+edges: []
+settings: {}
 ```
 
 The filename stem must exactly equal `id`, including case. Identifiers start with an ASCII letter and then contain only letters, digits, and underscores. Unknown fields are validation errors at every level.
@@ -40,19 +39,16 @@ The filename stem must exactly equal `id`, including case. Identifiers start wit
 
 Inputs are values supplied by the caller when a root workflow is triggered or by a parent node when a child workflow is invoked.
 
-```json
-"inputs": {
-  "TASK": {
-    "type": "string",
-    "required": true,
-    "description": "The requested repository change"
-  },
-  "STRICT": {
-    "type": "boolean",
-    "required": false,
-    "default": true
-  }
-}
+```yaml
+inputs:
+  TASK:
+    type: string
+    required: true
+    description: The requested repository change
+  STRICT:
+    type: boolean
+    required: false
+    default: true
 ```
 
 Supported types are `string`, `integer`, `number`, and `boolean`. Root trigger values are type-checked, unknown names are rejected, and required inputs without a non-null default must be supplied.
@@ -61,18 +57,17 @@ Supported types are `string`, `integer`, `number`, and `boolean`. Root trigger v
 
 `variables` defines non-secret public defaults:
 
-```json
-"variables": {
-  "TEST_COMMAND": "pytest -q",
-  "STRICT": true,
-  "RETRY_COUNT": 2
-}
+```yaml
+variables:
+  TEST_COMMAND: pytest -q
+  STRICT: true
+  RETRY_COUNT: 2
 ```
 
 Expand public values with exact `${NAME}` syntax in supported fields:
 
-```json
-"command": "${TEST_COMMAND}"
+```yaml
+command: ${TEST_COMMAND}
 ```
 
 An unknown name fails execution; it is not left as literal text. Templates are intentionally not expanded in IDs, labels, executable paths, providers, models, skills, or interpreter names.
@@ -83,14 +78,12 @@ Secrets use native environment syntax such as `$NPM_TOKEN`, never `${NPM_TOKEN}`
 
 A workflow can expose values to its parent invocation:
 
-```json
-"outputs": {
-  "TEST_EXIT_CODE": {
-    "type": "string",
-    "source": "${NODE_tests_EXIT_CODE}",
-    "description": "Exit code from the test node"
-  }
-}
+```yaml
+outputs:
+  TEST_EXIT_CODE:
+    type: string
+    source: ${NODE_tests_EXIT_CODE}
+    description: Exit code from the test node
 ```
 
 Output sources expand when the invocation completes. The current runtime renders outputs as strings, even if another type is declared. Prefer `string` for generated outputs unless the declaration is used only as catalog metadata.
@@ -127,10 +120,10 @@ Server-wide limits can further constrain workflow settings.
 
 ## Authoring lifecycle
 
-1. Create or edit the complete JSON definition.
+1. Create or edit the complete YAML definition.
 2. Validate it together with any proposed child definitions.
 3. Save through Kyron or commit it through the normal repository process.
 4. Merge it to the project default branch for catalog visibility.
 5. Trigger a run and inspect the resolved snapshot SHA.
 
-The [complete JSON specification](/workflow-json-authoring-spec) is the field-level contract. The Pydantic models and semantic validator remain authoritative if documentation and code ever disagree.
+The [complete YAML specification](/workflow-yaml-authoring-spec) is the field-level contract. The Pydantic models and semantic validator remain authoritative if documentation and code ever disagree.

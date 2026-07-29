@@ -9,62 +9,58 @@ This workflow asks the coding agent to implement a small task, then runs a test 
 
 ## 1. Add the workflow file
 
-Create `.workflowEngine/implement_and_test.json` in a registered repository:
+Create `.workflowEngine/implement_and_test.yaml` in a registered repository:
 
-```json
-{
-  "id": "implement_and_test",
-  "name": "Implement and test",
-  "description": "Implement a task and verify it with the repository test suite.",
-  "version": 2,
-  "created_by": "platform@example.com",
-  "tags": ["implementation", "quality"],
-  "inputs": {
-    "TASK": {
-      "type": "string",
-      "required": true,
-      "description": "The change to implement"
-    }
-  },
-  "outputs": {},
-  "variables": {
-    "TEST_COMMAND": "pytest -q"
-  },
-  "nodes": [
-    {
-      "id": "implement",
-      "type": "prompt",
-      "label": "Implement the task",
-      "join": "and",
-      "config": {
-        "prompt": "Implement this task in the current repository: ${TASK}",
-        "allow_failure": false,
-        "project_trust": "never"
-      },
-      "position": { "x": 100, "y": 120 }
-    },
-    {
-      "id": "tests",
-      "type": "bash",
-      "label": "Run tests",
-      "join": "and",
-      "config": {
-        "command": "${TEST_COMMAND}",
-        "allow_failure": false,
-        "shell": "/bin/bash"
-      },
-      "position": { "x": 380, "y": 120 }
-    }
-  ],
-  "edges": [
-    {
-      "id": "implement_to_tests",
-      "source": "implement",
-      "target": "tests"
-    }
-  ],
-  "settings": {}
-}
+```yaml
+id: implement_and_test
+name: Implement and test
+description: Implement a task and verify it with the repository test suite.
+version: 2
+created_by: platform@example.com
+tags:
+  - implementation
+  - quality
+inputs:
+  TASK:
+    type: string
+    required: true
+    description: The change to implement
+outputs: {}
+variables:
+  TEST_COMMAND: pytest -q
+nodes:
+  - id: implement
+    type: prompt
+    label: Implement the task
+    join: and
+    config:
+      prompt: |-
+        Implement this task in the current repository:
+
+        ${TASK}
+
+        Inspect the existing code first, keep the change scoped, and run relevant tests.
+      allow_failure: false
+      project_trust: never
+    position:
+      x: 100
+      y: 120
+  - id: tests
+    type: bash
+    label: Run tests
+    join: and
+    config:
+      command: ${TEST_COMMAND}
+      allow_failure: false
+      shell: /bin/bash
+    position:
+      x: 380
+      y: 120
+edges:
+  - id: implement_to_tests
+    source: implement
+    target: tests
+settings: {}
 ```
 
 Change `TEST_COMMAND` to a safe command that exists in your repository. The command executes in the run worktree.
@@ -118,7 +114,7 @@ Before using this pattern on important repositories:
 - use repository-specific verification commands;
 - add a [human feedback checkpoint](/guides/review-and-feedback);
 - add timeouts appropriate for the codebase;
-- keep credentials out of workflow JSON; and
+- keep credentials out of workflow YAML; and
 - test failure and [resume behavior](/guides/recovery) in a disposable branch.
 
 Next, explore the [node reference](/workflows/node-types) or start from the [example library](/workflows/examples).

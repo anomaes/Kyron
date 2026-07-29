@@ -535,7 +535,7 @@ selected model provider, for example `ANTHROPIC_API_KEY`. Credentials are scoped
 to the Kyron/provider identity, encrypted at rest, injected only for process
 execution, and write-only through the API.
 
-Do not add model API keys to workflow JSON, `.env`, Docker images, Git remotes,
+Do not add model API keys to workflow YAML, `.env`, Docker images, Git remotes,
 or shell command arguments.
 
 The backend image includes Bubblewrap. Its runtime must permit an unprivileged

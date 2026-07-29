@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
+from backend.engine.definition_yaml import dump_definition_yaml
 from backend.engine.snapshot import WorkflowSnapshotLoader
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
@@ -44,9 +44,9 @@ async def test_bundle_is_loaded_transitively_from_one_exact_commit(tmp_path: Pat
     )
     (definitions / "orchestration").mkdir()
     (definitions / "reusable" / "quality").mkdir(parents=True)
-    (definitions / "orchestration" / "root.json").write_text(json.dumps(root))
-    (definitions / "reusable" / "quality" / "child.json").write_text(
-        json.dumps(workflow("child", tags=["implementation"]))
+    (definitions / "orchestration" / "root.yaml").write_text(dump_definition_yaml(root))
+    (definitions / "reusable" / "quality" / "child.yaml").write_text(
+        dump_definition_yaml(workflow("child", tags=["implementation"]))
     )
     await git("add", ".workflowEngine", cwd=repository)
     await git("commit", "-m", "workflows", cwd=repository)

@@ -9,65 +9,52 @@ Sub-workflows let you package a reusable graph—quality checks, repository anal
 
 ## Define a child
 
-Create `.workflowEngine/quality_checks.json`:
+Create `.workflowEngine/quality_checks.yaml`:
 
-```json
-{
-  "id": "quality_checks",
-  "name": "Quality checks",
-  "description": "Run repository tests and expose the result.",
-  "version": 2,
-  "created_by": "platform@example.com",
-  "tags": ["quality", "reusable"],
-  "inputs": {
-    "COMMAND": {
-      "type": "string",
-      "required": true
-    }
-  },
-  "outputs": {
-    "RESULT": {
-      "type": "string",
-      "source": "${NODE_tests_EXIT_CODE}"
-    }
-  },
-  "variables": {},
-  "nodes": [
-    {
-      "id": "tests",
-      "type": "bash",
-      "label": "Run checks",
-      "config": {
-        "command": "${COMMAND}",
-        "allow_failure": false,
-        "shell": "/bin/bash"
-      }
-    }
-  ],
-  "edges": [],
-  "settings": {}
-}
+```yaml
+id: quality_checks
+name: Quality checks
+description: Run repository tests and expose the result.
+version: 2
+created_by: platform@example.com
+tags:
+  - quality
+  - reusable
+inputs:
+  COMMAND:
+    type: string
+    required: true
+outputs:
+  RESULT:
+    type: string
+    source: ${NODE_tests_EXIT_CODE}
+variables: {}
+nodes:
+  - id: tests
+    type: bash
+    label: Run checks
+    config:
+      command: ${COMMAND}
+      allow_failure: false
+      shell: /bin/bash
+edges: []
+settings: {}
 ```
 
 ## Invoke it from a parent
 
-```json
-{
-  "id": "quality",
-  "type": "subworkflow",
-  "label": "Verify repository",
-  "config": {
-    "workflow_id": "quality_checks",
-    "execution_mode": "shared",
-    "inputs": {
-      "COMMAND": "${TEST_COMMAND}"
-    },
-    "output_mapping": {
-      "RESULT": "QUALITY_EXIT_CODE"
-    },
-    "allow_failure": false
-  }
-}
+```yaml
+id: quality
+type: subworkflow
+label: Verify repository
+config:
+  workflow_id: quality_checks
+  execution_mode: shared
+  inputs:
+    COMMAND: ${TEST_COMMAND}
+  output_mapping:
+    RESULT: QUALITY_EXIT_CODE
+  allow_failure: false
 ```
 
 The `inputs` object maps **child input name → parent template expression**. The `output_mapping` object maps **child output name → new parent variable name**.

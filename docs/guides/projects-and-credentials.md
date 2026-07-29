@@ -69,17 +69,14 @@ separate and is used only for Git and code-host operations.
 
 Use the shell's environment syntax in a Bash node:
 
-```json
-{
-  "id": "publish",
-  "type": "bash",
-  "label": "Publish package",
-  "config": {
-    "command": "npm config set //registry.npmjs.org/:_authToken \"$NPM_TOKEN\" && npm publish",
-    "allow_failure": false,
-    "shell": "/bin/bash"
-  }
-}
+```yaml
+id: publish
+type: bash
+label: Publish package
+config:
+  command: npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN" && npm publish
+  allow_failure: false
+  shell: /bin/bash
 ```
 
 Do **not** write `${NPM_TOKEN}`. Kyron interprets that as a public template variable and fails because credentials are deliberately excluded from public context.

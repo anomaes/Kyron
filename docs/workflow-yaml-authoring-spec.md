@@ -1,4 +1,4 @@
-# Kyron workflow JSON authoring specification
+# Kyron workflow YAML authoring specification
 
 This document is the authoring contract for repository workflow files consumed by
 the current Kyron implementation. It is intentionally written so that a person or
@@ -11,13 +11,14 @@ ever disagree. The broader product behavior is defined in
 
 ## 1. LLM output contract
 
-When asked to create or change a workflow, produce one or more complete JSON files.
+When asked to create or change a workflow, produce one or more complete YAML files.
 For every file:
 
-1. Store it at `.workflowEngine/<optional folders>/<id>.json`.
+1. Store it at `.workflowEngine/<optional folders>/<id>.yaml`.
 2. Make the filename stem exactly equal to the root `id` value, including case.
-3. Emit strict JSON: double-quoted keys and strings, no comments, no trailing commas,
-   and no Markdown fences when raw file content is requested.
+3. Emit one YAML document with a top-level mapping. Do not use aliases, anchors,
+   custom tags, duplicate mapping keys, or Markdown fences when raw file content
+   is requested.
 4. Set `version` to `2`.
 5. Use only fields documented here. Unknown fields are validation errors at every
    level of the document.
@@ -26,7 +27,7 @@ For every file:
 7. Include every transitively referenced child workflow as a separate file unless it
    already exists in the target repository.
 8. Never put credentials, tokens, authenticated URLs, or other secrets in workflow
-   JSON.
+   YAML.
 
 Prefer explicit fields and canonical defaults in generated files even where a field
 may be omitted. This makes LLM output easier to review and less dependent on implicit
@@ -34,7 +35,30 @@ defaults.
 
 ## 2. Lexical types and naming
 
-### 2.1 Identifier
+### 2.1 YAML document and scalar rules
+
+Each file contains exactly one YAML document whose root value is a mapping. Use
+spaces for indentation; tabs are not valid indentation. Mapping keys must be unique.
+Aliases, anchors, custom tags, and merge keys are not part of the workflow language.
+
+Write booleans as `true` or `false` and null values as `null`. Quote a value when it
+must remain a string but resembles a number, boolean, or null value. Dates such as
+`2026-07-29` remain strings.
+
+Use literal block scalars for multiline text. Prefer `|-` when the string should not
+end with a newline:
+
+```yaml
+prompt: |-
+  Implement ${TASK}.
+
+  Keep the change scoped and run the relevant tests.
+```
+
+Use `|` when a final newline is intentionally part of the value. Folded block scalars
+such as `>-` are suitable for long prose that should become one logical line.
+
+### 2.2 Identifier
 
 Workflow IDs, node IDs, edge IDs, input names, output names, variable names, and
 mapping names use this pattern:
@@ -49,12 +73,12 @@ dots, and leading underscores are invalid.
 
 Examples: `implement_review`, `RunTests2`, `TASK`, `NODE_RESULT`.
 
-### 2.2 Template value
+### 2.3 Template value
 
-A template value is a JSON string, integer, number, or boolean. It is never an array,
-object, or `null`, except that an input's `default` may explicitly be `null`.
+A template value is a YAML string, integer, number, or boolean. It is never a sequence,
+mapping, or `null`, except that an input's `default` may explicitly be `null`.
 
-### 2.3 Tag
+### 2.4 Tag
 
 A tag is 1 to 64 characters and matches:
 
@@ -66,14 +90,14 @@ Tags must be unique within a workflow. A workflow may contain at most 32 tags. T
 are catalog metadata and do not change execution.
 
 Workflow files may be nested to any depth below `.workflowEngine/`; for example,
-`.workflowEngine/teams/platform/deploy.json`. The catalog mirrors these folders. Folder
+`.workflowEngine/teams/platform/deploy.yaml`. The catalog mirrors these folders. Folder
 names are not added to `tags`, and references continue to use only the workflow ID. IDs
 must therefore be unique across all folders. The top-level `templates/` folder is reserved
 for node templates.
 
-## 3. Root workflow object
+## 3. Root workflow mapping
 
-The root object has this shape. Fields marked required must be present.
+The root mapping has this shape. Fields marked required must be present.
 
 | Field | Type | Required | Default / constraint |
 |---|---|---:|---|
@@ -82,44 +106,41 @@ The root object has this shape. Fields marked required must be present.
 | `description` | string | no | `""` |
 | `version` | integer | no | Must be exactly `2`; write it explicitly. |
 | `created_by` | string | yes | Conventionally an email address; no format validation. |
-| `tags` | tag array | no | `[]`; unique; at most 32. |
-| `inputs` | object | no | `{}`; keys are identifiers. |
-| `outputs` | object | no | `{}`; keys are identifiers. |
-| `variables` | object | no | `{}`; identifier keys and template values. |
-| `nodes` | node array | yes | Must contain at least one node after semantic validation. |
-| `edges` | edge array | no | `[]` |
-| `settings` | settings object | no | `{}` applies project and engine defaults. |
+| `tags` | tag sequence | no | `[]`; unique; at most 32. |
+| `inputs` | mapping | no | `{}`; keys are identifiers. |
+| `outputs` | mapping | no | `{}`; keys are identifiers. |
+| `variables` | mapping | no | `{}`; identifier keys and template values. |
+| `nodes` | node sequence | yes | Must contain at least one node after semantic validation. |
+| `edges` | edge sequence | no | `[]` |
+| `settings` | settings mapping | no | `{}` applies project and engine defaults. |
 
 Minimal valid workflow:
 
-```json
-{
-  "id": "hello_world",
-  "name": "Hello world",
-  "description": "A minimal Kyron workflow.",
-  "version": 2,
-  "created_by": "automation@example.com",
-  "tags": ["example"],
-  "inputs": {},
-  "outputs": {},
-  "variables": {},
-  "nodes": [
-    {
-      "id": "hello",
-      "type": "bash",
-      "label": "Print greeting",
-      "join": "and",
-      "config": {
-        "command": "echo 'Hello from Kyron'",
-        "allow_failure": false,
-        "shell": "/bin/bash"
-      },
-      "position": { "x": 100, "y": 100 }
-    }
-  ],
-  "edges": [],
-  "settings": {}
-}
+```yaml
+id: hello_world
+name: Hello world
+description: A minimal Kyron workflow.
+version: 2
+created_by: automation@example.com
+tags:
+  - example
+inputs: {}
+outputs: {}
+variables: {}
+nodes:
+  - id: hello
+    type: bash
+    label: Print greeting
+    join: and
+    config:
+      command: echo 'Hello from Kyron'
+      allow_failure: false
+      shell: /bin/bash
+    position:
+      x: 100
+      y: 100
+edges: []
+settings: {}
 ```
 
 ### 3.1 Pi defaults and inheritance
@@ -138,12 +159,10 @@ copied into the immutable run snapshot when a run is created.
 
 The same Pi settings shape is used at project and workflow scope:
 
-```json
-{
-  "provider": "anthropic",
-  "model": "anthropic/claude-sonnet-4-5",
-  "skill": ".agents/skills/implementation/SKILL.md"
-}
+```yaml
+provider: anthropic
+model: anthropic/claude-sonnet-4-5
+skill: .agents/skills/implementation/SKILL.md
 ```
 
 All fields are optional. `provider` and `model` are passed to Pi as `--provider` and
@@ -173,41 +192,33 @@ Each entry in `inputs` has the following fields:
 
 Example:
 
-```json
-{
-  "inputs": {
-    "TASK": {
-      "type": "string",
-      "required": true,
-      "description": "The change to implement"
-    },
-    "RETRIES": {
-      "type": "integer",
-      "required": false,
-      "default": 2
-    }
-  }
-}
+```yaml
+inputs:
+  TASK:
+    type: string
+    required: true
+    description: The change to implement
+  RETRIES:
+    type: integer
+    required: false
+    default: 2
 ```
 
 Root trigger inputs are type-checked. Booleans are not accepted as integers or
 numbers. Unknown trigger input names are rejected. If `required` is true and
 `default` is `null` or absent, the caller must supply the input.
 
-Always make the JSON type of a non-null default agree with the declared `type`.
+Always make the YAML scalar type of a non-null default agree with the declared `type`.
 
 ### 4.2 Variables
 
 `variables` defines non-secret public context defaults:
 
-```json
-{
-  "variables": {
-    "TARGET_DIR": "src/",
-    "STRICT": true,
-    "RETRY_COUNT": 2
-  }
-}
+```yaml
+variables:
+  TARGET_DIR: src/
+  STRICT: true
+  RETRY_COUNT: 2
 ```
 
 Variable keys are identifiers. Values are strings, integers, numbers, or booleans.
@@ -322,23 +333,19 @@ Each `outputs` entry has this shape:
 
 Example:
 
-```json
-{
-  "outputs": {
-    "TEST_EXIT_CODE": {
-      "type": "string",
-      "source": "${NODE_tests_EXIT_CODE}",
-      "description": "Exit code rendered as text"
-    }
-  }
-}
+```yaml
+outputs:
+  TEST_EXIT_CODE:
+    type: string
+    source: ${NODE_tests_EXIT_CODE}
+    description: Exit code rendered as text
 ```
 
 The current runtime expands every output source to a string and does not enforce the
 declared output type. Declare generated outputs as `string` unless a consumer uses the
 type only as catalog metadata.
 
-## 5. Common node object
+## 5. Common node mapping
 
 Every node is one of the six discriminated node types below and contains:
 
@@ -348,8 +355,8 @@ Every node is one of the six discriminated node types below and contains:
 | `type` | node-type literal | yes | Selects the exact `config` schema. |
 | `label` | string | yes | 1 to 255 characters. |
 | `join` | `and` or `or` | no | `and` |
-| `config` | object | yes | Exact shape depends on `type`. |
-| `position` | `{ "x": number, "y": number }` | no | Both coordinates default to `0`. |
+| `config` | mapping | yes | Exact shape depends on `type`. |
+| `position` | mapping with `x` and `y` numbers | no | Both coordinates default to `0`. |
 
 `position` affects only builder layout. `join` affects only nodes with incoming edges.
 
@@ -357,20 +364,19 @@ Every node is one of the six discriminated node types below and contains:
 
 ### 6.1 Bash
 
-```json
-{
-  "id": "tests",
-  "type": "bash",
-  "label": "Run tests",
-  "join": "and",
-  "config": {
-    "command": "python -m pytest ${TEST_ARGS}",
-    "timeout": 1800,
-    "allow_failure": false,
-    "shell": "/bin/bash"
-  },
-  "position": { "x": 360, "y": 100 }
-}
+```yaml
+id: tests
+type: bash
+label: Run tests
+join: and
+config:
+  command: python -m pytest ${TEST_ARGS}
+  timeout: 1800
+  allow_failure: false
+  shell: /bin/bash
+position:
+  x: 360
+  y: 100
 ```
 
 | Config field | Type | Required | Default / constraint |
@@ -385,28 +391,29 @@ exit or timeout fails the wave unless `allow_failure` is true.
 
 ### 6.2 Script
 
-```json
-{
-  "id": "validate",
-  "type": "script",
-  "label": "Validate result",
-  "join": "and",
-  "config": {
-    "script": "scripts/validate.py",
-    "python": "python3",
-    "args": ["--target", "${TARGET_DIR}"],
-    "timeout": 900,
-    "allow_failure": false
-  },
-  "position": { "x": 620, "y": 100 }
-}
+```yaml
+id: validate
+type: script
+label: Validate result
+join: and
+config:
+  script: scripts/validate.py
+  python: python3
+  args:
+    - --target
+    - ${TARGET_DIR}
+  timeout: 900
+  allow_failure: false
+position:
+  x: 620
+  y: 100
 ```
 
 | Config field | Type | Required | Default / constraint |
 |---|---|---:|---|
 | `script` | non-empty string | yes | Relative repository path; no `..`; must exist at run time. |
 | `python` | string | no | `python3` |
-| `args` | string array | no | `[]`; public templates expand per item. |
+| `args` | string sequence | no | `[]`; public templates expand per item. |
 | `timeout` | positive integer or `null` | no | Workflow default timeout. |
 | `allow_failure` | boolean | no | `false` |
 
@@ -415,23 +422,25 @@ worktree.
 
 ### 6.3 Prompt
 
-```json
-{
-  "id": "implement",
-  "type": "prompt",
-  "label": "Implement task",
-  "join": "and",
-  "config": {
-    "prompt": "Implement this task and run relevant tests: ${TASK}",
-    "provider": "anthropic",
-    "model": "anthropic/claude-sonnet-4-5",
-    "skill": ".agents/skills/implementation/SKILL.md",
-    "timeout": 1800,
-    "allow_failure": false,
-    "project_trust": "never"
-  },
-  "position": { "x": 360, "y": 100 }
-}
+```yaml
+id: implement
+type: prompt
+label: Implement task
+join: and
+config:
+  prompt: |-
+    Implement this task: ${TASK}
+
+    Inspect the repository first, keep the change scoped, and run relevant tests.
+  provider: anthropic
+  model: anthropic/claude-sonnet-4-5
+  skill: .agents/skills/implementation/SKILL.md
+  timeout: 1800
+  allow_failure: false
+  project_trust: never
+position:
+  x: 360
+  y: 100
 ```
 
 | Config field | Type | Required | Default / constraint |
@@ -454,22 +463,21 @@ already used by the repository; otherwise omit them.
 
 ### 6.4 Human feedback
 
-```json
-{
-  "id": "review",
-  "type": "human_feedback",
-  "label": "Await review",
-  "join": "and",
-  "config": {
-    "approval_policy": "default",
-    "commit_message": "Checkpoint: awaiting review",
-    "mr_title": "Review ${WORKFLOW_NAME}",
-    "mr_description": "Approve to continue or submit feedback.",
-    "allow_comment_feedback": true,
-    "allow_approval": true
-  },
-  "position": { "x": 620, "y": 100 }
-}
+```yaml
+id: review
+type: human_feedback
+label: Await review
+join: and
+config:
+  approval_policy: default
+  commit_message: 'Checkpoint: awaiting review'
+  mr_title: Review ${WORKFLOW_NAME}
+  mr_description: Approve to continue or submit feedback.
+  allow_comment_feedback: true
+  allow_approval: true
+position:
+  x: 620
+  y: 100
 ```
 
 | Config field | Type | Required | Default |
@@ -488,38 +496,35 @@ prior nodes, so use `review_loop` for revision cycles.
 
 Every project has a `default` approval policy. Its only eligible approver is the user who
 triggered the workflow, and its single requirement has quorum 1. Omit `approval_policy` or use
-`"approval_policy": "default"` for that behavior. Replace the key with a project-specific policy
+`approval_policy: default` for that behavior. Replace the key with a project-specific policy
 when the workflow later needs independent reviewers or a larger quorum.
 
 ### 6.5 Sub-workflow
 
-```json
-{
-  "id": "run_child",
-  "type": "subworkflow",
-  "label": "Run validation workflow",
-  "join": "and",
-  "config": {
-    "workflow_id": "validate_change",
-    "execution_mode": "shared",
-    "inputs": {
-      "TARGET_DIR": "${TARGET_DIR}"
-    },
-    "output_mapping": {
-      "RESULT": "VALIDATION_RESULT"
-    },
-    "allow_failure": false
-  },
-  "position": { "x": 620, "y": 100 }
-}
+```yaml
+id: run_child
+type: subworkflow
+label: Run validation workflow
+join: and
+config:
+  workflow_id: validate_change
+  execution_mode: shared
+  inputs:
+    TARGET_DIR: ${TARGET_DIR}
+  output_mapping:
+    RESULT: VALIDATION_RESULT
+  allow_failure: false
+position:
+  x: 620
+  y: 100
 ```
 
 | Config field | Type | Required | Default / meaning |
 |---|---|---:|---|
 | `workflow_id` | identifier | yes | Child workflow file ID. |
 | `execution_mode` | `shared`, `isolated`, or `isolated_parallel` | no | `shared` |
-| `inputs` | identifier-to-string object | no | `{}`; child input name to parent template. |
-| `output_mapping` | identifier-to-identifier object | no | `{}`; child output name to new parent public-variable name. |
+| `inputs` | identifier-to-string mapping | no | `{}`; child input name to parent template. |
+| `output_mapping` | identifier-to-identifier mapping | no | `{}`; child output name to new parent public-variable name. |
 | `allow_failure` | boolean | no | `false` |
 
 Mapping direction is important:
@@ -561,33 +566,29 @@ fresh gate decision. The root run's final change request remains separate and ta
 
 ### 6.6 Review loop
 
-```json
-{
-  "id": "implementation_review",
-  "type": "review_loop",
-  "label": "Implement and review",
-  "join": "and",
-  "config": {
-    "approval_policy": "default",
-    "initial_workflow_id": "implement_change",
-    "revision_workflow_id": "revise_change",
-    "inputs": {
-      "TASK": "${TASK}"
-    },
-    "revision_inputs": {
-      "TASK": "${TASK}",
-      "FEEDBACK": "${FEEDBACK}"
-    },
-    "commit_message": "Checkpoint: review iteration ${REVIEW_ITERATION}",
-    "mr_title": "Implement: ${TASK}",
-    "mr_description": "Approve or submit revision feedback.",
-    "max_iterations": 5,
-    "output_mapping": {
-      "SUMMARY": "IMPLEMENTATION_SUMMARY"
-    }
-  },
-  "position": { "x": 360, "y": 100 }
-}
+```yaml
+id: implementation_review
+type: review_loop
+label: Implement and review
+join: and
+config:
+  approval_policy: default
+  initial_workflow_id: implement_change
+  revision_workflow_id: revise_change
+  inputs:
+    TASK: ${TASK}
+  revision_inputs:
+    TASK: ${TASK}
+    FEEDBACK: ${FEEDBACK}
+  commit_message: 'Checkpoint: review iteration ${REVIEW_ITERATION}'
+  mr_title: 'Implement: ${TASK}'
+  mr_description: Approve or submit revision feedback.
+  max_iterations: 5
+  output_mapping:
+    SUMMARY: IMPLEMENTATION_SUMMARY
+position:
+  x: 360
+  y: 100
 ```
 
 | Config field | Type | Required | Default / meaning |
@@ -595,13 +596,13 @@ fresh gate decision. The root run's final change request remains separate and ta
 | `approval_policy` | project policy key | no | `default`; only the workflow triggerer, quorum 1. |
 | `initial_workflow_id` | identifier | yes | Child used for iteration 1. |
 | `revision_workflow_id` | identifier or `null` | no | Reuses initial child when omitted. |
-| `inputs` | identifier-to-string object | no | `{}`; mappings for iteration 1. |
-| `revision_inputs` | identifier-to-string object | no | `{}`; mappings for iterations 2+. |
+| `inputs` | identifier-to-string mapping | no | `{}`; mappings for iteration 1. |
+| `revision_inputs` | identifier-to-string mapping | no | `{}`; mappings for iterations 2+. |
 | `commit_message` | string | no | `Checkpoint: review iteration ${REVIEW_ITERATION}` |
 | `mr_title` | string or `null` | no | Workflow default when null. |
 | `mr_description` | string or `null` | no | Workflow default when null. |
 | `max_iterations` | positive integer or `null` | no | Workflow `max_review_iterations`. |
-| `output_mapping` | identifier-to-identifier object | no | `{}`; latest child output to parent variable. |
+| `output_mapping` | identifier-to-identifier mapping | no | `{}`; latest child output to parent variable. |
 
 Iteration 1 executes the initial child and pauses for review. Approval completes the
 node. Comment feedback increments `REVIEW_ITERATION`, exposes `FEEDBACK`, executes the
@@ -624,17 +625,14 @@ Required authoring rules:
 
 An edge has this exact shape:
 
-```json
-{
-  "id": "tests_to_publish",
-  "source": "tests",
-  "target": "publish",
-  "condition": {
-    "type": "exit_code",
-    "operator": "equals",
-    "value": 0
-  }
-}
+```yaml
+id: tests_to_publish
+source: tests
+target: publish
+condition:
+  type: exit_code
+  operator: equals
+  value: 0
 ```
 
 `id`, `source`, and `target` are required identifiers. Edge IDs are unique within the
@@ -645,12 +643,10 @@ Conditions are discriminated by `type` and allow no extra fields.
 
 ### 7.1 Exit code
 
-```json
-{
-  "type": "exit_code",
-  "operator": "equals",
-  "value": 0
-}
+```yaml
+type: exit_code
+operator: equals
+value: 0
 ```
 
 `value` is an integer. `operator` is one of:
@@ -666,12 +662,10 @@ less_than_or_equal
 
 ### 7.2 Output contains
 
-```json
-{
-  "type": "output_contains",
-  "value": "SUCCESS",
-  "stream": "stdout"
-}
+```yaml
+type: output_contains
+value: SUCCESS
+stream: stdout
 ```
 
 `value` is a string. `stream` is `stdout`, `stderr`, or `combined`, and defaults to
@@ -679,11 +673,9 @@ less_than_or_equal
 
 ### 7.3 File exists
 
-```json
-{
-  "type": "file_exists",
-  "value": "reports/summary.json"
-}
+```yaml
+type: file_exists
+value: reports/summary.json
 ```
 
 `value` must be a non-empty relative repository path, must not contain a `..` path
@@ -691,13 +683,11 @@ component, and must resolve inside the worktree.
 
 ### 7.4 Public variable
 
-```json
-{
-  "type": "variable",
-  "name": "VALIDATION_RESULT",
-  "operator": "equals",
-  "value": "passed"
-}
+```yaml
+type: variable
+name: VALIDATION_RESULT
+operator: equals
+value: passed
 ```
 
 `name` is an identifier and must exist in public context when evaluated. `value` is a
@@ -744,56 +734,56 @@ All settings are optional. These are the accepted fields and model defaults:
 
 | Field | Type | Default | Constraint / use |
 |---|---|---|---|
-| `pi` | Pi settings object | `{}` | Workflow-wide provider, model, and skill defaults. |
+| `pi` | Pi settings mapping | `{}` | Workflow-wide provider, model, and skill defaults. |
 | `delivery_mode` | `propose_changes` or `report_only` | `propose_changes` | Controls whether Git changes are delivered or the pinned subject is only examined. |
-| `credential_access` | credential policy object | `{"mode":"default","keys":[]}` | Resolves to all credentials for delivery workflows and no credentials for report-only workflows. |
-| `verification_publication` | verification publication object | all fields `true` | Controls commit status and subject change-request summary publication. |
+| `credential_access` | credential policy mapping | `{mode: default, keys: []}` | Resolves to all credentials for delivery workflows and no credentials for report-only workflows. |
+| `verification_publication` | verification publication mapping | all fields `true` | Controls commit status and subject change-request summary publication. |
 | `auto_commit_after_wave` | boolean | `true` | Commit after every successful process wave. |
 | `wave_commit_message_template` | string | `workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}` | Public template. |
 | `final_commit_message_template` | string | `workflow(${WORKFLOW_ID}): complete run ${RUN_ID}` | Public template. |
 | `mr_title_template` | string | `Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})` | Public template. |
-| `mr_description_template` | string | See canonical object below. | Public template. |
+| `mr_description_template` | string | See canonical mapping below. | Public template. |
 | `timeout_per_node_seconds` | positive integer | `1800` | Capped by deployment configuration; default cap is 14400. |
 | `max_review_iterations` | positive integer | `5` | Capped by deployment configuration; default cap is 10. |
 | `max_subworkflow_depth` | positive integer | `8` | Accepted metadata; deployment cap is authoritative. |
 | `max_output_variable_bytes` | integer >= 1024 | `65536` | Per-output public preview limit. |
 | `propagate_skips` | boolean | `false` | Reserved; current runtime still makes skipped-source edges false. |
 
-Canonical explicit settings object:
+Canonical explicit settings mapping:
 
-```json
-{
-  "pi": {
-    "provider": "anthropic",
-    "model": "anthropic/claude-sonnet-4-5",
-    "skill": ".agents/skills/implementation/SKILL.md"
-  },
-  "delivery_mode": "propose_changes",
-  "credential_access": {
-    "mode": "default",
-    "keys": []
-  },
-  "verification_publication": {
-    "publish_commit_status": true,
-    "post_change_request_summary": true,
-    "publication_required": true
-  },
-  "auto_commit_after_wave": true,
-  "wave_commit_message_template": "workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}",
-  "final_commit_message_template": "workflow(${WORKFLOW_ID}): complete run ${RUN_ID}",
-  "mr_title_template": "Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})",
-  "mr_description_template": "Automated workflow run triggered by ${USER_NAME}.\n\nWorkflow: ${WORKFLOW_NAME}\nBase commit: ${BASE_COMMIT_SHA}\nRun: ${RUN_ID}",
-  "timeout_per_node_seconds": 1800,
-  "max_review_iterations": 5,
-  "max_subworkflow_depth": 8,
-  "max_output_variable_bytes": 65536,
-  "propagate_skips": false
-}
+```yaml
+pi:
+  provider: anthropic
+  model: anthropic/claude-sonnet-4-5
+  skill: .agents/skills/implementation/SKILL.md
+delivery_mode: propose_changes
+credential_access:
+  mode: default
+  keys: []
+verification_publication:
+  publish_commit_status: true
+  post_change_request_summary: true
+  publication_required: true
+auto_commit_after_wave: true
+wave_commit_message_template: 'workflow(${WORKFLOW_ID}): wave ${WAVE_INDEX}'
+final_commit_message_template: 'workflow(${WORKFLOW_ID}): complete run ${RUN_ID}'
+mr_title_template: 'Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})'
+mr_description_template: |-
+  Automated workflow run triggered by ${USER_NAME}.
+
+  Workflow: ${WORKFLOW_NAME}
+  Base commit: ${BASE_COMMIT_SHA}
+  Run: ${RUN_ID}
+timeout_per_node_seconds: 1800
+max_review_iterations: 5
+max_subworkflow_depth: 8
+max_output_variable_bytes: 65536
+propagate_skips: false
 ```
 
 `credential_access.mode` is `default`, `none`, `all`, or `allowlist`.
-`allowlist` requires a non-empty, duplicate-free `keys` array; every other mode
-requires an empty array. The resolved `default` is `all` for `propose_changes`
+`allowlist` requires a non-empty, duplicate-free `keys` sequence; every other mode
+requires an empty sequence. The resolved `default` is `all` for `propose_changes`
 and `none` for `report_only`.
 
 A report-only root examines the selected branch or change-request source commit
@@ -843,13 +833,13 @@ Use this deterministic procedure:
 
 1. Identify the root workflow and every child workflow required.
 2. Assign all workflow, node, edge, input, output, and variable identifiers before
-   writing JSON. Check each against the identifier regex.
+   writing YAML. Check each against the identifier regex.
 3. Select the delivery and credential policies, then declare root trigger inputs
    and non-secret variables.
 4. Define child workflow inputs and outputs before defining parent mappings.
 5. Select project, workflow, and node Pi defaults; verify every configured skill path
    against the repository tree.
-6. Add nodes with complete type-specific `config` objects.
+6. Add nodes with complete type-specific `config` mappings.
 7. Add only forward DAG edges. Use `review_loop` for repeated work.
 8. For each `${NAME}`, prove that `NAME` exists before that field is expanded on every
    reachable path.
@@ -858,8 +848,8 @@ Use this deterministic procedure:
 10. Check unique IDs, valid edge endpoints, reachability, absence of isolated nodes,
    graph acyclicity, and workflow-reference acyclicity.
 11. Check timeouts and review limits against deployment caps.
-12. Serialize each file as UTF-8 JSON with two-space indentation and a trailing
-    newline.
+12. Serialize each file as UTF-8 YAML with two-space indentation and a trailing
+    newline. Use literal block scalars for multiline prompts, commands, and descriptions.
 13. Run server validation before saving or triggering.
 
 ## 13. Server validation API

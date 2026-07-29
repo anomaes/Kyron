@@ -77,7 +77,7 @@ and execution hierarchy while retaining a separate authorization audit event.
 Remote branches and pull or merge requests are not changed.
 
 Workflow definitions include a `tags` array. Tags are lowercase catalog metadata
-stored in the workflow JSON; they do not alter scheduling. The workflow list response
+stored in the workflow YAML; they do not alter scheduling. The workflow list response
 contains complete definitions so the builder can populate searchable child-workflow
 selectors and generate input/output mapping controls from each child's declared
 schema.

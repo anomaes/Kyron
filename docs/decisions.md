@@ -26,7 +26,7 @@ test verification.
 
 ## D-005 — Workflow tags remain definition metadata
 
-Accepted. Workflow tags are stored in each `.workflowEngine/**/<workflow_id>.json`
+Accepted. Workflow tags are stored in each `.workflowEngine/**/<workflow_id>.yaml`
 definition and travel with Git review, exact-SHA snapshots, and exports. They are not
 duplicated into database catalog tables because they have no runtime semantics. The
 catalog derives search, filtering, and grouping from the exact default-branch
@@ -62,7 +62,7 @@ roles are permitted. Membership controls project visibility and backend authoriz
 enforced independently of frontend controls.
 
 Human gates reference reusable project approval-policy keys rather than environment-bound
-user IDs in workflow JSON. Each gate opening snapshots its policy, eligible provider
+user IDs in workflow YAML. Each gate opening snapshots its policy, eligible provider
 identities, quorum requirements, and exact checkpoint commit. Approval decisions accumulate
 until every requirement is satisfied. Feedback closes that gate, supersedes its approvals,
 and a later revision opens a new gate. Administrative overrides require a reason and are

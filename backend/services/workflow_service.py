@@ -17,6 +17,11 @@ from backend.auth.authorization import actor_snapshot
 from backend.auth.dependencies import AuthenticatedUser
 from backend.config import Settings
 from backend.db.models import Project, WorkflowRun
+from backend.engine.definition_yaml import (
+    DefinitionYamlError,
+    dump_definition_yaml,
+    load_definition_yaml,
+)
 from backend.engine.snapshot import WorkflowSnapshotLoader
 from backend.engine.validation import (
     parse_workflow,
@@ -167,12 +172,12 @@ class WorkflowService:
         normalized_folder = (
             requested_folder
             if requested_folder is not None
-            else _folder_path(published_paths.get(workflow.id, f"{workflow.id}.json"))
+            else _folder_path(published_paths.get(workflow.id, f"{workflow.id}.yaml"))
         )
         relative_path = (
-            f"{normalized_folder}/{workflow.id}.json"
+            f"{normalized_folder}/{workflow.id}.yaml"
             if normalized_folder
-            else f"{workflow.id}.json"
+            else f"{workflow.id}.yaml"
         )
         outgoing_workflows = root / "outgoing" / "workflows"
         await self._remove_local_workflow_files(outgoing_workflows, workflow.id)
@@ -224,7 +229,7 @@ class WorkflowService:
         root = self._changes_root(project)
         published = dict(remote)
         await self._overlay_templates(published, root / "published")
-        path = root / "outgoing" / "templates" / f"{template.id}.json"
+        path = root / "outgoing" / "templates" / f"{template.id}.yaml"
         marker = root / "outgoing" / "deleted_templates" / template.id
         await self._remove_file(marker)
         if published.get(template.id) == template:
@@ -250,7 +255,7 @@ class WorkflowService:
         root = self._changes_root(project)
         published = dict(remote)
         await self._overlay_templates(published, root / "published")
-        await self._remove_file(root / "outgoing" / "templates" / f"{template_id}.json")
+        await self._remove_file(root / "outgoing" / "templates" / f"{template_id}.yaml")
         marker = root / "outgoing" / "deleted_templates" / template_id
         if template_id in published:
             await self._write_text(marker, "delete\n")
@@ -561,7 +566,7 @@ class WorkflowService:
         return validate_workflow_bundle(
             root_id,
             definitions,
-            filename=f"{root_id}.json",
+            filename=f"{root_id}.yaml",
             max_timeout=self.settings.MAX_NODE_TIMEOUT_SECONDS,
             max_review_iterations=self.settings.MAX_REVIEW_ITERATIONS,
             max_subworkflow_depth=self.settings.MAX_SUBWORKFLOW_DEPTH,
@@ -603,27 +608,27 @@ class WorkflowService:
                 templates: dict[str, NodeTemplate] = {}
                 paths: dict[str, str] = {}
                 for filename in files:
-                    if not filename.endswith(".json"):
+                    if not filename.endswith(".yaml"):
                         continue
                     raw = await self.git.show_file(repository, sha, filename)
                     try:
-                        data = json.loads(raw)
-                    except json.JSONDecodeError as exc:
+                        data = load_definition_yaml(raw)
+                    except DefinitionYamlError as exc:
                         logger.warning(
-                            "Definition JSON parsing failed "
+                            "Definition YAML parsing failed "
                             "(project=%s, file=%s, commit=%s, line=%s, column=%s): %s",
                             project.id,
                             filename,
                             sha[:12],
-                            exc.lineno,
-                            exc.colno,
-                            exc.msg,
+                            exc.line,
+                            exc.column,
+                            str(exc),
                         )
                         raise
                     if not isinstance(data, dict):
                         logger.warning(
                             "Definition parsing skipped (project=%s, file=%s, commit=%s): "
-                            "top-level JSON value is %s, expected an object",
+                            "top-level YAML value is %s, expected a mapping",
                             project.id,
                             filename,
                             sha[:12],
@@ -643,7 +648,7 @@ class WorkflowService:
                                 exc,
                             )
                             continue
-                        if filename.endswith(f"/{template.id}.json"):
+                        if filename.endswith(f"/{template.id}.yaml"):
                             templates[template.id] = template
                         else:
                             logger.warning(
@@ -716,8 +721,8 @@ class WorkflowService:
             definitions.pop(marker.name, None)
             paths.pop(marker.name, None)
         workflow_root = layer / "workflows"
-        for path in await self._files(workflow_root, suffix=".json", recursive=True):
-            data = await self._read_json(path)
+        for path in await self._files(workflow_root, suffix=".yaml", recursive=True):
+            data = await self._read_definition(path)
             if isinstance(data, dict):
                 definition, errors = parse_workflow(data, str(path))
                 if definition is not None and not errors and path.stem == definition.id:
@@ -738,8 +743,8 @@ class WorkflowService:
                     )
             elif data is not None:
                 logger.warning(
-                    "Local workflow parsing skipped (file=%s): top-level JSON value is %s, "
-                    "expected an object",
+                    "Local workflow parsing skipped (file=%s): top-level YAML value is %s, "
+                    "expected a mapping",
                     path,
                     type(data).__name__,
                 )
@@ -747,8 +752,8 @@ class WorkflowService:
     async def _overlay_templates(self, templates: dict[str, NodeTemplate], layer: Path) -> None:
         for marker in await self._files(layer / "deleted_templates"):
             templates.pop(marker.name, None)
-        for path in await self._files(layer / "templates", suffix=".json"):
-            data = await self._read_json(path)
+        for path in await self._files(layer / "templates", suffix=".yaml"):
+            data = await self._read_definition(path)
             if isinstance(data, dict):
                 try:
                     template = NodeTemplate.model_validate(data)
@@ -762,12 +767,12 @@ class WorkflowService:
         for marker in await self._files(layer / "deleted_workflows"):
             await self._remove_repository_workflow_files(definitions, marker.name)
         for marker in await self._files(layer / "deleted_templates"):
-            await self._remove_file(definitions / "templates" / f"{marker.name}.json")
+            await self._remove_file(definitions / "templates" / f"{marker.name}.yaml")
         workflow_root = layer / "workflows"
-        for path in await self._files(workflow_root, suffix=".json", recursive=True):
+        for path in await self._files(workflow_root, suffix=".yaml", recursive=True):
             await self._remove_repository_workflow_files(definitions, path.stem)
             await self._copy_file(path, definitions / path.relative_to(workflow_root))
-        for path in await self._files(layer / "templates", suffix=".json"):
+        for path in await self._files(layer / "templates", suffix=".yaml"):
             await self._copy_file(path, definitions / "templates" / path.name)
 
     async def _merge_outgoing_into_published(self, root: Path) -> None:
@@ -776,7 +781,7 @@ class WorkflowService:
         outgoing_workflows = outgoing / "workflows"
         published_workflows = published / "workflows"
         for path in await self._files(
-            outgoing_workflows, suffix=".json", recursive=True
+            outgoing_workflows, suffix=".yaml", recursive=True
         ):
             await self._remove_file(published / "deleted_workflows" / path.stem)
             await self._remove_local_workflow_files(published_workflows, path.stem)
@@ -786,11 +791,11 @@ class WorkflowService:
         for marker in await self._files(outgoing / "deleted_workflows"):
             await self._remove_local_workflow_files(published_workflows, marker.name)
             await self._copy_file(marker, published / "deleted_workflows" / marker.name)
-        for path in await self._files(outgoing / "templates", suffix=".json"):
+        for path in await self._files(outgoing / "templates", suffix=".yaml"):
             await self._remove_file(published / "deleted_templates" / path.stem)
             await self._copy_file(path, published / "templates" / path.name)
         for marker in await self._files(outgoing / "deleted_templates"):
-            await self._remove_file(published / "templates" / f"{marker.name}.json")
+            await self._remove_file(published / "templates" / f"{marker.name}.yaml")
             await self._copy_file(marker, published / "deleted_templates" / marker.name)
         if await asyncio.to_thread(outgoing.exists):
             await asyncio.to_thread(shutil.rmtree, outgoing)
@@ -805,9 +810,9 @@ class WorkflowService:
         published = root / "published"
         published_workflows = published / "workflows"
         for path in await self._files(
-            published_workflows, suffix=".json", recursive=True
+            published_workflows, suffix=".yaml", recursive=True
         ):
-            data = await self._read_json(path)
+            data = await self._read_definition(path)
             if isinstance(data, dict):
                 definition, errors = parse_workflow(data)
                 if (
@@ -821,8 +826,8 @@ class WorkflowService:
         for marker in await self._files(published / "deleted_workflows"):
             if marker.name not in remote_workflows:
                 await self._remove_file(marker)
-        for path in await self._files(published / "templates", suffix=".json"):
-            data = await self._read_json(path)
+        for path in await self._files(published / "templates", suffix=".yaml"):
+            data = await self._read_definition(path)
             if isinstance(data, dict):
                 try:
                     template = NodeTemplate.model_validate(data)
@@ -870,7 +875,7 @@ class WorkflowService:
     async def _remove_local_workflow_files(
         self, workflow_root: Path, workflow_id: str
     ) -> None:
-        for path in await self._files(workflow_root, suffix=".json", recursive=True):
+        for path in await self._files(workflow_root, suffix=".yaml", recursive=True):
             if path.stem == workflow_id:
                 await self._remove_file(path)
 
@@ -878,7 +883,7 @@ class WorkflowService:
         self, definitions_root: Path, workflow_id: str
     ) -> None:
         templates_root = definitions_root / "templates"
-        for path in await self._files(definitions_root, suffix=".json", recursive=True):
+        for path in await self._files(definitions_root, suffix=".yaml", recursive=True):
             if path.stem == workflow_id and not path.is_relative_to(templates_root):
                 await self._remove_file(path)
 
@@ -906,11 +911,11 @@ class WorkflowService:
             raw = await asyncio.to_thread(path.read_text, "utf-8")
             return json.loads(raw)
         except OSError as exc:
-            logger.warning("Could not read local definition JSON (file=%s): %s", path, exc)
+            logger.warning("Could not read local JSON metadata (file=%s): %s", path, exc)
             return None
         except json.JSONDecodeError as exc:
             logger.warning(
-                "Local definition JSON parsing failed (file=%s, line=%s, column=%s): %s",
+                "Local JSON metadata parsing failed (file=%s, line=%s, column=%s): %s",
                 path,
                 exc.lineno,
                 exc.colno,
@@ -918,8 +923,30 @@ class WorkflowService:
             )
             return None
 
+    @staticmethod
+    async def _read_definition(path: Path) -> Any:
+        if not await asyncio.to_thread(path.is_file):
+            return None
+        try:
+            raw = await asyncio.to_thread(path.read_text, "utf-8")
+            return load_definition_yaml(raw)
+        except OSError as exc:
+            logger.warning("Could not read local definition YAML (file=%s): %s", path, exc)
+            return None
+        except DefinitionYamlError as exc:
+            logger.warning(
+                "Local definition YAML parsing failed "
+                "(file=%s, line=%s, column=%s): %s",
+                path,
+                exc.line,
+                exc.column,
+                exc,
+            )
+            return None
+
     async def _write_model(self, path: Path, model: WorkflowDefinition | NodeTemplate) -> None:
-        await self._write_json(path, model.model_dump(mode="json", exclude_none=True))
+        serialized = dump_definition_yaml(model.model_dump(mode="json", exclude_none=True))
+        await self._write_text(path, serialized)
 
     async def _write_json(self, path: Path, value: Any) -> None:
         serialized = json.dumps(value, indent=2, ensure_ascii=False) + "\n"

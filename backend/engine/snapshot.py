@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from backend.engine.definition_yaml import DefinitionYamlError, load_definition_yaml
 from backend.engine.validation import direct_references, parse_workflow, validate_workflow_bundle
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
@@ -67,32 +67,36 @@ class WorkflowSnapshotLoader:
                 )
                 raise
             try:
-                data: Any = json.loads(raw)
-            except json.JSONDecodeError as exc:
+                data: Any = load_definition_yaml(raw)
+            except DefinitionYamlError as exc:
                 logger.warning(
-                    "Workflow JSON parsing failed (workflow=%s, file=%s, commit=%s, "
+                    "Workflow YAML parsing failed (workflow=%s, file=%s, commit=%s, "
                     "line=%s, column=%s): %s",
                     workflow_id,
                     filename,
                     _short_sha(commit_sha),
-                    exc.lineno,
-                    exc.colno,
-                    exc.msg,
+                    exc.line,
+                    exc.column,
+                    str(exc),
+                )
+                location = (
+                    f" at line {exc.line}, column {exc.column}"
+                    if exc.line is not None and exc.column is not None
+                    else ""
                 )
                 raise BundleResolutionError(
-                    f"Workflow '{workflow_id}' is not valid JSON at line {exc.lineno}, "
-                    f"column {exc.colno}: {exc.msg}"
+                    f"Workflow '{workflow_id}' is not valid YAML{location}: {exc}"
                 ) from exc
             if not isinstance(data, dict):
                 logger.warning(
                     "Workflow parsing failed (workflow=%s, file=%s, commit=%s): "
-                    "top-level JSON value is %s, expected an object",
+                    "top-level YAML value is %s, expected a mapping",
                     workflow_id,
                     filename,
                     _short_sha(commit_sha),
                     type(data).__name__,
                 )
-                raise BundleResolutionError(f"Workflow '{workflow_id}' must be a JSON object")
+                raise BundleResolutionError(f"Workflow '{workflow_id}' must be a YAML mapping")
             workflow, parse_errors = parse_workflow(data, f"workflows.{workflow_id}")
             if parse_errors or workflow is None:
                 details = _issue_details(parse_errors)
@@ -114,7 +118,7 @@ class WorkflowSnapshotLoader:
                     workflow.id,
                 )
                 raise BundleResolutionError(
-                    f"Workflow file '{workflow_id}.json' declares ID '{workflow.id}'"
+                    f"Workflow file '{workflow_id}.yaml' declares ID '{workflow.id}'"
                 )
             workflows[workflow_id] = workflow
             pending.extend(direct_references(workflow))
@@ -122,7 +126,7 @@ class WorkflowSnapshotLoader:
         report = validate_workflow_bundle(
             root_workflow_id,
             workflows,
-            filename=f"{root_workflow_id}.json",
+            filename=f"{root_workflow_id}.yaml",
             max_timeout=max_timeout,
             max_review_iterations=max_review_iterations,
             max_subworkflow_depth=max_subworkflow_depth,
@@ -163,7 +167,7 @@ class WorkflowSnapshotLoader:
             except ValueError:
                 continue
             if (
-                path.suffix != ".json"
+                path.suffix != ".yaml"
                 or not relative.parts
                 or relative.parts[0] == "templates"
             ):

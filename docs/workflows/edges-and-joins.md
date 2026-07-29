@@ -7,13 +7,11 @@ description: Define dependencies, conditional branches, and node readiness.
 
 An edge declares that a target depends on a source. With no condition, the edge is satisfied when its source succeeds. With a condition, Kyron evaluates the condition once the source is terminal and records the result.
 
-```json
-{
-  "id": "tests_to_publish",
-  "source": "tests",
-  "target": "publish",
-  "condition": null
-}
+```yaml
+id: tests_to_publish
+source: tests
+target: publish
+condition: null
 ```
 
 Edge IDs are unique identifiers. `source` and `target` must name nodes in the same workflow, and self-edges are invalid.
@@ -22,12 +20,11 @@ Edge IDs are unique identifiers. `source` and `target` must name nodes in the sa
 
 Compare the source process exit code:
 
-```json
-"condition": {
-  "type": "exit_code",
-  "operator": "equals",
-  "value": 0
-}
+```yaml
+condition:
+  type: exit_code
+  operator: equals
+  value: 0
 ```
 
 Operators are `equals`, `not_equals`, `greater_than`, `greater_than_or_equal`, `less_than`, and `less_than_or_equal`.
@@ -38,12 +35,11 @@ Exit-code conditions require a process source node that produces an exit code.
 
 Search bounded source output for a string:
 
-```json
-"condition": {
-  "type": "output_contains",
-  "value": "READY_FOR_REVIEW",
-  "stream": "stdout"
-}
+```yaml
+condition:
+  type: output_contains
+  value: READY_FOR_REVIEW
+  stream: stdout
 ```
 
 `stream` is `stdout`, `stderr`, or `combined`. Prefer explicit machine-readable markers over fragile matches against human prose.
@@ -52,11 +48,10 @@ Search bounded source output for a string:
 
 Test for a path in the current run worktree:
 
-```json
-"condition": {
-  "type": "file_exists",
-  "value": "reports/coverage.xml"
-}
+```yaml
+condition:
+  type: file_exists
+  value: reports/coverage.xml
 ```
 
 The path must be repository-relative and may not escape with `..`. The check happens after the source is terminal and sees the checkpointed worktree state available at that point.
@@ -65,20 +60,19 @@ The path must be repository-relative and may not escape with `..`. The check hap
 
 Compare a public context value:
 
-```json
-"condition": {
-  "type": "variable",
-  "name": "STRICT",
-  "operator": "equals",
-  "value": true
-}
+```yaml
+condition:
+  type: variable
+  name: STRICT
+  operator: equals
+  value: true
 ```
 
 The variable must exist and the comparison follows the value's public type. Credentials are never eligible.
 
 ## AND joins
 
-`"join": "and"` is the default. A target becomes ready only when every incoming edge is resolved and satisfied.
+`join: and` is the default. A target becomes ready only when every incoming edge is resolved and satisfied.
 
 Use AND when all prerequisites matter—for example, both tests and lint must succeed before review.
 

@@ -116,14 +116,12 @@ Prompt stdout is Pi's raw JSONL event stream; readable engine events are separat
 
 ## Workflow outputs
 
-```json
-"outputs": {
-  "SUMMARY": {
-    "type": "string",
-    "source": "${NODE_analyze_STDOUT}",
-    "description": "Bounded analysis summary"
-  }
-}
+```yaml
+outputs:
+  SUMMARY:
+    type: string
+    source: ${NODE_analyze_STDOUT}
+    description: Bounded analysis summary
 ```
 
 Sources expand at invocation completion. A parent's `output_mapping` can expose a child output under a new public name.

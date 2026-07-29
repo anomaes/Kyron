@@ -96,4 +96,4 @@ Deleting a definition follows the same local-store and batch-review flow and is 
 
 ## When to edit JSON directly
 
-The builder is ideal for topology and common configuration. Direct JSON is often faster for large mappings, repeated conditions, or code-reviewed changes made alongside application code. Both paths use the same [workflow JSON specification](/workflow-json-authoring-spec).
+The builder is ideal for topology and common configuration. Direct YAML is often faster for large mappings, multiline prompts, repeated conditions, or code-reviewed changes made alongside application code. Both paths use the same [workflow YAML specification](/workflow-yaml-authoring-spec).

@@ -106,7 +106,7 @@ export default defineConfig({
         {
           text: "Complete contract",
           items: [
-            { text: "Workflow JSON specification", link: "/workflow-json-authoring-spec" },
+            { text: "Workflow YAML specification", link: "/workflow-yaml-authoring-spec" },
           ],
         },
       ],

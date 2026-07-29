@@ -11,7 +11,7 @@ Use these pages when you need an exact field, variable, state, route, or invaria
 
 | Reference | Covers |
 | --- | --- |
-| [Workflow JSON specification](/workflow-json-authoring-spec) | Complete version 2 schema, naming, nodes, conditions, settings, and validation |
+| [Workflow YAML specification](/workflow-yaml-authoring-spec) | Complete version 2 schema, naming, nodes, conditions, settings, and validation |
 | [Variables and outputs](/reference/variables) | Public built-ins, node outputs, feedback context, templates, and secrets |
 | [Node types](/workflows/node-types) | Task-oriented node configuration summary |
 | [Edges and joins](/workflows/edges-and-joins) | Conditions, readiness, AND/OR, and skip behavior |
