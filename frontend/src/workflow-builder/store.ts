@@ -2,7 +2,7 @@ import { addEdge, applyEdgeChanges, applyNodeChanges, MarkerType, type Connectio
 import { create } from "zustand";
 import type { NodeType, Workflow, WorkflowNode } from "../types";
 
-export type BuilderData = { workflowNode: WorkflowNode; label: string; type: NodeType };
+export type BuilderData = { kind: "editable"; workflowNode: WorkflowNode; label: string; type: NodeType };
 export type BuilderNode = Node<BuilderData>;
 
 const defaults: Record<NodeType, Record<string, unknown>> = {
@@ -35,7 +35,7 @@ type BuilderStore = {
 const initial: Workflow = { id: "new_workflow", name: "New workflow", description: "", version: 2, created_by: "", tags: [], inputs: {}, outputs: {}, variables: {}, nodes: [], edges: [], settings: {} };
 
 function flowNode(node: WorkflowNode): BuilderNode {
-  return { id: node.id, position: node.position, type: "workflow", data: { workflowNode: node, label: node.label, type: node.type } };
+  return { id: node.id, position: node.position, type: "workflow", data: { kind: "editable", workflowNode: node, label: node.label, type: node.type } };
 }
 
 function uniqueNodeId(seed: string, nodes: BuilderNode[]): string {

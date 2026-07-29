@@ -30,6 +30,29 @@ Connect nodes from the source handle on the right to the target handle on the le
 show execution direction. The builder prevents obvious invalid connections, while server
 validation remains authoritative.
 
+## Inspect composite workflows
+
+Sub-workflow and review-loop cards can expand into read-only child graph previews. The
+expanded container remains the single control node in the parent graph, so its incoming and
+outgoing edges, mappings, join behavior, and identity do not change. Child cards and edges show
+the referenced workflow's stored topology without copying them into the parent definition.
+
+Only one top-level branch is expanded at a time, although composite calls within that branch can
+be expanded in place. Review loops show one child definition at a time under **Initial** and
+**Revision** tabs. When no separate revision workflow is configured, later iterations use the
+initial workflow and the Revision tab explains that fallback.
+
+Preview mode keeps the canvas readable and protects the authored topology:
+
+- child cards are read-only;
+- nodes cannot be moved and connections cannot be created until the preview is collapsed;
+- temporary spacing around the expanded container is never stored; and
+- **Open workflow** opens the child definition in a new tab for editing.
+
+Missing, empty, recursive, unusually deep, or unusually large child graphs remain visible as
+bounded warning or empty states. These display safeguards do not replace server validation of
+workflow references, recursion, or depth.
+
 ## Configure nodes
 
 Select a node to open the inspector. Common fields include:

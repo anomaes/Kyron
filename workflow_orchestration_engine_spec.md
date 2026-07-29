@@ -3115,6 +3115,20 @@ Show:
 - Initial/revision child names and maximum iteration count for review loops.
 - Validation-error indicator.
 
+Sub-workflow and review-loop cards can expand into nested, read-only compound-node previews.
+The parent control node retains its ID, handles, and external edges. Preview nodes and internal
+edges are derived from catalog definitions and are never stored in the editable graph, workflow
+definition, validation request, snapshot, or run state. Only one top-level branch is expanded at
+a time; nested composites along that branch may also expand within bounded depth, node-count,
+dimension, and recursion safeguards.
+
+An expanded review loop displays one definition at a time through accessible Initial and
+Revision tabs. The Revision tab is disabled when no separate revision definition is configured
+and explains that later iterations reuse the initial workflow. While a preview is expanded,
+topology dragging and connection creation are disabled across the canvas. Temporary container
+sizing and sibling collision offsets affect display only. Child definitions open in a new
+builder tab for editing.
+
 ### Common node editor
 
 - Label.
