@@ -318,7 +318,6 @@ def upgrade() -> None:
         """
         UPDATE workflow_invocations
         SET public_context = input_context
-        WHERE public_context IS NULL OR public_context = '{}'
         """
     )
 
