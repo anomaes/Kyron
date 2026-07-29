@@ -238,6 +238,7 @@ function buildComposite(
           draggable: false,
           connectable: false,
           selectable: false,
+          zIndex: (depth + 1) * 10 + 2,
           style: { width: PREVIEW_NODE_WIDTH, height: PREVIEW_NODE_HEIGHT },
           data,
           ariaLabel: `${child.name}, ${source.type.replaceAll("_", " ")}, ${source.label}, read-only preview`,
@@ -260,7 +261,17 @@ function buildComposite(
     width: built.width,
     height: built.height,
   }));
-  const layout = normalizeChildLayout(sizedChildren);
+  const expandedChild = childBuilds.find((built) => built.root.data.kind === "composite");
+  let positionedChildren = sizedChildren;
+  if (expandedChild) {
+    const collisions = avoidTopLevelCollisions(sizedChildren, expandedChild.root.id);
+    if (collisions.warning) context.warnings.push({ instanceKey, message: collisions.warning });
+    positionedChildren = sizedChildren.map((item) => ({
+      ...item,
+      position: collisions.positions.get(item.id) ?? item.position,
+    }));
+  }
+  const layout = normalizeChildLayout(positionedChildren);
   const descendants: BuilderDisplayNode[] = [];
   const edges: Edge[] = [];
 
@@ -330,9 +341,10 @@ function buildComposite(
     type: "compositePreview",
     parentId,
     position: { ...position },
-    draggable: false,
+    draggable: parentId === undefined,
     connectable: false,
     selectable: parentId === undefined,
+    zIndex: parentId === undefined ? 0 : depth * 10 + 1,
     style: { width: layout.width, height: layout.height },
     data,
     ariaLabel: `${callNode.type === "review_loop" ? "Review loop" : "Sub-workflow"} ${callNode.label}, expanded read-only preview`,
@@ -402,7 +414,7 @@ export function projectBuilderGraph(input: BuilderProjectionInput): BuilderProje
   const roots: BuilderDisplayNode[] = input.editableNodes.map((node) => {
     const position = collisions.positions.get(node.id) ?? node.position;
     if (node.id === activeNode.id) return { ...composite.root, position, selected: node.selected };
-    return { ...node, position: { ...position }, draggable: false, connectable: false };
+    return { ...node, position: { ...position }, draggable: true, connectable: false };
   });
 
   return {

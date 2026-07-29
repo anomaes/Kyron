@@ -12,7 +12,7 @@ import {
   type BuilderProjectionInput,
   type ExpansionSnapshot,
 } from "./projection";
-import { COMPOSITE_HEADER_HEIGHT, COMPOSITE_PADDING } from "./preview-layout";
+import { COMPOSITE_HEADER_HEIGHT, COMPOSITE_MIN_WIDTH, COMPOSITE_PADDING, SIBLING_CLEARANCE } from "./preview-layout";
 
 function node(
   id: string,
@@ -130,6 +130,9 @@ describe("projectBuilderGraph", () => {
 
     expect(result.hasExpandedPreview).toBe(true);
     expect(result.nodes.find((item) => item.id === "quality")?.data.kind).toBe("composite");
+    expect(result.nodes.find((item) => item.id === "quality")?.draggable).toBe(true);
+    expect(result.nodes.find((item) => item.id === "finish")?.draggable).toBe(true);
+    expect(result.nodes.find((item) => item.id === previewNodeId(key, "lint"))?.draggable).toBe(false);
     expect(result.edges.filter((item) => !item.id.startsWith(PREVIEW_ID_PREFIX)).map((item) => item.id)).toEqual([
       "into_quality",
       "out_of_quality",
@@ -196,6 +199,39 @@ describe("projectBuilderGraph", () => {
     const result = projectBuilderGraph(input(root, [workflow("empty", [])], expansion(key, [key], [], [[key, "empty"]])));
 
     expect(result.nodes[0]?.data).toMatchObject({ kind: "composite", empty: true });
+    expect(result.nodes[0]?.style?.width).toBe(COMPOSITE_MIN_WIDTH);
+  });
+
+  it("keeps an expanded nested container clear of its direct siblings", () => {
+    const rootCall = node("call", "subworkflow", { x: 0, y: 0 }, { workflow_id: "child" });
+    const nestedCall = node("nested", "subworkflow", { x: 0, y: 0 }, { workflow_id: "grandchild" });
+    const sibling = node("sibling", "bash", { x: 200, y: 0 });
+    const root = workflow("root", [rootCall]);
+    const child = workflow("child", [nestedCall, sibling]);
+    const grandchild = workflow("grandchild", [node("task")]);
+    const rootKey = topLevelInstanceKey("call");
+    const nestedKey = nestedInstanceKey(rootKey, "child", "nested");
+    const result = projectBuilderGraph(input(
+      root,
+      [child, grandchild],
+      expansion(rootKey, [rootKey, nestedKey], [], [[rootKey, "child"], [nestedKey, "grandchild"]]),
+    ));
+    const nested = result.nodes.find((item) => item.id === previewNodeId(rootKey, "nested"));
+    const directSibling = result.nodes.find((item) => item.id === previewNodeId(rootKey, "sibling"));
+    if (!nested || !directSibling) throw new Error("Expected nested container and sibling");
+    const nestedWidth = Number(nested.style?.width);
+    const nestedHeight = Number(nested.style?.height);
+    const siblingWidth = Number(directSibling.style?.width);
+    const siblingHeight = Number(directSibling.style?.height);
+
+    expect(
+      nested.position.x + nestedWidth + SIBLING_CLEARANCE <= directSibling.position.x
+      || directSibling.position.x + siblingWidth + SIBLING_CLEARANCE <= nested.position.x
+      || nested.position.y + nestedHeight + SIBLING_CLEARANCE <= directSibling.position.y
+      || directSibling.position.y + siblingHeight + SIBLING_CLEARANCE <= nested.position.y,
+    ).toBe(true);
+    expect(nested.zIndex).toBeGreaterThan(0);
+    expect(directSibling.zIndex).toBeGreaterThan(nested.zIndex ?? 0);
   });
 
   it("orders nested composite parents before descendants and stops recursion", () => {

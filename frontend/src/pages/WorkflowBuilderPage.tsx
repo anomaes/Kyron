@@ -8,6 +8,7 @@ import type { ApprovalPolicy, DefinitionChangeStatus, NodeTemplate, NodeType, Us
 import { CompositePreviewNode } from "../workflow-builder/CompositePreviewNode";
 import { CompositeNodeConfig } from "../workflow-builder/CompositeNodeConfig";
 import { WorkflowExpansionProvider, useWorkflowExpansion } from "../workflow-builder/expansion-context";
+import { applyTransientPositionChanges, applyTransientPositions, type TransientPositions } from "../workflow-builder/preview-interactions";
 import { safeProjectBuilderGraph, type BuilderDisplayNode } from "../workflow-builder/projection";
 import { PromptNodeConfig } from "../workflow-builder/PromptNodeConfig";
 import { useBuilderStore, wouldCreateCycle, type BuilderNode } from "../workflow-builder/store";
@@ -39,6 +40,7 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
   const expansion = useWorkflowExpansion();
   const flow = useReactFlow<BuilderDisplayNode>();
   const lastViewportSignature = useRef("");
+  const [transientPositions, setTransientPositions] = useState<TransientPositions>(() => new Map());
   const projection = useMemo(() => safeProjectBuilderGraph({
     rootWorkflow: store.workflow,
     editableNodes: store.nodes,
@@ -55,6 +57,10 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
     expansion.snapshot,
   ]);
   const realEdgeIds = useMemo(() => new Set(store.edges.map((edge) => edge.id)), [store.edges]);
+  const displayNodes = useMemo(
+    () => applyTransientPositions(projection.nodes, transientPositions),
+    [projection.nodes, transientPositions],
+  );
   const activeNode = projection.activeTopLevelNodeId
     ? projection.nodes.find((node) => node.id === projection.activeTopLevelNodeId)
     : null;
@@ -62,6 +68,10 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
     ? `${activeNode.id}:${String(activeNode.style?.width)}:${String(activeNode.style?.height)}`
     : "";
   const projectionFailed = projection.warnings.some((warning) => warning.message === "Child preview could not be rendered");
+
+  useEffect(() => {
+    setTransientPositions(new Map());
+  }, [expansion.snapshot.activeTopLevelKey]);
 
   useEffect(() => {
     if (!activeNode || viewportSignature === lastViewportSignature.current) return;
@@ -96,6 +106,11 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
       store.onNodesChange(changes as NodeChange<BuilderNode>[]);
       return;
     }
+    setTransientPositions((positions) => applyTransientPositionChanges(
+      positions,
+      changes,
+      projection.realNodeIds,
+    ));
     const realSelections = changes.filter((change) => (
       change.type === "select" && projection.realNodeIds.has(change.id)
     ));
@@ -120,14 +135,14 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
 
   return <main className="builder-canvas">
     <ReactFlow
-      nodes={projection.nodes}
+      nodes={displayNodes}
       edges={projection.edges}
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={connect}
       isValidConnection={isValidConnection}
-      nodesDraggable={!projection.hasExpandedPreview}
+      nodesDraggable
       nodesConnectable={!projection.hasExpandedPreview}
       onNodeClick={(_, node) => {
         if (projection.realNodeIds.has(node.id)) store.selectNode(node.id);
@@ -140,7 +155,7 @@ function ProjectedBuilderCanvas({ errors }: { errors: Array<{ path: string; mess
       <MiniMap pannable />
       <Controls />
     </ReactFlow>
-    {projection.hasExpandedPreview && <div className="preview-mode-notice" role="status">Preview mode: child graphs are read-only. Collapse to move or connect nodes.</div>}
+    {projection.hasExpandedPreview && <div className="preview-mode-notice" role="status">Preview mode: child graphs are read-only. Parent node moves are temporary; collapse to edit saved positions or connections.</div>}
     {projectionFailed && <div className="preview-error-notice">Child preview could not be rendered. Parent editing remains available.<button type="button" onClick={() => expansion.reset("Child preview reset")}>Reset preview</button></div>}
     <div className="visually-hidden" aria-live="polite" aria-atomic="true">{expansion.liveMessage}</div>
     {errors.length > 0 && <div className="validation-drawer"><strong>{errors.length} validation issue{errors.length === 1 ? "" : "s"}</strong>{errors.slice(0, 5).map((error) => <p key={`${error.path}-${error.message}`}><code>{error.path}</code> {error.message}</p>)}</div>}

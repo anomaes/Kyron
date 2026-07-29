@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Workflow, WorkflowNode } from "../types";
+import { applyTransientPositionChanges, applyTransientPositions } from "./preview-interactions";
 import { projectBuilderGraph, topLevelInstanceKey } from "./projection";
 import { useBuilderStore, wouldCreateCycle } from "./store";
 
@@ -59,6 +60,12 @@ describe("builder store serialization isolation", () => {
         referenceByKey: new Map([[key, "child"]]),
       },
     });
+    const transientPositions = applyTransientPositionChanges(
+      new Map(),
+      [{ id: "finish", type: "position", position: { x: 900, y: 600 }, dragging: false }],
+      projection.realNodeIds,
+    );
+    const temporarilyMoved = applyTransientPositions(projection.nodes, transientPositions);
     const afterExpansion = useBuilderStore.getState().serialize();
     const afterCollapse = projectBuilderGraph({
       rootWorkflow: store.workflow,
@@ -75,6 +82,7 @@ describe("builder store serialization isolation", () => {
     });
 
     expect(projection.nodes.some((item) => item.id.startsWith("preview/"))).toBe(true);
+    expect(temporarilyMoved.find((item) => item.id === "finish")?.position).toEqual({ x: 900, y: 600 });
     expect(afterExpansion).toEqual(before);
     expect(afterCollapse.nodes.map((item) => item.position)).toEqual(store.nodes.map((item) => item.position));
     expect(JSON.stringify(afterExpansion)).toBe(JSON.stringify(before));
@@ -110,4 +118,3 @@ describe("builder store serialization isolation", () => {
     )).toBe(false);
   });
 });
-

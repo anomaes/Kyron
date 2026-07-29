@@ -68,7 +68,7 @@ export function CompositePreviewNode({ data, selected }: NodeProps<CompositeFlow
     <Handle type="target" position={Position.Left} isConnectable={false} />
     <header className="composite-preview-header">
       <div className="composite-preview-title">
-        <small>{isReview ? "Review loop" : "Sub-workflow"}</small>
+        <small>{isReview ? "Review loop" : "Sub-workflow"}{data.depth > 0 ? ` · nested level ${data.depth}` : ""}</small>
         <strong>{data.callNode.label}</strong>
         <span title={breadcrumb}>{breadcrumb}</span>
       </div>

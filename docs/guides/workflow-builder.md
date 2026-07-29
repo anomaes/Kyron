@@ -45,8 +45,9 @@ initial workflow and the Revision tab explains that fallback.
 Preview mode keeps the canvas readable and protects the authored topology:
 
 - child cards are read-only;
-- nodes cannot be moved and connections cannot be created until the preview is collapsed;
-- temporary spacing around the expanded container is never stored; and
+- parent workflow cards can be moved temporarily, while connections remain locked;
+- temporary dragging and spacing around the expanded container are never stored and disappear
+  when the preview is collapsed; and
 - **Open workflow** opens the child definition in a new tab for editing.
 
 Missing, empty, recursive, unusually deep, or unusually large child graphs remain visible as

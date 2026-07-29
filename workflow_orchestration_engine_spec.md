@@ -3125,8 +3125,9 @@ dimension, and recursion safeguards.
 An expanded review loop displays one definition at a time through accessible Initial and
 Revision tabs. The Revision tab is disabled when no separate revision definition is configured
 and explains that later iterations reuse the initial workflow. While a preview is expanded,
-topology dragging and connection creation are disabled across the canvas. Temporary container
-sizing and sibling collision offsets affect display only. Child definitions open in a new
+real parent nodes remain draggable through transient display positions, while child nodes and
+connection creation remain locked. Temporary dragging, container sizing, and sibling collision
+offsets affect display only and are discarded on collapse. Child definitions open in a new
 builder tab for editing.
 
 ### Common node editor
