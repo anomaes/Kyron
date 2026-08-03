@@ -8,6 +8,7 @@ from typing import Protocol
 from backend.config import Settings
 
 SUPPORTED_PROVIDERS = frozenset({"gitlab", "github"})
+CODE_HOST_ERROR_DETAIL_LIMIT = 2000
 
 
 def provider_display_name(provider: str) -> str:
@@ -35,12 +36,29 @@ def repository_locator(provider: str, project_id: str, project_path: str) -> str
 
 
 class CodeHostError(RuntimeError):
-    def __init__(self, provider: str, category: str, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        provider: str,
+        category: str,
+        status_code: int | None = None,
+        *,
+        detail: str | None = None,
+    ) -> None:
         suffix = f" (HTTP {status_code})" if status_code else ""
-        super().__init__(f"{provider_display_name(provider)} {category} request failed{suffix}")
+        bounded_detail = detail.strip() if detail else None
+        if bounded_detail and len(bounded_detail) > CODE_HOST_ERROR_DETAIL_LIMIT:
+            bounded_detail = (
+                f"{bounded_detail[:CODE_HOST_ERROR_DETAIL_LIMIT]}… [response truncated]"
+            )
+        detail_suffix = f": {bounded_detail}" if bounded_detail else ""
+        super().__init__(
+            f"{provider_display_name(provider)} {category} request failed"
+            f"{suffix}{detail_suffix}"
+        )
         self.provider = provider
         self.category = category
         self.status_code = status_code
+        self.detail = bounded_detail
 
 
 @dataclass(frozen=True, slots=True)

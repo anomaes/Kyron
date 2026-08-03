@@ -81,6 +81,54 @@ class RunCoordinator:
         self.engine_logs = engine_logs
 
     async def execute_run(self, run_id: uuid.UUID) -> None:
+        try:
+            await self._execute_run(run_id)
+        except CodeHostError as exc:
+            run = await self._run(run_id)
+            if run.status not in {
+                RunStatus.RUNNING,
+                RunStatus.RESUMING,
+                RunStatus.AWAITING_FEEDBACK,
+                RunStatus.FAILED,
+            }:
+                logger.warning(
+                    "Ignoring code-host failure after run left an active state "
+                    "(run=%s, status=%s, provider=%s, category=%s)",
+                    run.id,
+                    run.status,
+                    exc.provider,
+                    exc.category,
+                )
+                return
+            run.status = RunStatus.FAILED
+            run.error_type = "CODE_HOST_REQUEST_FAILED"
+            run.error_message = str(exc)
+            if run.delivery_mode == "REPORT_ONLY":
+                run.verification_conclusion = "FAILURE"
+            await self._write_log(
+                run.id,
+                "ERROR",
+                "RUN_FAILED",
+                run.error_message,
+                metadata={
+                    "error_type": run.error_type,
+                    "provider": exc.provider,
+                    "category": exc.category,
+                    "status_code": exc.status_code,
+                },
+            )
+            await self.session.commit()
+            logger.error(
+                "Workflow run failed because a code-host request was rejected "
+                "(run=%s, provider=%s, category=%s, status_code=%s): %s",
+                run.id,
+                exc.provider,
+                exc.category,
+                exc.status_code,
+                exc,
+            )
+
+    async def _execute_run(self, run_id: uuid.UUID) -> None:
         run = await self._run(run_id)
         project = await self._project(run.project_id)
         user = await self._user(run.triggered_by)

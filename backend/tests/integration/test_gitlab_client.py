@@ -20,11 +20,20 @@ async def test_project_request_uses_private_token_without_exposing_it() -> None:
 
 
 async def test_gitlab_error_is_sanitized() -> None:
-    transport = httpx.MockTransport(lambda _: httpx.Response(401, text="secret-token"))
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(
+            400,
+            json={"message": "Source branch does not exist; token=secret-token"},
+        )
+    )
     async with httpx.AsyncClient(transport=transport) as client:
         gitlab = GitLabClient("https://gitlab.example", client)
         with pytest.raises(GitLabError) as captured:
             await gitlab.get_project(123, "secret-token")
+    assert captured.value.status_code == 400
+    assert captured.value.detail is not None
+    assert "Source branch does not exist" in str(captured.value)
+    assert "[REDACTED]" in str(captured.value)
     assert "secret-token" not in str(captured.value)
 
 

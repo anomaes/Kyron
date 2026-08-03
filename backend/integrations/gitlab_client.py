@@ -17,8 +17,14 @@ from backend.services.crypto import SecretRedactor
 
 
 class GitLabError(CodeHostError):
-    def __init__(self, category: str, status_code: int | None = None) -> None:
-        super().__init__("gitlab", category, status_code)
+    def __init__(
+        self,
+        category: str,
+        status_code: int | None = None,
+        *,
+        detail: str | None = None,
+    ) -> None:
+        super().__init__("gitlab", category, status_code, detail=detail)
 
 
 class GitLabClient:
@@ -66,7 +72,11 @@ class GitLabClient:
                     await asyncio.sleep(0.25 * 2**attempt)
                     continue
                 if response.is_error:
-                    raise GitLabError(category, response.status_code)
+                    raise GitLabError(
+                        category,
+                        response.status_code,
+                        detail=redactor.redact(response.text),
+                    )
                 if response.status_code == 204 or not response.content:
                     return {}
                 data = response.json()

@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
     GateInstance,
     NodeExecution,
     Project,
+    RunLog,
     User,
     WorkflowInvocation,
     WorkflowRun,
@@ -22,6 +24,8 @@ from backend.integrations.code_host import ChangeRequest, CodeHostError, Provide
 from backend.integrations.git_manager import GitManager
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
 from backend.services.crypto import SecretCipher
+from backend.services.engine_log_service import EngineLogService
+from backend.services.log_broadcaster import LogBroadcaster
 from backend.tests.fixtures.workflows import workflow
 
 
@@ -57,6 +61,29 @@ class AmbiguousCreateCodeHost:
     ) -> None:
         self.calls.append("reviewers")
         assert self.run.change_request_number == number
+
+
+class RejectedCreateCodeHost:
+    provider = "gitlab"
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def find_change_request(self, *args: Any, **kwargs: Any) -> None:
+        self.calls.append("find")
+        return None
+
+    async def create_change_request(self, *args: Any, **kwargs: Any) -> ChangeRequest:
+        self.calls.append("create")
+        raise CodeHostError(
+            "gitlab",
+            "merge request creation",
+            400,
+            detail="Source branch does not exist",
+        )
+
+    async def update_change_request_reviewers(self, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError("reviewers must not be updated after rejected MR creation")
 
 
 class CheckpointGit:
@@ -197,6 +224,93 @@ async def test_ambiguous_change_request_creation_is_reconciled_before_retry(
     assert stored.change_request_number == 17
     assert stored.change_request_url == "https://github.test/acme/widget/pull/17"
     assert code_host.calls == ["find", "create", "find", "reviewers"]
+
+
+async def test_code_host_error_is_recorded_as_normal_run_failure(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="provider-failure@example.com", display_name="Provider failure")
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(
+        name="Provider failure project",
+        git_url="https://gitlab.test/acme/widget.git",
+        provider="gitlab",
+        provider_project_id="123",
+        provider_project_path="acme/widget",
+        encrypted_access_token=b"unused",
+        local_path=str(tmp_path / "repository-provider-failure"),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.RUNNING,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        public_context={},
+        pending_operation="FINAL_PUBLICATION",
+        branch_name="workflow/provider_failure",
+        reviewer_provider="gitlab",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    code_host = RejectedCreateCodeHost()
+    engine_logs = EngineLogService(db_session, LogBroadcaster())
+    coordinator = RunCoordinator(
+        db_session,
+        cast(GitManager, object()),
+        cast(Any, code_host),
+        cast(SecretCipher, object()),
+        cast(WaveExecutor, object()),
+        engine_logs,
+    )
+    definition_data = workflow()
+    definition_data["settings"] = {
+        "mr_title_template": "Workflow run",
+        "mr_description_template": "Review this run",
+    }
+    definition = WorkflowDefinition.model_validate(definition_data)
+
+    async def reject_publication(_: uuid.UUID) -> None:
+        await coordinator._ensure_merge_request(
+            run,
+            project,
+            definition,
+            "token",
+        )
+
+    monkeypatch.setattr(coordinator, "_execute_run", reject_publication)
+
+    await coordinator.execute_run(run.id)
+
+    await db_session.refresh(run)
+    assert run.status == RunStatus.FAILED
+    assert run.error_type == "CODE_HOST_REQUEST_FAILED"
+    assert run.error_message == (
+        "GitLab merge request creation request failed (HTTP 400): "
+        "Source branch does not exist"
+    )
+    assert run.pending_operation == "FINAL_PUBLICATION"
+    assert code_host.calls == ["find", "create", "find"]
+    failure_log = await db_session.scalar(
+        select(RunLog).where(
+            RunLog.run_id == run.id,
+            RunLog.event_type == "RUN_FAILED",
+        )
+    )
+    assert failure_log is not None
+    assert failure_log.message == run.error_message
 
 
 async def test_pending_local_finalization_completes_without_replaying_workflow(
