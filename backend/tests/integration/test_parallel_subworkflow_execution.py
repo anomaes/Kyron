@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.db.database import Base
@@ -131,6 +131,13 @@ async def test_ready_parallel_children_use_distinct_worktrees_and_integrate(
         f"sqlite+aiosqlite:///{tmp_path / 'parallel.db'}",
         connect_args={"timeout": 30},
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def enable_foreign_keys(dbapi_connection: Any, _: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)

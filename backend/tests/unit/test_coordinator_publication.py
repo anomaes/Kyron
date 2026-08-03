@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
@@ -19,7 +20,7 @@ from backend.engine.coordinator import RunCoordinator
 from backend.engine.waves import WaveExecutor
 from backend.integrations.code_host import ChangeRequest, CodeHostError, ProviderUser
 from backend.integrations.git_manager import GitManager
-from backend.schemas.workflow import WorkflowDefinition
+from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
 from backend.services.crypto import SecretCipher
 from backend.tests.fixtures.workflows import workflow
 
@@ -66,6 +67,74 @@ class CheckpointGit:
     async def checkpoint(self, worktree: Path, message: str) -> str:
         self.messages.append(message)
         return self.sha
+
+
+class FailingInitializationGit:
+    async def create_run_worktree(self, *args: Any, **kwargs: Any) -> tuple[str, Path, Path]:
+        raise FileExistsError("run data already exists")
+
+
+async def test_queued_run_is_durably_claimed_before_worktree_initialization(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    user = User(email="startup@example.com", display_name="Startup runner")
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(
+        name="Startup project",
+        git_url="https://github.test/acme/startup.git",
+        provider="github",
+        provider_project_id="startup",
+        provider_project_path="acme/startup",
+        encrypted_access_token=b"unused",
+        local_path=str(tmp_path / "repository-startup"),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    definition = WorkflowDefinition.model_validate(workflow())
+    bundle = WorkflowBundle(
+        base_commit_sha="a" * 40,
+        root_workflow_id="root",
+        workflows={"root": definition},
+        reference_graph={"root": []},
+    )
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.QUEUED,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot=bundle.model_dump(mode="json"),
+        public_context={},
+        reviewer_provider="github",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    run_id = run.id
+    coordinator = RunCoordinator(
+        db_session,
+        cast(Any, FailingInitializationGit()),
+        cast(Any, object()),
+        cast(SecretCipher, object()),
+        cast(WaveExecutor, object()),
+    )
+
+    with pytest.raises(FileExistsError, match="run data already exists"):
+        await coordinator.execute_run(run_id)
+
+    db_session.expire_all()
+    stored = await db_session.get(WorkflowRun, run_id)
+    assert stored is not None
+    assert stored.status == RunStatus.RUNNING
+    assert stored.status_version == 2
+    assert stored.started_at is not None
+    assert stored.worktree_path is None
 
 
 async def test_ambiguous_change_request_creation_is_reconciled_before_retry(

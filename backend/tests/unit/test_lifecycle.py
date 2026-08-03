@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.lifecycle as lifecycle
@@ -14,10 +15,28 @@ from backend.db.statuses import RunStatus
 from backend.lifecycle import EngineRuntime
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        pytest.param(
+            RuntimeError("sensitive provider response must not be persisted"),
+            id="active-runtime-error",
+        ),
+        pytest.param(
+            FileExistsError("run data already exists"),
+            id="startup-filesystem-error",
+        ),
+        pytest.param(
+            IntegrityError("INSERT", {}, RuntimeError("duplicate root invocation")),
+            id="startup-integrity-error",
+        ),
+    ],
+)
 async def test_worker_supervisor_records_crash_without_backend_restart(
     db_session: AsyncSession,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
 ) -> None:
     user = User(email="crash@example.com", display_name="Crash test")
     db_session.add(user)
@@ -59,7 +78,7 @@ async def test_worker_supervisor_records_crash_without_backend_restart(
     runtime = EngineRuntime(Settings(_env_file=None))
 
     async def crash(_: object) -> None:
-        raise RuntimeError("sensitive provider response must not be persisted")
+        raise failure
 
     monkeypatch.setattr(lifecycle, "session_factory", recovery_session)
     monkeypatch.setattr(runtime, "_execute_owned", crash)
@@ -69,4 +88,5 @@ async def test_worker_supervisor_records_crash_without_backend_restart(
     await db_session.refresh(run)
     assert run.status == RunStatus.INTERRUPTED
     assert run.error_type == "ENGINE_CRASH"
-    assert "sensitive provider response" not in (run.error_message or "")
+    assert type(failure).__name__ in (run.error_message or "")
+    assert str(failure) not in (run.error_message or "")

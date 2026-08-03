@@ -23,6 +23,7 @@ from backend.db.models import (
     WorkflowInvocation,
     WorkflowRun,
 )
+from backend.db.repositories import InvalidStateTransition, RunRepository
 from backend.db.statuses import InvocationStatus, NodeStatus, RunStatus
 from backend.engine.conditions import evaluate_condition
 from backend.engine.context import expand_public_variables
@@ -93,7 +94,26 @@ class RunCoordinator:
             run.status,
             run.base_commit_sha[:12],
         )
-        if run.status == RunStatus.QUEUED:
+        initializing = run.status == RunStatus.QUEUED
+        if initializing:
+            try:
+                run = await RunRepository(self.session).transition(
+                    run.id,
+                    expected=RunStatus.QUEUED,
+                    new=RunStatus.RUNNING,
+                    expected_version=run.status_version,
+                )
+                await self.session.commit()
+            except InvalidStateTransition:
+                await self.session.rollback()
+                logger.info(
+                    "Workflow run initialization skipped because another worker "
+                    "claimed or changed it (run=%s)",
+                    run_id,
+                )
+                return
+
+        if initializing:
             async with project_git_locks.for_project(project.id):
                 branch, worktree, run_data = await self.git.create_run_worktree(
                     Path(project.local_path),
@@ -118,6 +138,11 @@ class RunCoordinator:
                 public_context=dict(run.public_context),
                 status=InvocationStatus.PENDING,
             )
+            self.session.add(root)
+            # These models have non-deferrable foreign keys in both directions. Persist
+            # each side before assigning the backlink so neither INSERT depends on the
+            # other row already existing.
+            await self.session.flush()
             root_workspace = InvocationWorkspace(
                 id=uuid.uuid4(),
                 run_id=run.id,
@@ -129,11 +154,9 @@ class RunCoordinator:
                 branch_name=branch,
                 worktree_path=str(worktree),
             )
-            root.workspace_id = root_workspace.id
-            self.session.add(root)
             self.session.add(root_workspace)
-            run.status = RunStatus.RUNNING
-            run.started_at = datetime.now(UTC)
+            await self.session.flush()
+            root.workspace_id = root_workspace.id
             await self._write_log(
                 run.id,
                 "INFO",
@@ -795,9 +818,12 @@ class RunCoordinator:
                             workspace_base_commit_sha=parent_head,
                         ),
                     },
-                    workspace_id=workspace_id,
                     status=InvocationStatus.PENDING,
                 )
+                self.session.add(child)
+                # See root initialization: persist both sides of the circular FK before
+                # assigning WorkflowInvocation.workspace_id.
+                await self.session.flush()
                 child_workspace = InvocationWorkspace(
                     id=workspace_id,
                     run_id=run.id,
@@ -810,6 +836,9 @@ class RunCoordinator:
                     branch_name=branch,
                     worktree_path=str(worktree),
                 )
+                self.session.add(child_workspace)
+                await self.session.flush()
+                child.workspace_id = workspace_id
                 member = SubworkflowBatchMember(
                     id=uuid.uuid4(),
                     batch_id=batch.id,
@@ -820,7 +849,7 @@ class RunCoordinator:
                     allow_failure=node.config.allow_failure,
                     status="PENDING",
                 )
-                self.session.add_all([child, child_workspace, member])
+                self.session.add(member)
                 members.append(member)
             await self.session.commit()
 
