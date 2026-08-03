@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -34,6 +35,8 @@ from backend.services.approval_policy_service import actor_requirement_keys, app
 from backend.services.crypto import SecretCipher
 
 ScheduleContinuation = Callable[[uuid.UUID], Awaitable[None]]
+
+logger = logging.getLogger(__name__)
 
 
 class FeedbackError(RuntimeError):
@@ -173,11 +176,11 @@ class FeedbackService:
             if change_request is not None
             else run.change_request_number
         )
-        token = (
-            self.cipher.decrypt(project.encrypted_access_token)
-            if gate_satisfied and provider_number
-            else ""
+        needs_token = bool(
+            provider_number
+            and (gate_satisfied or (source == "frontend" and event_type == "comment"))
         )
+        token = self.cipher.decrypt(project.encrypted_access_token) if needs_token else ""
         try:
             if gate_satisfied and provider_number:
                 repository = repository_locator(
@@ -321,19 +324,27 @@ class FeedbackService:
                         f"@kyron {clean_message}\n\n"
                         f"Submitted via Workflow Engine by {author_username}."
                     )
-                note_result = await self.code_host.post_comment(
-                    repository_locator(
-                        project.provider,
-                        project.provider_project_id,
-                        project.provider_project_path,
-                    ),
-                    provider_number,
-                    token,
-                    note,
-                )
-                event.provider_comment_id = note_result.id
-                decision.provider_event_id = decision.provider_event_id or note_result.id
-                await self.session.commit()
+                try:
+                    note_result = await self.code_host.post_comment(
+                        repository_locator(
+                            project.provider,
+                            project.provider_project_id,
+                            project.provider_project_path,
+                        ),
+                        provider_number,
+                        token,
+                        note,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not publish gate response to code host (run=%s, gate=%s)",
+                        run.id,
+                        gate.id,
+                    )
+                else:
+                    event.provider_comment_id = note_result.id
+                    decision.provider_event_id = decision.provider_event_id or note_result.id
+                    await self.session.commit()
         finally:
             token = ""
         if run.status == RunStatus.RUNNING:

@@ -210,6 +210,71 @@ async def test_review_comment_creates_next_iteration_and_schedules(
     assert scheduled == [run.id]
 
 
+async def test_frontend_review_comment_posts_with_project_token(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    cipher = SecretCipher(Fernet.generate_key())
+    run, _, execution = await waiting_run(db_session, tmp_path, cipher, review_loop=True)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"id": 123})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        service = FeedbackService(
+            db_session, cipher, GitLabClient("https://gitlab.example", client), _schedule_noop
+        )
+        decision = await service.accept(
+            run.id,
+            event_type="comment",
+            source="frontend",
+            author_provider="gitlab",
+            author_provider_user_id="777",
+            author_username="reviewer",
+            message="update docs",
+        )
+
+    assert len(requests) == 1
+    assert requests[0].headers["PRIVATE-TOKEN"] == "project-token"
+    assert requests[0].url.path == "/api/v4/projects/12/merge_requests/42/notes"
+    assert decision.provider_event_id == "123"
+    assert execution.status == NodeStatus.PENDING
+
+
+async def test_frontend_comment_publication_failure_does_not_fail_accepted_feedback(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    cipher = SecretCipher(Fernet.generate_key())
+    run, _, execution = await waiting_run(db_session, tmp_path, cipher, review_loop=True)
+    scheduled: list[uuid.UUID] = []
+
+    async def schedule(run_id: uuid.UUID) -> None:
+        scheduled.append(run_id)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(403, json={"message": "forbidden"})
+        )
+    ) as client:
+        service = FeedbackService(
+            db_session, cipher, GitLabClient("https://gitlab.example", client), schedule
+        )
+        decision = await service.accept(
+            run.id,
+            event_type="comment",
+            source="frontend",
+            author_provider="gitlab",
+            author_provider_user_id="777",
+            author_username="reviewer",
+            message="update docs",
+        )
+
+    assert decision.event_type == "comment"
+    assert execution.status == NodeStatus.PENDING
+    assert scheduled == [run.id]
+
+
 async def test_approval_reset_failure_leaves_run_waiting(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
@@ -310,4 +375,8 @@ async def _all_open_gates(
 
 
 async def _noop() -> None:
+    return None
+
+
+async def _schedule_noop(_: uuid.UUID) -> None:
     return None
