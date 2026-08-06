@@ -103,6 +103,43 @@ events are also persisted in `resource_audit_logs`.
 
 `PI_VERSION` pins the coding-agent build installed in the backend image. Treat a change as a dependency upgrade: review release behavior, rebuild the image, and run prompt-node integration checks before production promotion.
 
+## Custom Pi providers
+
+`PI_MODELS_CONFIG_PATH` is an optional absolute path to a Pi [models file](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md). Leave it empty to use only Pi's built-in provider catalog.
+
+Every prompt attempt runs with a fresh, empty Pi agent directory, so an operator's `~/.pi/agent/models.json` is never visible to a run. When this variable is set, the backend copies that file into each attempt's agent directory as `models.json` before Pi starts. Use it to register a private gateway or to point a built-in provider at a proxy:
+
+```json
+{
+  "providers": {
+    "private-gateway": {
+      "baseUrl": "https://llm.example.com/v1",
+      "api": "openai-completions",
+      "apiKey": "$CUSTOM_LLM_API_KEY",
+      "models": [{ "id": "example-chat-model", "contextWindow": 128000, "maxTokens": 16384 }]
+    }
+  }
+}
+```
+
+Workflows then select it with the usual `provider` and `model` Pi settings.
+
+Place the file inside the mounted data root so the backend container can read it, and restrict it to the runtime user:
+
+```bash
+sudo install -d -m 0750 -o 10001 -g 10001 /var/workflowengine/pi
+sudo install -m 0600 -o 10001 -g 10001 models.json /var/workflowengine/pi/models.json
+```
+
+```dotenv
+PI_MODELS_CONFIG_PATH=/var/workflowengine/pi/models.json
+```
+
+Operational notes:
+
+- An `apiKey` must reference one or more environment variables, such as `$CUSTOM_LLM_API_KEY`; inline and command-based (`!command`) keys are rejected because the Pi agent can read its own configuration file. Secret-like headers follow the same rule. Add a Kyron credential for every referenced variable. The run's credential policy must make those credentials available, which also ensures their values are redacted from persisted process output. Backend container variables and public workflow context cannot satisfy this requirement.
+- A configured file that is missing, unreadable, structurally invalid, or cannot be safely composed as a provider fails every prompt node with that reason rather than silently falling back to the built-in catalog, which could send traffic to the vendor's public endpoint. The backend logs the same structural diagnosis at startup. The parser accepts the same `//` comments and trailing commas as the pinned Pi version.
+
 ## Safe configuration changes
 
 1. Back up `.env` securely and record the current image/commit.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +10,11 @@ from tempfile import TemporaryDirectory
 from backend.engine.context import build_process_environment, expand_public_variables
 from backend.engine.pi.command import PiSkillUnavailable, build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
+from backend.engine.pi.models_config import (
+    PiModelsConfigError,
+    stage_models_config,
+    validate_models_config,
+)
 from backend.engine.pi.renderer import render_event
 from backend.engine.pi.sandbox import sandboxed_command
 from backend.engine.pi.ui_events import normalize_pi_event
@@ -42,8 +48,15 @@ class NodeExecutionRequest:
 
 
 class ProcessNodeExecutor:
-    def __init__(self, runner: ProcessRunner) -> None:
+    def __init__(
+        self,
+        runner: ProcessRunner,
+        pi_models_config: Path | None = None,
+        models_config_validator: Callable[[Path], Awaitable[None]] = validate_models_config,
+    ) -> None:
         self.runner = runner
+        self.pi_models_config = pi_models_config
+        self.models_config_validator = models_config_validator
 
     async def execute(
         self,
@@ -138,6 +151,18 @@ class ProcessNodeExecutor:
                 agent_directory.mkdir()
                 cache_directory.mkdir()
                 temporary_directory.mkdir()
+                required_config_secrets = stage_models_config(
+                    agent_directory, self.pi_models_config
+                )
+                missing_config_secrets = required_config_secrets.difference(request.secrets)
+                if missing_config_secrets:
+                    missing = ", ".join(sorted(missing_config_secrets))
+                    raise PiModelsConfigError(
+                        "Pi models file references credential variables that are not available "
+                        f"to this run: {missing}"
+                    )
+                if self.pi_models_config is not None:
+                    await self.models_config_validator(agent_directory)
                 environment.update(
                     {
                         "GIT_OPTIONAL_LOCKS": "0",

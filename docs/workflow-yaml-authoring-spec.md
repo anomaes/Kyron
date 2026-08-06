@@ -166,7 +166,8 @@ skill: .agents/skills/implementation/SKILL.md
 ```
 
 All fields are optional. `provider` and `model` are passed to Pi as `--provider` and
-`--model`. `skill` names a Markdown skill manifest or skill directory relative to the
+`--model`. Both must name something Pi knows: a built-in provider, or one the operator
+registered through `PI_MODELS_CONFIG_PATH`. `skill` names a Markdown skill manifest or skill directory relative to the
 repository root. A directory must contain `SKILL.md`. The resolved file must remain
 inside the run worktree. Kyron loads that one skill explicitly and invokes its
 `/skill:<name>` command. This works with Pi's project trust disabled and ties the skill

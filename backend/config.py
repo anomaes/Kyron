@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     PROJECT_CLONE_BASE_PATH: Path = Path("/var/workflowengine/repos")
     WORKTREE_BASE_PATH: Path = Path("/var/workflowengine/worktrees")
     RUN_DATA_BASE_PATH: Path = Path("/var/workflowengine/run_data")
+    PI_MODELS_CONFIG_PATH: Path | None = None
 
     MAX_CONCURRENT_RUNS: int = Field(10, ge=1)
     DEFAULT_NODE_TIMEOUT_SECONDS: int = Field(1800, ge=1)
@@ -62,6 +64,16 @@ class Settings(BaseSettings):
         if normalized not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             raise ValueError("LOG_LEVEL must be CRITICAL, ERROR, WARNING, INFO, or DEBUG")
         return normalized
+
+    @field_validator("PI_MODELS_CONFIG_PATH", mode="before")
+    @classmethod
+    def optional_absolute_path(cls, value: Any) -> Any:
+        # An unset key in .env arrives as "", which would otherwise become Path(".").
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if not Path(value).is_absolute():
+            raise ValueError("PI_MODELS_CONFIG_PATH must be an absolute path")
+        return value
 
     @field_validator("MAX_NODE_TIMEOUT_SECONDS")
     @classmethod

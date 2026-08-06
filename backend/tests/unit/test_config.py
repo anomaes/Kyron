@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,6 +34,17 @@ def test_max_timeout_must_cover_default() -> None:
             MAX_NODE_TIMEOUT_SECONDS=10,
             _env_file=None,
         )
+
+
+def test_pi_models_config_path_is_optional_and_must_be_absolute() -> None:
+    assert Settings(_env_file=None).PI_MODELS_CONFIG_PATH is None
+    assert Settings(PI_MODELS_CONFIG_PATH="", _env_file=None).PI_MODELS_CONFIG_PATH is None
+    configured = Settings(
+        PI_MODELS_CONFIG_PATH="/var/workflowengine/pi/models.json", _env_file=None
+    )
+    assert configured.PI_MODELS_CONFIG_PATH == Path("/var/workflowengine/pi/models.json")
+    with pytest.raises(ValidationError, match="absolute path"):
+        Settings(PI_MODELS_CONFIG_PATH="pi/models.json", _env_file=None)
 
 
 def test_enabled_provider_requires_webhook_secret_in_production() -> None:

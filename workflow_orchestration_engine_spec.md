@@ -3520,7 +3520,7 @@ CREDENTIALS_ENCRYPTION_KEY=<fernet-key>
 CREDENTIALS_ENCRYPTION_KEY_VERSION=1
 
 # GitLab
-GITLAB_URL=https://code.siemens.com
+GITLAB_URL=https://gitlab.example.com
 GITLAB_WEBHOOK_SECRET=<secret>
 # Optional on supported GitLab versions:
 GITLAB_WEBHOOK_SIGNING_SECRET=

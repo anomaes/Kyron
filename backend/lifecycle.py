@@ -4,6 +4,8 @@ import asyncio
 import logging
 import uuid
 from contextlib import suppress
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from sqlalchemy import select
 
@@ -13,6 +15,11 @@ from backend.db.models import Credential, Project, WorkflowRun
 from backend.db.statuses import RunStatus
 from backend.engine.coordinator import RunCoordinator
 from backend.engine.nodes.process_nodes import ProcessNodeExecutor
+from backend.engine.pi.models_config import (
+    PiModelsConfigError,
+    stage_models_config,
+    validate_models_config,
+)
 from backend.engine.process_registry import process_registry
 from backend.engine.process_runner import ProcessRunner
 from backend.engine.resume import mark_interrupted_runs, mark_run_interrupted
@@ -37,6 +44,7 @@ class EngineRuntime:
 
     async def start(self) -> None:
         logger.info("Initializing workflow runtime")
+        await self._report_pi_models_config()
         async with session_factory() as session:
             interrupted = await mark_interrupted_runs(session)
             queued = list(
@@ -60,6 +68,21 @@ class EngineRuntime:
             self._resource_reconciler(), name="resource-reconciler"
         )
         logger.info("Workflow runtime started")
+
+    async def _report_pi_models_config(self) -> None:
+        """Surface an unusable Pi models file at startup instead of on the first prompt node."""
+
+        source = self.settings.PI_MODELS_CONFIG_PATH
+        if source is None:
+            return
+        with TemporaryDirectory(prefix="kyron-pi-models-check-") as probe:
+            try:
+                stage_models_config(Path(probe), source)
+                await validate_models_config(Path(probe))
+            except PiModelsConfigError as exc:
+                logger.error("Prompt nodes will fail until this is fixed: %s", exc)
+                return
+        logger.info("Pi models file will be staged for every prompt node (path=%s)", source)
 
     async def stop(self) -> None:
         logger.info("Stopping workflow runtime")
@@ -162,7 +185,7 @@ class EngineRuntime:
             waves = WaveExecutor(
                 session,
                 git,
-                ProcessNodeExecutor(runner),
+                ProcessNodeExecutor(runner, settings.PI_MODELS_CONFIG_PATH),
                 credentials,
                 engine_logs,
             )
