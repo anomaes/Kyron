@@ -160,6 +160,7 @@ const ProviderBuilder = forwardRef<ProviderBuilderHandle, {
 }>(function ProviderBuilder({ document, selectedProvider, onSelect, onChange, onError }, ref) {
   const provider = document?.providers[selectedProvider];
   const xApiKey = headerValue(provider?.headers, "x-api-key");
+  const bearerApiKey = provider?.authHeader === true ? variableName(provider.apiKey) : "";
   const formRef = useRef<HTMLFormElement>(null);
   const dirtyRef = useRef(false);
 
@@ -191,7 +192,19 @@ const ProviderBuilder = forwardRef<ProviderBuilderHandle, {
       api: String(data.get("api") ?? "openai-completions"),
       models: modelIds.map((id) => oldModels.get(id) ?? { id }),
     };
-    if (bearer) { updated.apiKey = `$${bearer}`; updated.authHeader = true; } else { delete updated.apiKey; delete updated.authHeader; }
+    if (bearer) {
+      updated.apiKey = `$${bearer}`;
+      updated.authHeader = true;
+    } else if (xKey) {
+      // Pi requires custom models to resolve provider auth even when the gateway
+      // authenticates through a custom header. Reuse the x-api-key credential
+      // without enabling Pi's explicit Authorization: Bearer header.
+      updated.apiKey = `$${xKey}`;
+      delete updated.authHeader;
+    } else if (old.authHeader === true || old.apiKey === xApiKey) {
+      delete updated.apiKey;
+      delete updated.authHeader;
+    }
     if (Object.keys(headers).length) updated.headers = headers; else delete updated.headers;
     const providers = { ...document.providers };
     if (selectedProvider && selectedProvider !== id) delete providers[selectedProvider];
@@ -228,7 +241,7 @@ const ProviderBuilder = forwardRef<ProviderBuilderHandle, {
     <form ref={formRef} key={selectedProvider || "new"} onSubmit={submit} onChange={() => { dirtyRef.current = true; onError(null); }}>
       <div className="form-row"><label>Provider ID<input name="provider_id" defaultValue={selectedProvider} placeholder="private-gateway" required /></label><label>API protocol<select name="api" defaultValue={provider?.api ?? "openai-completions"}><option value="openai-completions">OpenAI Chat Completions</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option><option value="google-generative-ai">Google Generative AI</option></select></label></div>
       <label>Endpoint URL<input name="base_url" type="url" defaultValue={provider?.baseUrl ?? ""} placeholder="https://llm.example.com/v1" required /></label>
-      <div className="provider-auth-box"><div><strong>Authentication headers</strong><small>Enter Kyron credential names, never token values. Both headers may be enabled together.</small></div><div className="form-row"><label>Bearer credential<input name="bearer_credential" defaultValue={variableName(provider?.apiKey)} placeholder="CUSTOM_LLM_TOKEN" pattern="[A-Za-z_][A-Za-z0-9_]*" /><span className="field-help">Sent as Authorization: Bearer …</span></label><label>x-api-key credential<input name="x_api_key_credential" defaultValue={variableName(xApiKey)} placeholder="CUSTOM_LLM_API_KEY" pattern="[A-Za-z_][A-Za-z0-9_]*" /><span className="field-help">Sent in the x-api-key header.</span></label></div></div>
+      <div className="provider-auth-box"><div><strong>Authentication headers</strong><small>Enter Kyron credential names, never token values. Both headers may be enabled together.</small></div><div className="form-row"><label>Bearer credential<input name="bearer_credential" defaultValue={bearerApiKey} placeholder="CUSTOM_LLM_TOKEN" pattern="[A-Za-z_][A-Za-z0-9_]*" /><span className="field-help">Sent as Authorization: Bearer …</span></label><label>x-api-key credential<input name="x_api_key_credential" defaultValue={variableName(xApiKey)} placeholder="CUSTOM_LLM_API_KEY" pattern="[A-Za-z_][A-Za-z0-9_]*" /><span className="field-help">Used as provider authentication and sent in the x-api-key header.</span></label></div></div>
       <label>Model IDs<textarea name="models" defaultValue={(provider?.models ?? []).map((item) => item.id).filter(Boolean).join("\n")} placeholder={"example-chat-model\nexample-reasoning-model"} required /><span className="field-help">One model ID per line. Advanced model metadata remains intact when IDs are unchanged.</span></label>
       <div className="provider-builder-actions">{selectedProvider && <button className="danger" type="button" onClick={remove}>Remove provider</button>}<span>{selectedProvider ? "Changes are applied when you validate or save." : "Saving this configuration will add the endpoint."}</span>{!selectedProvider && <button className="secondary" type="submit">Add another endpoint</button>}</div>
     </form>

@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException, Response, status
+from sqlalchemy.exc import IntegrityError
 
 from backend.auth.dependencies import CurrentUser, DbSession
 from backend.dependencies import Cipher
@@ -22,7 +23,14 @@ async def list_credentials(
 async def create_credential(
     request: CredentialCreate, user: CurrentUser, db: DbSession, cipher: Cipher
 ) -> CredentialResponse:
-    credential = await CredentialService(db, cipher).create(user.id, request)
+    try:
+        credential = await CredentialService(db, cipher).create(user.id, request)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f'A credential named "{request.key_name}" already exists',
+        ) from exc
     await db.commit()
     return CredentialResponse.model_validate(credential)
 

@@ -57,6 +57,27 @@ describe("PiModelsAdminPanel", () => {
     expect(JSON.parse(String(validationCall?.[1]?.body))).toEqual({ document });
   });
 
+  it("uses an x-api-key credential as Pi provider auth", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><PiModelsAdminPanel /></QueryClientProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Configure providers" }));
+    await userEvent.type(screen.getByLabelText("Provider ID"), "sdc-gateway");
+    await userEvent.type(screen.getByLabelText("Endpoint URL"), "https://llm.example.com/v1");
+    await userEvent.type(screen.getByLabelText(/^x-api-key credential/), "SDC_LLM_GATEWAY_TOKEN");
+    await userEvent.type(screen.getByLabelText(/^Model IDs/), "gateway-model");
+    await userEvent.click(screen.getByRole("button", { name: "Save & activate" }));
+
+    await waitFor(() => expect(vi.mocked(api).mock.calls.some(([path, init]) => path === "/admin/pi-models" && init?.method === "PUT")).toBe(true));
+    const saveCall = vi.mocked(api).mock.calls.find(([path, init]) => path === "/admin/pi-models" && init?.method === "PUT");
+    const provider = JSON.parse(String(saveCall?.[1]?.body)).document.providers["sdc-gateway"];
+    expect(provider).toMatchObject({
+      apiKey: "$SDC_LLM_GATEWAY_TOKEN",
+      headers: { "x-api-key": "$SDC_LLM_GATEWAY_TOKEN" },
+    });
+    expect(provider.authHeader).toBeUndefined();
+  });
+
   it("saves the visible provider form without replacing the active document", async () => {
     vi.mocked(api).mockResolvedValue({
       ...emptyState,

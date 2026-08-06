@@ -109,7 +109,7 @@ System administrators manage custom Pi providers from **Administration → AI pr
 
 The active configuration and its history live in PostgreSQL. Kubernetes deployments therefore need no `models.json` volume, ConfigMap, or pod restart for normal administration; save and activate the configuration in the UI after the database migration is deployed.
 
-The guided editor covers common OpenAI-compatible, Anthropic-compatible, and Google-compatible endpoints. Its bearer and `x-api-key` credential fields may be used independently or together. Both accept Kyron credential names rather than secret values. The advanced JSON editor supports the complete Pi [models configuration](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md):
+The guided editor covers common OpenAI-compatible, Anthropic-compatible, and Google-compatible endpoints. Its bearer and `x-api-key` credential fields may be used independently or together. Both accept Kyron credential names rather than secret values. Pi requires every custom model to resolve provider authentication even when a gateway authenticates only through a custom header, so Kyron also uses an `x-api-key`-only credential as Pi's provider key while sending it in the explicit `x-api-key` header. The advanced JSON editor supports the complete Pi [models configuration](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md):
 
 ```json
 {
