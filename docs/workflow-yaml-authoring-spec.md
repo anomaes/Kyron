@@ -167,11 +167,29 @@ skill: .agents/skills/implementation/SKILL.md
 
 All fields are optional. `provider` and `model` are passed to Pi as `--provider` and
 `--model`. `skill` names a Markdown skill manifest or skill directory relative to the
-repository root. A directory must contain `SKILL.md`; a direct manifest must declare a
-Pi-compatible `name` in its YAML frontmatter. The resolved file must remain inside the
-run worktree. Kyron loads that one skill explicitly and invokes its `/skill:<name>`
-command. This works with Pi's project trust disabled and ties the skill contents to
-the run's exact base commit.
+repository root. A directory must contain `SKILL.md`. The resolved file must remain
+inside the run worktree. Kyron loads that one skill explicitly and invokes its
+`/skill:<name>` command. This works with Pi's project trust disabled and ties the skill
+contents to the run's exact base commit.
+
+The manifest's YAML frontmatter must declare a non-empty `description`, which is what
+Pi requires to load a skill at all. `name` is optional and defaults to the name of the
+directory containing `SKILL.md`; when present it must be a valid Pi command name
+(lowercase letters, digits, and single interior hyphens, at most 64 characters).
+
+```yaml
+---
+name: implementation
+description: Implement a scoped change and run the relevant tests.
+---
+```
+
+A skill that Pi cannot load is skipped rather than applied silently: the run log
+records a `PI_SKILL_SKIPPED` warning naming the skill and the reason, and the node runs
+the prompt without the skill and without its `/skill:<name>` prefix. This covers a skill
+path that is missing at the run's pinned commit, a manifest with no frontmatter, a
+missing or empty `description`, and a `name` Pi could not expose as a command. A skill
+path that escapes the run worktree fails the node before Pi starts.
 
 Configure project defaults through `PUT /projects/<project_uuid>/pi`. Configure
 workflow defaults under `settings.pi`; configure a prompt-node override with its
@@ -455,8 +473,10 @@ position:
 
 Each null or omitted Pi field inherits from `settings.pi`, then from the project. If
 no scope supplies a provider or model, Pi selects its configured default. If `skill`
-resolves to a value, the path must exist at the run's pinned commit; a missing,
-escaping, or malformed skill fails the node before Pi starts.
+resolves to a value, the path should exist at the run's pinned commit and declare a
+`description` in its frontmatter; a missing or malformed skill is recorded as a
+`PI_SKILL_SKIPPED` warning on the run log and skipped, and the node runs the prompt
+without it. A skill path that escapes the run worktree fails the node before Pi starts.
 
 Do not invent provider, model, or skill values. Use values supplied by the user or
 already used by the repository; otherwise omit them.
@@ -838,7 +858,7 @@ Use this deterministic procedure:
    and non-secret variables.
 4. Define child workflow inputs and outputs before defining parent mappings.
 5. Select project, workflow, and node Pi defaults; verify every configured skill path
-   against the repository tree.
+   against the repository tree and confirm each manifest declares a `description`.
 6. Add nodes with complete type-specific `config` mappings.
 7. Add only forward DAG edges. Use `review_loop` for repeated work.
 8. For each `${NAME}`, prove that `NAME` exists before that field is expanded on every

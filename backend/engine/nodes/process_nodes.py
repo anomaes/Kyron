@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from backend.engine.context import build_process_environment, expand_public_variables
-from backend.engine.pi.command import build_pi_command, resolve_pi_skill
+from backend.engine.pi.command import PiSkillUnavailable, build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.renderer import render_event
 from backend.engine.pi.sandbox import sandboxed_command
@@ -20,6 +21,8 @@ from backend.engine.process_runner import (
 )
 from backend.schemas.pi import PiSettings
 from backend.schemas.workflow import BashNode, PromptNode, ScriptNode
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -53,6 +56,7 @@ class ProcessNodeExecutor:
         collector: PiEventCollector | None = None
         environment: dict[str, str] = {}
         pi_scratch: TemporaryDirectory[str] | None = None
+        pi_skill_warning: str | None = None
         try:
             if isinstance(node, BashNode):
                 command = [
@@ -77,7 +81,20 @@ class ProcessNodeExecutor:
                 skill_path = None
                 skill_name = None
                 if request.pi.skill is not None:
-                    skill_path, skill_name = resolve_pi_skill(request.worktree, request.pi.skill)
+                    try:
+                        skill_path, skill_name = resolve_pi_skill(
+                            request.worktree, request.pi.skill
+                        )
+                    except PiSkillUnavailable as unavailable:
+                        # Pi would ignore this skill without saying so. Run the prompt
+                        # without it and surface the reason on the run log instead.
+                        pi_skill_warning = str(unavailable)
+                        logger.warning(
+                            "Ignoring Pi skill (run=%s, node_path=%s): %s",
+                            request.run_id,
+                            request.node_path,
+                            unavailable,
+                        )
                 command = build_pi_command(
                     prompt,
                     request.pi.provider,
@@ -150,6 +167,7 @@ class ProcessNodeExecutor:
             )
             if collector is not None:
                 result.pi_usage = collector.usage
+            result.pi_skill_warning = pi_skill_warning
         finally:
             request.secrets.clear()
             environment.clear()
@@ -180,5 +198,6 @@ class ProcessNodeExecutor:
                     timed_out=result.timed_out,
                     cancelled=result.cancelled,
                     pi_usage=result.pi_usage,
+                    pi_skill_warning=result.pi_skill_warning,
                 )
         return result

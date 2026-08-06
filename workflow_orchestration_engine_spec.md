@@ -1003,8 +1003,21 @@ Rules:
 - `provider`, `model`, and `skill` resolve field-by-field from the prompt node,
   workflow `settings.pi`, project defaults, and finally Pi's own defaults.
 - A configured `skill` is a repository-relative file or directory. Resolve it against
-  the worktree, reject escapes and missing files, read the skill name from
-  `SKILL.md` frontmatter, load it with `--skill`, and force it with `/skill:<name>`.
+  the worktree, reject escapes, parse the `SKILL.md` YAML frontmatter, load the manifest
+  with `--skill`, and force it with `/skill:<name>`.
+- The frontmatter is parsed as YAML rather than scanned line by line, so the `name` Kyron
+  invokes is the one Pi registers. `name` is optional and falls back to the containing
+  directory's name, matching Pi; a non-empty `description` is required because Pi will
+  not load a skill without one.
+- Pi discards a skill it cannot load without reporting it and passes the unexpanded
+  `/skill:<name>` text through to the model. Any skill Pi would reject — a missing file,
+  absent frontmatter, no `description`, or a name Pi cannot expose as a command — is
+  therefore omitted from the command along with its `/skill:<name>` prefix, so the node
+  runs a clean prompt instead of a silently unskilled one.
+- Skipping a skill emits a `PI_SKILL_SKIPPED` run log entry at `WARNING` naming the
+  skill and the reason, attributed to the node path and attempt. The entry is written
+  from the wave's serialized result loop, so it shares the wave session rather than
+  writing to it from concurrently executing nodes.
 - `--no-skills` accompanies an explicit skill so the invocation loads exactly the
   snapshotted skill selected by the workflow configuration.
 - `--no-session` prevents durable Pi session state from becoming the workflow state source.

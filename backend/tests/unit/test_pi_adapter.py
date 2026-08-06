@@ -4,6 +4,7 @@ import pytest
 
 from backend.engine.pi.command import (
     WORKTREE_GUARD_PATH,
+    PiSkillUnavailable,
     build_pi_command,
     resolve_pi_settings,
     resolve_pi_skill,
@@ -80,16 +81,75 @@ def test_repository_skill_is_resolved_and_named(tmp_path: Path) -> None:
     assert resolve_pi_skill(tmp_path, ".agents/skills/release") == (manifest, "release")
 
 
-def test_repository_skill_must_exist_inside_worktree(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="does not exist"):
+def test_repository_skill_name_falls_back_to_its_directory(tmp_path: Path) -> None:
+    """Pi derives the command name from the directory when frontmatter omits `name`."""
+
+    skill = tmp_path / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    manifest = skill / "SKILL.md"
+    manifest.write_text("---\ndescription: Release changes\n---\n# Release\n")
+
+    assert resolve_pi_skill(tmp_path, ".agents/skills/release") == (manifest, "release")
+
+
+def test_repository_skill_name_is_read_as_yaml_not_by_line_scanning(tmp_path: Path) -> None:
+    """A nested `name` key must not shadow the top-level one Pi registers."""
+
+    skill = tmp_path / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    manifest = skill / "SKILL.md"
+    manifest.write_text(
+        "---\nname: release\ndescription: Release changes\nmetadata:\n  name: inner\n---\n"
+    )
+
+    assert resolve_pi_skill(tmp_path, ".agents/skills/release") == (manifest, "release")
+
+
+@pytest.mark.parametrize(
+    ("frontmatter", "reason"),
+    [
+        ("---\nname: release\n---\n", "no description"),
+        ("---\nname: release\ndescription: '   '\n---\n", "blank description"),
+        ("# Release\n", "no frontmatter"),
+        ("---\nname: release\ndescription: Ship\n", "unterminated frontmatter"),
+        ("---\nname: Release Skill\ndescription: Ship\n---\n", "invalid name"),
+    ],
+)
+def test_repository_skill_pi_would_ignore_is_reported(
+    tmp_path: Path, frontmatter: str, reason: str
+) -> None:
+    """Pi discards these silently, so Kyron must report them rather than pass them through."""
+
+    skill = tmp_path / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(frontmatter)
+
+    with pytest.raises(PiSkillUnavailable) as caught:
+        resolve_pi_skill(tmp_path, ".agents/skills/release")
+    assert caught.value.configured_path == ".agents/skills/release", reason
+    assert str(caught.value).startswith("Pi skill '.agents/skills/release' "), reason
+
+
+def test_missing_repository_skill_is_reported_rather_than_failing_the_node(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(PiSkillUnavailable, match="does not exist inside the run worktree"):
         resolve_pi_skill(tmp_path, ".agents/skills/missing")
 
+
+def test_repository_skill_must_stay_inside_worktree(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside-skill.md"
     outside.write_text("---\nname: outside\ndescription: Outside\n---\n")
     link = tmp_path / "linked-skill.md"
     link.symlink_to(outside)
     with pytest.raises(ValueError, match="inside the worktree"):
         resolve_pi_skill(tmp_path, "linked-skill.md")
+
+    escaping_dir = tmp_path / ".agents" / "skills" / "release"
+    escaping_dir.mkdir(parents=True)
+    (escaping_dir / "SKILL.md").symlink_to(outside)
+    with pytest.raises(ValueError, match="inside the worktree"):
+        resolve_pi_skill(tmp_path, ".agents/skills/release")
 
 
 async def test_known_and_unknown_events_are_preserved() -> None:

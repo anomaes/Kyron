@@ -105,6 +105,58 @@ async def test_prompt_node_is_write_confined_and_uses_ephemeral_pi_state(tmp_pat
     assert secrets == {}
 
 
+async def test_prompt_node_runs_a_clean_prompt_when_pi_would_ignore_the_skill(
+    tmp_path: Path,
+) -> None:
+    """The unexpanded `/skill:` prefix must not leak into the prompt Pi actually receives."""
+
+    runner = CapturingRunner()
+    operation = request(tmp_path, {})
+    operation.pi = PiSettings(skill=".agents/skills/release")
+    skill = operation.worktree / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: release\n---\n# No description\n")
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert "--skill" not in runner.command
+    assert runner.command[-1] == "Implement ship"
+    assert result.pi_skill_warning is not None
+    assert ".agents/skills/release" in result.pi_skill_warning
+    assert "description" in result.pi_skill_warning
+
+
+async def test_prompt_node_reports_no_skill_warning_when_the_skill_loads(tmp_path: Path) -> None:
+    runner = CapturingRunner()
+    operation = request(tmp_path, {})
+    operation.pi = PiSettings(skill=".agents/skills/release")
+    skill = operation.worktree / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: release\ndescription: Ship it\n---\n")
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert "--skill" in runner.command
+    assert runner.command[-1] == "/skill:release Implement ship"
+    assert result.pi_skill_warning is None
+
+
 async def test_bash_node_does_not_use_pi_write_confinement(tmp_path: Path) -> None:
     runner = CapturingRunner()
     operation = request(tmp_path, {})
@@ -144,6 +196,36 @@ async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: P
     assert result.exit_code == 1
     assert "Pi reported failure: 401 invalid API key" in result.stderr_preview
     assert "Pi reported failure: 401 invalid API key" in result.stderr_tail
+
+
+async def test_skipped_skill_warning_survives_a_pi_failure(tmp_path: Path) -> None:
+    """Rebuilding the result for a Pi failure must not discard the skill warning."""
+
+    runner = CapturingRunner()
+    runner.stdout_lines = [
+        '{"type":"agent_end","messages":['
+        '{"role":"assistant","content":[],"stopReason":"error",'
+        '"errorMessage":"401 invalid API key"}],"willRetry":false}\n'
+    ]
+    operation = request(tmp_path, {})
+    operation.pi = PiSettings(skill=".agents/skills/release")
+    skill = operation.worktree / ".agents" / "skills" / "release"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: release\n---\n# No description\n")
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert result.exit_code == 1
+    assert result.pi_skill_warning is not None
+    assert ".agents/skills/release" in result.pi_skill_warning
 
 
 async def test_prompt_node_returns_usage_for_every_pi_model_call(tmp_path: Path) -> None:

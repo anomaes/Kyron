@@ -75,7 +75,8 @@ available for exact configuration where appropriate.
 
 Workflow settings include Pi provider, model, and skill defaults. A prompt node can
 override any of them in its inspector; blank values inherit from the next
-scope. Skill values are repository-relative paths to a skill directory or `SKILL.md`.
+scope. Skill values are repository-relative paths to a skill directory or `SKILL.md`,
+and the manifest must declare a `description` in its frontmatter for Pi to load it.
 
 ## Reuse node templates
 

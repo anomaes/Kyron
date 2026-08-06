@@ -66,6 +66,7 @@ class ProcessResult:
     timed_out: bool = False
     cancelled: bool = False
     pi_usage: dict[str, Any] | None = None
+    pi_skill_warning: str | None = None
 
 
 class BoundedPreview:

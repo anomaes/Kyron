@@ -46,6 +46,13 @@ worktree, loads it explicitly with Pi, and invokes the name declared by the skil
 frontmatter. The skill therefore follows the same reviewed Git history as the code and
 workflow definitions it operates on.
 
+The manifest's frontmatter must declare a `description`; without one Pi cannot load the
+skill. `name` is optional and defaults to the name of the directory containing
+`SKILL.md`. Because the path is resolved at the run's pinned commit, the skill must be
+committed to the repository — an untracked or ignored file is not present in the run
+worktree. When a skill cannot be loaded, the run log records a `PI_SKILL_SKIPPED`
+warning naming the skill and the reason, and the prompt node continues without it.
+
 ## Remove a project
 
 Choose **Remove** on a project card and confirm the action. Kyron removes its local

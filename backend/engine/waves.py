@@ -335,6 +335,21 @@ class WaveExecutor:
                 )
 
             if self.engine_logs is not None:
+                node_result = results.get(node_id)
+                skill_warning = node_result.pi_skill_warning if node_result else None
+                if skill_warning:
+                    await self.engine_logs.write(
+                        run.id,
+                        "WARNING",
+                        "PI_SKILL_SKIPPED",
+                        f"{skill_warning}. The prompt ran without it.",
+                        invocation_path=invocation.invocation_path,
+                        node_path=execution.node_path,
+                        metadata={
+                            "attempt_id": str(attempt.id),
+                            "attempt_number": attempt.attempt_number,
+                        },
+                    )
                 level = "INFO" if execution.status == NodeStatus.SUCCESS else "ERROR"
                 event_type = f"NODE_{execution.status}"
                 message = (
