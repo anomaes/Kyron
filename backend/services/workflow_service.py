@@ -45,6 +45,7 @@ from backend.schemas.workflow import (
 )
 from backend.services.approval_policy_service import ApprovalPolicyService
 from backend.services.crypto import SecretCipher
+from backend.services.pi_models_config_service import PiModelsConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -502,6 +503,7 @@ class WorkflowService:
         if effective_mode == "default":
             effective_mode = "none" if delivery_mode == "report_only" else "all"
         effective_policy = {"mode": effective_mode, "keys": list(credential_access.keys)}
+        pi_models_config = await PiModelsConfigService(self.session, self.settings).resolve()
         run = WorkflowRun(
             root_workflow_id=workflow_id,
             project_id=project.id,
@@ -532,6 +534,9 @@ class WorkflowService:
             local_definition_test=use_local_definitions,
             public_context={**workflow.variables, **validated_inputs},
             trigger_actor_snapshot=actor_snapshot(user),
+            pi_models_config_revision_id=pi_models_config.revision_id,
+            pi_models_config_source=pi_models_config.source,
+            pi_models_config_snapshot=pi_models_config.document,
             reviewer_provider=user.provider,
             reviewer_provider_user_id=user.provider_user_id,
             reviewer_provider_username=user.provider_username,

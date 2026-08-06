@@ -66,6 +66,8 @@ class RunResponse(BaseModel):
     subject_current_head_sha: str | None
     delivery_mode: str
     effective_credential_policy: dict[str, Any]
+    pi_models_config_revision_id: uuid.UUID | None
+    pi_models_config_source: str
     verification_conclusion: str | None
     verification_freshness: str | None
     local_definition_test: bool

@@ -84,6 +84,35 @@ class Credential(Base):
     )
 
 
+class PiModelsConfigRevision(Base):
+    __tablename__ = "pi_models_config_revisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    version: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    document: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False)
+    required_credentials: Mapped[list[str]] = mapped_column(
+        JSON_TYPE, nullable=False, default=list
+    )
+    provider_catalog: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON_TYPE, nullable=False, default=list
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PiModelsConfigState(Base):
+    __tablename__ = "pi_models_config_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    active_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pi_models_config_revisions.id", ondelete="RESTRICT")
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("provider", "provider_project_id"),)
@@ -307,6 +336,13 @@ class WorkflowRun(Base):
     trigger_actor_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSON_TYPE, nullable=False, default=dict
     )
+    pi_models_config_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pi_models_config_revisions.id", ondelete="RESTRICT")
+    )
+    pi_models_config_source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="builtin"
+    )
+    pi_models_config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON_TYPE)
     branch_name: Mapped[str | None] = mapped_column(String(255))
     worktree_path: Mapped[str | None] = mapped_column(Text)
     run_data_path: Mapped[str | None] = mapped_column(Text)

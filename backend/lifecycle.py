@@ -17,7 +17,7 @@ from backend.engine.coordinator import RunCoordinator
 from backend.engine.nodes.process_nodes import ProcessNodeExecutor
 from backend.engine.pi.models_config import (
     PiModelsConfigError,
-    stage_models_config,
+    stage_models_document,
     validate_models_config,
 )
 from backend.engine.process_registry import process_registry
@@ -30,6 +30,7 @@ from backend.integrations.git_manager import GitManager
 from backend.services.crypto import SecretCipher
 from backend.services.engine_log_service import EngineLogService
 from backend.services.log_broadcaster import log_broadcaster
+from backend.services.pi_models_config_service import PiModelsConfigService
 from backend.services.reconciliation_service import ReconciliationService
 
 logger = logging.getLogger(__name__)
@@ -70,19 +71,25 @@ class EngineRuntime:
         logger.info("Workflow runtime started")
 
     async def _report_pi_models_config(self) -> None:
-        """Surface an unusable Pi models file at startup instead of on the first prompt node."""
+        """Surface an unusable active provider registry before the first prompt node."""
 
-        source = self.settings.PI_MODELS_CONFIG_PATH
-        if source is None:
-            return
-        with TemporaryDirectory(prefix="kyron-pi-models-check-") as probe:
-            try:
-                stage_models_config(Path(probe), source)
-                await validate_models_config(Path(probe))
-            except PiModelsConfigError as exc:
-                logger.error("Prompt nodes will fail until this is fixed: %s", exc)
+        try:
+            async with session_factory() as session:
+                resolved = await PiModelsConfigService(session, self.settings).resolve()
+            if resolved.document is None:
+                logger.info("Using Pi's built-in provider catalog")
                 return
-        logger.info("Pi models file will be staged for every prompt node (path=%s)", source)
+            with TemporaryDirectory(prefix="kyron-pi-models-check-") as probe:
+                stage_models_document(Path(probe), resolved.document)
+                await validate_models_config(Path(probe))
+        except PiModelsConfigError as exc:
+            logger.error("Prompt nodes will fail until this is fixed: %s", exc)
+            return
+        logger.info(
+            "Pi models configuration is ready (source=%s, version=%s)",
+            resolved.source,
+            resolved.version,
+        )
 
     async def stop(self) -> None:
         logger.info("Stopping workflow runtime")
@@ -182,10 +189,15 @@ class EngineRuntime:
                 settings.PROCESS_TERMINATION_GRACE_SECONDS,
             )
             engine_logs = EngineLogService(session, log_broadcaster)
+            pi_models_document = run.pi_models_config_snapshot
+            if run.pi_models_config_source == "legacy":
+                pi_models_document = (
+                    await PiModelsConfigService(session, settings).resolve()
+                ).document
             waves = WaveExecutor(
                 session,
                 git,
-                ProcessNodeExecutor(runner, settings.PI_MODELS_CONFIG_PATH),
+                ProcessNodeExecutor(runner, pi_models_document),
                 credentials,
                 engine_logs,
             )

@@ -59,6 +59,13 @@ Fernet ciphertext is decrypted immediately before process or code-host use, adde
 to an in-memory redactor, and discarded after the operation. Secret values are
 never valid `${...}` template variables.
 
+System administrators manage a versioned, secret-free Pi provider registry. Saving or
+restoring a revision requires validation by the installed Pi runtime and produces an
+authorization audit event. Each run snapshots the active provider document and revision
+identifier when it is queued; retries and review iterations therefore retain the same
+endpoint routing. Provider documents contain only credential-variable references. Their
+values continue to come from the triggering user's encrypted credential store.
+
 GitLab and GitHub integrations implement one normalized code-host contract. A
 session carries one provider identity, projects carry one provider, and API
 boundaries reject cross-provider mutations. Provider-specific REST payloads and

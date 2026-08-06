@@ -8,6 +8,8 @@ def test_complete_domain_tables_are_declared() -> None:
         "users",
         "provider_identities",
         "credentials",
+        "pi_models_config_revisions",
+        "pi_models_config_state",
         "projects",
         "workflow_runs",
         "workflow_invocations",

@@ -13,6 +13,7 @@ from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNode
 from backend.engine.pi.models_config import (
     PiModelsConfigError,
     stage_models_config,
+    stage_models_document,
     validate_models_config,
 )
 from backend.engine.process_runner import LineCallback, ProcessResult, ProcessRunner, ProcessSpec
@@ -119,6 +120,19 @@ async def test_configured_models_file_is_staged_into_the_attempt_agent_directory
     assert runner.secret_values == ["custom-secret"]
     assert runner.agent_directory is not None
     assert not runner.agent_directory.exists()
+
+
+async def test_snapshotted_models_document_is_staged_for_the_attempt(tmp_path: Path) -> None:
+    runner = AgentDirectoryRunner()
+    document = json.loads(CUSTOM_PROVIDER_CONFIG)
+
+    await ProcessNodeExecutor(runner, document, accept_models_config).execute(
+        prompt_node(),
+        request(tmp_path, secrets={"CUSTOM_LLM_API_KEY": "custom-secret"}),
+    )
+
+    assert json.loads(runner.staged_models or "null") == document
+    assert runner.staged_mode == 0o600
 
 
 async def test_agent_directory_stays_empty_when_no_models_file_is_configured(
@@ -235,6 +249,29 @@ def test_stage_models_config_accepts_pi_comments_and_trailing_commas(tmp_path: P
 
     assert required == frozenset({"CUSTOM_API_KEY"})
     assert (agent_directory / "models.json").read_text(encoding="utf-8") == content
+
+
+def test_stage_models_document_supports_bearer_and_x_api_key_headers(tmp_path: Path) -> None:
+    agent_directory = tmp_path / "agent"
+    agent_directory.mkdir()
+    document = {
+        "providers": {
+            "external": {
+                "baseUrl": "https://llm.example.test/v1",
+                "api": "openai-completions",
+                "apiKey": "$BEARER_TOKEN",
+                "authHeader": True,
+                "headers": {"x-api-key": "$EXTERNAL_API_KEY"},
+                "models": [{"id": "model"}],
+            }
+        }
+    }
+
+    required = stage_models_document(agent_directory, document)
+
+    assert required == frozenset({"BEARER_TOKEN", "EXTERNAL_API_KEY"})
+    assert json.loads((agent_directory / "models.json").read_text()) == document
+    assert stat.S_IMODE((agent_directory / "models.json").stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize(

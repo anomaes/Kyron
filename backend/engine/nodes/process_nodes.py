@@ -13,6 +13,7 @@ from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.pi.models_config import (
     PiModelsConfigError,
     stage_models_config,
+    stage_models_document,
     validate_models_config,
 )
 from backend.engine.pi.renderer import render_event
@@ -51,7 +52,7 @@ class ProcessNodeExecutor:
     def __init__(
         self,
         runner: ProcessRunner,
-        pi_models_config: Path | None = None,
+        pi_models_config: Path | dict[str, object] | None = None,
         models_config_validator: Callable[[Path], Awaitable[None]] = validate_models_config,
     ) -> None:
         self.runner = runner
@@ -151,8 +152,10 @@ class ProcessNodeExecutor:
                 agent_directory.mkdir()
                 cache_directory.mkdir()
                 temporary_directory.mkdir()
-                required_config_secrets = stage_models_config(
-                    agent_directory, self.pi_models_config
+                required_config_secrets = (
+                    stage_models_config(agent_directory, self.pi_models_config)
+                    if isinstance(self.pi_models_config, Path)
+                    else stage_models_document(agent_directory, self.pi_models_config)
                 )
                 missing_config_secrets = required_config_secrets.difference(request.secrets)
                 if missing_config_secrets:

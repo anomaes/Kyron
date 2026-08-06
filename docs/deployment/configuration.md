@@ -105,9 +105,11 @@ events are also persisted in `resource_audit_logs`.
 
 ## Custom Pi providers
 
-`PI_MODELS_CONFIG_PATH` is an optional absolute path to a Pi [models file](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md). Leave it empty to use only Pi's built-in provider catalog.
+System administrators manage custom Pi providers from **Administration → AI providers**. The backend validates every proposed configuration with the installed Pi version before activation, records an audit event, and retains earlier revisions for rollback. A run snapshots the active revision when it is queued, so later administrative changes affect new runs only.
 
-Every prompt attempt runs with a fresh, empty Pi agent directory, so an operator's `~/.pi/agent/models.json` is never visible to a run. When this variable is set, the backend copies that file into each attempt's agent directory as `models.json` before Pi starts. Use it to register a private gateway or to point a built-in provider at a proxy:
+The active configuration and its history live in PostgreSQL. Kubernetes deployments therefore need no `models.json` volume, ConfigMap, or pod restart for normal administration; save and activate the configuration in the UI after the database migration is deployed.
+
+The guided editor covers common OpenAI-compatible, Anthropic-compatible, and Google-compatible endpoints. Its bearer and `x-api-key` credential fields may be used independently or together. Both accept Kyron credential names rather than secret values. The advanced JSON editor supports the complete Pi [models configuration](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md):
 
 ```json
 {
@@ -115,14 +117,24 @@ Every prompt attempt runs with a fresh, empty Pi agent directory, so an operator
     "private-gateway": {
       "baseUrl": "https://llm.example.com/v1",
       "api": "openai-completions",
-      "apiKey": "$CUSTOM_LLM_API_KEY",
+      "apiKey": "$CUSTOM_LLM_BEARER_TOKEN",
+      "authHeader": true,
+      "headers": { "x-api-key": "$CUSTOM_LLM_API_KEY" },
       "models": [{ "id": "example-chat-model", "contextWindow": 128000, "maxTokens": 16384 }]
     }
   }
 }
 ```
 
-Workflows then select it with the usual `provider` and `model` Pi settings.
+The configured providers and declared models appear as suggestions in project defaults, workflow settings, and prompt nodes. These fields continue to accept Pi built-ins and follow the normal node → workflow → project inheritance order.
+
+Every prompt attempt runs with a fresh, empty Pi agent directory, so an operator's `~/.pi/agent/models.json` is never visible to a run. Kyron materializes the run's snapshotted configuration as a mode `0600` `models.json` immediately before Pi starts.
+
+### Optional file bootstrap
+
+`PI_MODELS_CONFIG_PATH` is an optional bootstrap/fallback path. It does **not** need to be populated when providers are managed through Administration. Kyron reads it only when no database revision is active; database and file configurations are never silently merged.
+
+For file-managed or GitOps bootstrapping, mount the file into the backend container and set its absolute container path:
 
 Place the file inside the mounted data root so the backend container can read it, and restrict it to the runtime user:
 
@@ -137,8 +149,8 @@ PI_MODELS_CONFIG_PATH=/var/workflowengine/pi/models.json
 
 Operational notes:
 
-- An `apiKey` must reference one or more environment variables, such as `$CUSTOM_LLM_API_KEY`; inline and command-based (`!command`) keys are rejected because the Pi agent can read its own configuration file. Secret-like headers follow the same rule. Add a Kyron credential for every referenced variable. The run's credential policy must make those credentials available, which also ensures their values are redacted from persisted process output. Backend container variables and public workflow context cannot satisfy this requirement.
-- A configured file that is missing, unreadable, structurally invalid, or cannot be safely composed as a provider fails every prompt node with that reason rather than silently falling back to the built-in catalog, which could send traffic to the vendor's public endpoint. The backend logs the same structural diagnosis at startup. The parser accepts the same `//` comments and trailing commas as the pinned Pi version.
+- An `apiKey` or secret-like header must reference one or more environment variables, such as `$CUSTOM_LLM_API_KEY`; inline and command-based (`!command`) keys are rejected because the Pi agent can read its own configuration file. Add a Kyron credential for every referenced variable. The run's credential policy must make those credentials available, which also ensures their values are redacted from persisted process output. Backend container variables and public workflow context cannot satisfy this requirement.
+- A missing or invalid optional bootstrap file fails prompt nodes rather than silently falling back to the built-in catalog. The parser accepts the same `//` comments and trailing commas as the pinned Pi version.
 
 ## Safe configuration changes
 

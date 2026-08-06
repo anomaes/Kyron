@@ -15,6 +15,39 @@ export type PiSettings = {
   skill?: string | null;
 };
 
+export type PiProviderCatalogEntry = {
+  id: string;
+  models: string[];
+  required_credentials: string[];
+};
+
+export type PiModelsCatalog = {
+  source: "database" | "file" | "builtin";
+  revision_id: string | null;
+  version: number | null;
+  providers: PiProviderCatalogEntry[];
+  required_credentials: string[];
+};
+
+export type PiModelsRevision = {
+  id: string;
+  version: number;
+  providers: PiProviderCatalogEntry[];
+  required_credentials: string[];
+  created_by: string;
+  created_at: string;
+  active: boolean;
+};
+
+export type PiModelsAdminState = PiModelsCatalog & {
+  active_revision_id: string | null;
+  active_version: number | null;
+  document: Record<string, unknown> | null;
+  file_bootstrap_configured: boolean;
+  configuration_error: string | null;
+  revisions: PiModelsRevision[];
+};
+
 export type PiUsage = {
   input: number;
   output: number;
@@ -149,6 +182,8 @@ export type Run = {
   subject_current_head_sha: string | null;
   delivery_mode: "PROPOSE_CHANGES" | "REPORT_ONLY";
   effective_credential_policy: { mode: string; keys: string[] };
+  pi_models_config_revision_id: string | null;
+  pi_models_config_source: "database" | "file" | "builtin" | "legacy";
   verification_conclusion: string | null;
   verification_freshness: string | null;
   local_definition_test: boolean;

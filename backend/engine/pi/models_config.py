@@ -6,7 +6,11 @@ import os
 import re
 import shutil
 import stat
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
 
 from backend.engine.context import sanitized_base_environment
 
@@ -28,7 +32,14 @@ class PiModelsConfigError(RuntimeError):
     """Raised when the configured Pi models file cannot be safely staged."""
 
 
-def _parse_document(content: str, source: Path) -> object:
+@dataclass(frozen=True, slots=True)
+class PiProviderCatalogEntry:
+    id: str
+    models: tuple[str, ...]
+    required_credentials: tuple[str, ...]
+
+
+def parse_models_config(content: str, source: Path | str) -> dict[str, Any]:
     without_comments = _STRING_OR_LINE_COMMENT.sub(
         lambda match: match.group(0) if match.group(0).startswith('"') else "", content
     )
@@ -36,11 +47,14 @@ def _parse_document(content: str, source: Path) -> object:
         lambda match: match.group(1) or match.group(0), without_comments
     )
     try:
-        return json.loads(normalized)
+        document = json.loads(normalized)
     except json.JSONDecodeError as exc:
         raise PiModelsConfigError(
             f"The Pi models file at {source} is not valid JSON: {exc}"
         ) from exc
+    if not isinstance(document, dict):
+        raise PiModelsConfigError(f"The Pi models file at {source} must contain a JSON object")
+    return document
 
 
 def _environment_names(value: str) -> frozenset[str]:
@@ -109,6 +123,41 @@ def _auth_references(document: object) -> frozenset[str]:
     return frozenset(required)
 
 
+def inspect_models_config(document: Mapping[str, Any]) -> frozenset[str]:
+    """Apply Kyron's secret policy and return referenced credential names."""
+
+    return _auth_references(document)
+
+
+def provider_catalog(document: Mapping[str, Any]) -> tuple[PiProviderCatalogEntry, ...]:
+    providers = document.get("providers")
+    if not isinstance(providers, dict):
+        return ()
+    result: list[PiProviderCatalogEntry] = []
+    for provider_id, provider in providers.items():
+        if not isinstance(provider_id, str) or not isinstance(provider, dict):
+            continue
+        models = provider.get("models")
+        model_ids = (
+            tuple(
+                model["id"]
+                for model in models
+                if isinstance(model, dict) and isinstance(model.get("id"), str)
+            )
+            if isinstance(models, list)
+            else ()
+        )
+        required = _auth_references({"providers": {provider_id: provider}})
+        result.append(
+            PiProviderCatalogEntry(
+                id=provider_id,
+                models=model_ids,
+                required_credentials=tuple(sorted(required)),
+            )
+        )
+    return tuple(sorted(result, key=lambda item: item.id))
+
+
 def _validate_auth_value(value: str, path: str, secret_required: bool) -> frozenset[str]:
     if value.startswith("!"):
         raise PiModelsConfigError(
@@ -131,11 +180,44 @@ def stage_models_config(agent_directory: Path, source: Path | None) -> frozenset
         content = source.read_text(encoding="utf-8")
     except OSError as exc:
         raise PiModelsConfigError(f"Cannot read the Pi models file at {source}: {exc}") from exc
-    required_secrets = _auth_references(_parse_document(content, source))
+    required_secrets = inspect_models_config(parse_models_config(content, source))
     destination = agent_directory / MODELS_FILE_NAME
     destination.write_text(content, encoding="utf-8")
     destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
     return required_secrets
+
+
+def stage_models_document(
+    agent_directory: Path, document: Mapping[str, Any] | None
+) -> frozenset[str]:
+    """Stage a database-backed models document into an attempt directory."""
+
+    if document is None:
+        return frozenset()
+    required_secrets = inspect_models_config(document)
+    destination = agent_directory / MODELS_FILE_NAME
+    destination.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return required_secrets
+
+
+def load_models_config(source: Path) -> dict[str, Any]:
+    try:
+        content = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise PiModelsConfigError(f"Cannot read the Pi models file at {source}: {exc}") from exc
+    document = parse_models_config(content, source)
+    inspect_models_config(document)
+    return document
+
+
+async def validate_models_document(document: Mapping[str, Any]) -> None:
+    """Validate a database document with the installed Pi runtime."""
+
+    with TemporaryDirectory(prefix="kyron-pi-models-document-") as probe:
+        agent_directory = Path(probe)
+        stage_models_document(agent_directory, document)
+        await validate_models_config(agent_directory)
 
 
 async def validate_models_config(

@@ -22,6 +22,11 @@ headers and secrets.
 | GET | `/api/metrics` | Authenticated Prometheus-format storage metrics |
 | GET | `/api/auth/me` | Current user and active provider identity |
 | GET/PATCH | `/api/admin/users[/{user_id}]` | System-administrator user activation and global-admin management |
+| GET/PUT | `/api/admin/pi-models` | Inspect or activate the versioned global Pi provider configuration |
+| POST | `/api/admin/pi-models/validate` | Validate a proposed provider configuration without saving it |
+| POST | `/api/admin/pi-models/revisions/{revision_id}/activate` | Validate and restore an earlier provider revision |
+| DELETE | `/api/admin/pi-models/active` | Disable the database revision and use the optional file or built-in fallback |
+| GET | `/api/pi/models/catalog` | Safe provider/model/required-credential metadata for authenticated workflow editors |
 | GET | `/api/projects/{project_id}/access` | Current project permissions |
 | GET/POST/PUT | `/api/projects/{project_id}/roles[...]` | Project role management |
 | GET/PUT | `/api/projects/{project_id}/memberships[...]` | Project membership and role assignment |
