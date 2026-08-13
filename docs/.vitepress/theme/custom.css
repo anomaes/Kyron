@@ -137,6 +137,10 @@
   width: 100% !important;
 }
 
+.vp-doc .mermaid.is-expanded > svg {
+  visibility: hidden;
+}
+
 .vp-doc .diagram-expand {
   align-items: center;
   background: var(--vp-c-bg-elv);
@@ -213,8 +217,7 @@
 }
 
 .diagram-viewer::backdrop {
-  background: rgba(7, 8, 6, 0.78);
-  backdrop-filter: blur(5px);
+  background: var(--vp-c-bg);
 }
 
 .diagram-viewer__header {

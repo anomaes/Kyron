@@ -73,6 +73,7 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragScrollLeft = 0;
 let dragScrollTop = 0;
+let activeContainer: HTMLElement | undefined;
 
 const zoomPercent = computed(() => Math.round(zoom.value * 100));
 const canvasStyle = computed(() => ({
@@ -135,6 +136,8 @@ async function openDiagram(container: HTMLElement): Promise<void> {
   sourceHeight.value = viewBox.height || source.getBoundingClientRect().height;
   title.value = diagramTitle(container);
   svgMarkup.value = cloneSvg(source);
+  activeContainer = container;
+  activeContainer.classList.add("is-expanded");
   dialog.value.showModal();
   document.documentElement.classList.add("diagram-viewer-open");
   await nextTick();
@@ -226,6 +229,8 @@ function close(): void {
 
 function reset(): void {
   document.documentElement.classList.remove("diagram-viewer-open");
+  activeContainer?.classList.remove("is-expanded");
+  activeContainer = undefined;
   svgMarkup.value = "";
   dragging.value = false;
 }
@@ -240,5 +245,6 @@ onUnmounted(() => {
   observer?.disconnect();
   if (enhancementFrame !== undefined) cancelAnimationFrame(enhancementFrame);
   document.documentElement.classList.remove("diagram-viewer-open");
+  activeContainer?.classList.remove("is-expanded");
 });
 </script>
