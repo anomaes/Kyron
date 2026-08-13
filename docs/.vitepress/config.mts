@@ -64,6 +64,7 @@ export default withMermaid(defineConfig({
       { text: "Start", link: "/getting-started/" },
       { text: "Workflows", link: "/workflows/" },
       { text: "Deploy", link: "/deployment/" },
+      { text: "Architecture", link: "/architecture" },
       { text: "Reference", link: "/reference/" },
       {
         text: "v1.0-alpha",

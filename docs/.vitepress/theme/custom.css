@@ -115,12 +115,15 @@
 }
 
 .vp-doc .mermaid {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
   box-sizing: border-box;
   display: block;
   max-width: 100%;
-  overscroll-behavior-inline: contain;
-  overflow-x: auto;
-  padding: 16px 0;
+  overflow: hidden;
+  padding: 56px 12px 20px;
+  position: relative;
   text-align: center;
   width: 100%;
 }
@@ -129,41 +132,232 @@
   display: block;
   height: auto;
   margin: 0 auto;
-  max-width: none !important;
-  min-width: 820px;
+  max-width: 100% !important;
+  min-width: 0;
   width: 100% !important;
 }
 
-.vp-doc._architecture_containers .mermaid svg {
-  min-width: 1100px;
+.vp-doc .diagram-expand {
+  align-items: center;
+  background: var(--vp-c-bg-elv);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 7px;
+  color: var(--vp-c-text-1);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--vp-font-family-base);
+  font-size: 13px;
+  font-weight: 600;
+  gap: 7px;
+  padding: 7px 11px;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 1;
 }
 
-.vp-doc._architecture_deployment .mermaid svg {
-  min-width: 960px;
+.vp-doc .diagram-expand::before {
+  content: "↗";
+  font-family: var(--vp-font-family-mono);
 }
 
-.vp-doc._architecture_configuration-flow .mermaid svg {
-  min-width: 1000px;
+.vp-doc .diagram-expand:hover {
+  background: var(--vp-c-bg-soft);
+  border-color: var(--vp-c-brand-1);
 }
 
-.vp-doc._architecture_backend-components .mermaid svg {
-  min-width: 1320px;
-}
-
-.vp-doc._architecture_runtime-sequences .mermaid svg {
-  min-width: 1040px;
+.vp-doc .diagram-expand:focus-visible,
+.diagram-viewer button:focus-visible,
+.diagram-viewer__viewport:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
 }
 
 .dark .vp-doc .mermaid svg .flowchart-link,
 .dark .vp-doc .mermaid svg .messageLine0,
 .dark .vp-doc .mermaid svg .messageLine1,
-.dark .vp-doc .mermaid svg .loopLine {
+.dark .vp-doc .mermaid svg .loopLine,
+.dark .diagram-viewer svg .flowchart-link,
+.dark .diagram-viewer svg .messageLine0,
+.dark .diagram-viewer svg .messageLine1,
+.dark .diagram-viewer svg .loopLine {
   stroke: #c9ccbf !important;
 }
 
-.dark .vp-doc .mermaid svg marker path {
+.dark .vp-doc .mermaid svg marker path,
+.dark .diagram-viewer svg marker path {
   fill: #c9ccbf !important;
   stroke: #c9ccbf !important;
+}
+
+.diagram-viewer-open {
+  overflow: hidden;
+}
+
+.diagram-viewer {
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  color: var(--vp-c-text-1);
+  height: min(94dvh, 1100px);
+  margin: auto;
+  max-height: none;
+  max-width: none;
+  padding: 0;
+  width: min(96vw, 1800px);
+}
+
+.diagram-viewer[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.diagram-viewer::backdrop {
+  background: rgba(7, 8, 6, 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.diagram-viewer__header {
+  align-items: center;
+  border-bottom: 1px solid var(--vp-c-divider);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.diagram-viewer__header > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.diagram-viewer__header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagram-viewer__eyebrow {
+  color: var(--vp-c-text-2);
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.diagram-viewer__controls {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.diagram-viewer button {
+  background: var(--vp-c-bg-elv);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  cursor: pointer;
+  font: 600 12px/1 var(--vp-font-family-base);
+  min-height: 34px;
+  padding: 0 11px;
+}
+
+.diagram-viewer button:hover {
+  background: var(--vp-c-bg-soft);
+  border-color: var(--vp-c-brand-1);
+}
+
+.diagram-viewer__controls output {
+  color: var(--vp-c-text-2);
+  font: 500 11px/1 var(--vp-font-family-mono);
+  min-width: 44px;
+  text-align: center;
+}
+
+.diagram-viewer button.diagram-viewer__close {
+  background: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-bg);
+  margin-left: 6px;
+}
+
+.diagram-viewer__viewport {
+  background: var(--vp-c-bg-alt);
+  cursor: grab;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.diagram-viewer__viewport.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.diagram-viewer__stage {
+  align-items: safe center;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: safe center;
+  min-height: 100%;
+  min-width: 100%;
+  padding: 24px;
+  width: max-content;
+}
+
+.diagram-viewer__canvas {
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  flex: none;
+}
+
+.diagram-viewer__canvas svg {
+  display: block;
+  height: 100% !important;
+  max-height: none !important;
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.diagram-viewer__hint {
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  font-size: 11px;
+  padding: 9px 18px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .diagram-viewer {
+    border: 0;
+    border-radius: 0;
+    height: 100dvh;
+    width: 100vw;
+  }
+
+  .diagram-viewer__header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .diagram-viewer__controls {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .diagram-viewer__controls output {
+    min-width: 38px;
+  }
+
+  .diagram-viewer__hint {
+    display: none;
+  }
 }
 
 .doc-path {
