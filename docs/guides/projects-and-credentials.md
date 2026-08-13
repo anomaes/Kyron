@@ -68,6 +68,13 @@ Open **Credentials**, choose **Add credential**, and provide a name and secret v
 
 Kyron stores Fernet ciphertext plus safe metadata. Read endpoints never return the secret value.
 
+## Edit a workflow credential
+
+Choose **Edit** next to a credential to replace its secret value or change its
+description. Credential names are immutable because they are the environment-variable
+contract used by workflows. Kyron never fills the secret field with the stored value;
+enter a new secret every time you save an edit.
+
 At each Bash, Script, or Prompt attempt, Kyron loads all credentials owned by the user
 who triggered the run. The same rule applies to process nodes in sub-workflows and review
 iterations. Human-feedback, sub-workflow, and review-loop control operations do not
@@ -106,4 +113,7 @@ This reduces exposure but does not make untrusted workflow code safe. A maliciou
 
 ## Rotation
 
-Replace credentials and project tokens through their write-only update actions. To rotate the master Fernet key, follow the controlled procedure in the [operations runbook](/operations); replacing it without re-encrypting existing values makes those credentials unreadable.
+Replace credentials with the **Edit** action and replace project tokens through their
+write-only update actions. To rotate the master Fernet key, follow the controlled
+procedure in the [operations runbook](/operations); replacing it without re-encrypting
+existing values makes those credentials unreadable.

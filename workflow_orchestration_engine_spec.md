@@ -3085,7 +3085,7 @@ Display only:
 Actions:
 
 - Add.
-- Replace value.
+- Edit the description and replace the value with a newly entered secret; the key name is immutable.
 - Delete.
 
 Never show a stored value.
