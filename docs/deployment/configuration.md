@@ -12,7 +12,6 @@ The repository `.env.example` is the authoritative deployment template. Keep `.e
 | Variable | Purpose |
 | --- | --- |
 | `APP_ENV` | Use `production` on a deployed instance |
-| `APP_BASE_URL` | External origin, including scheme |
 | `APP_HOST` | Hostname served by Caddy |
 | `LOG_LEVEL` | Backend log level |
 | `DATABASE_URL` | Async SQLAlchemy PostgreSQL URL |
@@ -20,7 +19,7 @@ The repository `.env.example` is the authoritative deployment template. Keep `.e
 | `DB_POOL_SIZE` | Persistent database pool size |
 | `DB_MAX_OVERFLOW` | Temporary connections above the pool size |
 
-`APP_BASE_URL`, OAuth callback, Caddy host, and provider application URLs must describe the same public origin.
+The OAuth callback, Caddy host, and provider application URLs must describe the same public origin.
 
 ## Encryption and sessions
 
@@ -67,14 +66,16 @@ All paths must be explicit, durable, writable by UID/GID `10001`, and dedicated 
 | Variable | Example | Effect |
 | --- | ---: | --- |
 | `MAX_CONCURRENT_RUNS` | `10` | In-process run semaphore |
-| `DEFAULT_NODE_TIMEOUT_SECONDS` | `1800` | Default process timeout |
 | `MAX_NODE_TIMEOUT_SECONDS` | `14400` | Maximum workflow-requested timeout |
 | `MAX_REVIEW_ITERATIONS` | `10` | Server cap for review loops |
 | `MAX_SUBWORKFLOW_DEPTH` | `8` | Server cap for nested invocations |
 | `MAX_OUTPUT_VARIABLE_BYTES` | `65536` | Public output preview bound |
+| `MAX_ATTEMPT_OUTPUT_BYTES` | `104857600` | Combined stdout/stderr bytes persisted per node attempt |
+| `PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS` | `30` | Time allowed to drain inherited process pipes after the direct child exits |
+| `WORKFLOW_CATALOG_CACHE_TTL_SECONDS` | `30` | Process-local repository workflow catalog cache lifetime |
 | `PROCESS_TERMINATION_GRACE_SECONDS` | `10` | Delay between `SIGTERM` and `SIGKILL` |
 
-`MAX_NODE_TIMEOUT_SECONDS` must be at least the default. Workflow settings may request smaller limits but cannot bypass server caps.
+Workflow settings may request smaller limits but cannot bypass server caps.
 
 ## Reconciliation and retention
 

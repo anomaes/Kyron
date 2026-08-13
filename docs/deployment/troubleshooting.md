@@ -40,7 +40,7 @@ Do not scale the backend to “fix” availability. Start exactly one healthy in
 
 Verify the external origin and callback match character-for-character across:
 
-- `APP_BASE_URL`;
+- the public origin derived from `APP_HOST`;
 - `APP_HOST`;
 - `OAUTH_REDIRECT_URI`;
 - provider application callback; and

@@ -41,7 +41,6 @@ nodes:
 
         Inspect the existing code first, keep the change scoped, and run relevant tests.
       allow_failure: false
-      project_trust: never
     position:
       x: 100
       y: 120

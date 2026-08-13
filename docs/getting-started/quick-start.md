@@ -36,7 +36,7 @@ Set at least these groups in `.env`:
 
 | Group | Required values |
 | --- | --- |
-| Public URL | `APP_HOST`, `APP_BASE_URL`, `OAUTH_REDIRECT_URI` |
+| Public URL | `APP_HOST`, `OAUTH_REDIRECT_URI` |
 | Database | `POSTGRES_PASSWORD` and the matching password in `DATABASE_URL` |
 | Secrets | `CREDENTIALS_ENCRYPTION_KEY`, `SESSION_SIGNING_KEY` |
 | GitLab | OAuth ID/secret, URL, webhook secret—or leave the provider disabled |
@@ -66,7 +66,7 @@ docker compose -f deploy/docker-compose.yml ps
 
 Only Caddy should publish host ports. The backend, auth service, and PostgreSQL must remain internal.
 
-Open `APP_BASE_URL`, choose a configured provider, and complete sign-in.
+Open the HTTPS origin configured by `APP_HOST`, choose a configured provider, and complete sign-in.
 
 ## 4. Register a repository
 

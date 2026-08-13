@@ -177,7 +177,6 @@ class ReconciliationService:
     ) -> None:
         if self.cipher is None:
             return
-        token = ""
         try:
             token = self.cipher.decrypt(project.encrypted_access_token)
             if run.subject_type == "CHANGE_REQUEST":
@@ -225,8 +224,6 @@ class ReconciliationService:
             logger.warning(
                 "Could not reconcile verification subject for run %s", run.id
             )
-        finally:
-            token = ""
 
     async def _change_request_state(self, run: WorkflowRun, project: Project) -> str | None:
         if run.change_request_number is None or run.worktree_path is None:
@@ -234,7 +231,6 @@ class ReconciliationService:
         if self.cipher is None:
             logger.warning("Cannot reconcile change request for run %s without a cipher", run.id)
             return None
-        token = ""
         try:
             token = self.cipher.decrypt(project.encrypted_access_token)
             async with code_host_client(project.provider, self.settings) as provider:
@@ -250,8 +246,6 @@ class ReconciliationService:
         except (EncryptionError, CodeHostError) as exc:
             logger.warning("Could not reconcile change request for run %s: %s", run.id, exc)
             return None
-        finally:
-            token = ""
         return change_request.state
 
     async def _warn_long_open_change_request(self, run: WorkflowRun, now: datetime) -> None:

@@ -402,12 +402,12 @@ position:
 
 | Config field | Type | Required | Default / constraint |
 |---|---|---:|---|
-| `command` | non-empty string | yes | Public templates are expanded. |
+| `command` | non-empty string | yes | Passed unchanged to the shell; public context is available as environment variables. |
 | `timeout` | positive integer or `null` | no | Workflow default timeout. |
 | `allow_failure` | boolean | no | `false` |
 | `shell` | string | no | `/bin/bash` |
 
-The command runs as `[shell, "-lc", expanded_command]` in the worktree. A non-zero
+The command runs as `[shell, "-lc", command]` in the worktree. A non-zero
 exit or timeout fails the wave unless `allow_failure` is true.
 
 ### 6.2 Script
@@ -458,7 +458,6 @@ config:
   skill: .agents/skills/implementation/SKILL.md
   timeout: 1800
   allow_failure: false
-  project_trust: never
 position:
   x: 360
   y: 100
@@ -472,7 +471,6 @@ position:
 | `skill` | string or `null` | no | `null`; repository-relative skill file or directory. |
 | `timeout` | positive integer or `null` | no | Workflow default timeout. |
 | `allow_failure` | boolean | no | `false` |
-| `project_trust` | `never` | no | Must be `never`. |
 
 Each null or omitted Pi field inherits from `settings.pi`, then from the project. If
 no scope supplies a provider or model, Pi selects its configured default. If `skill`
@@ -768,9 +766,7 @@ All settings are optional. These are the accepted fields and model defaults:
 | `mr_description_template` | string | See canonical mapping below. | Public template. |
 | `timeout_per_node_seconds` | positive integer | `1800` | Capped by deployment configuration; default cap is 14400. |
 | `max_review_iterations` | positive integer | `5` | Capped by deployment configuration; default cap is 10. |
-| `max_subworkflow_depth` | positive integer | `8` | Accepted metadata; deployment cap is authoritative. |
 | `max_output_variable_bytes` | integer >= 1024 | `65536` | Per-output public preview limit. |
-| `propagate_skips` | boolean | `false` | Reserved; current runtime still makes skipped-source edges false. |
 
 Canonical explicit settings mapping:
 
@@ -799,9 +795,7 @@ mr_description_template: |-
   Run: ${RUN_ID}
 timeout_per_node_seconds: 1800
 max_review_iterations: 5
-max_subworkflow_depth: 8
 max_output_variable_bytes: 65536
-propagate_skips: false
 ```
 
 `credential_access.mode` is `default`, `none`, `all`, or `allowlist`.
@@ -832,18 +826,10 @@ is invalid even when an edge condition would make the recursive node unreachable
 run time. The reference depth must not exceed the deployment's configured maximum,
 which defaults to 8 and counts the root as depth 1.
 
-## 11. Current implementation caveats
+## 11. Current implementation caveat
 
-These fields are accepted by schema but do not yet alter current runtime behavior:
-
-- `subworkflow.config.allow_failure` applies to isolated batches; a failed shared
-  child still fails its parent node.
-- `settings.propagate_skips`: skipped nodes currently persist false outgoing edges.
-- `settings.max_subworkflow_depth`: the deployment-wide maximum is used for bundle
-  validation.
-
-An LLM should keep reserved behavior flags at their defaults and should not promise
-behavior based on changing them.
+`subworkflow.config.allow_failure` applies to isolated batches; a failed shared
+child still fails its parent node.
 
 Validation currently checks that `${...}` syntax is well formed only when the value is
 expanded during execution. Therefore, an author must independently check every

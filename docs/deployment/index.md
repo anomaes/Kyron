@@ -119,7 +119,7 @@ The backend entrypoint runs `alembic upgrade head` before starting. Do not start
 
 Verify:
 
-1. HTTPS is valid at `APP_BASE_URL`.
+1. HTTPS is valid at the public origin configured by `APP_HOST`.
 2. Each configured provider appears on the sign-in page.
 3. OAuth returns to the exact callback URL.
 4. `/api/health` reports a healthy backend and database.

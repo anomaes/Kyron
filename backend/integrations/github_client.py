@@ -13,7 +13,6 @@ from backend.integrations.code_host import (
     ProviderUser,
     RepositoryMetadata,
 )
-from backend.services.crypto import SecretRedactor
 
 
 class GitHubError(CodeHostError):
@@ -45,40 +44,38 @@ class GitHubClient:
         json: dict[str, Any] | None = None,
         retry_get: bool = True,
     ) -> dict[str, Any] | list[dict[str, Any]]:
-        redactor = SecretRedactor([token])
         attempts = 3 if method == "GET" and retry_get else 1
-        try:
-            for attempt in range(attempts):
-                try:
-                    response = await self.client.request(
-                        method,
-                        f"{self.base_url}{path}",
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Accept": "application/vnd.github+json",
-                            "X-GitHub-Api-Version": "2022-11-28",
-                        },
-                        json=json,
-                    )
-                except httpx.RequestError as exc:
-                    if attempt + 1 == attempts:
-                        raise GitHubError(category) from exc
-                    await asyncio.sleep(0.25 * 2**attempt)
-                    continue
-                if response.status_code in {502, 503, 504} and attempt + 1 < attempts:
-                    await asyncio.sleep(0.25 * 2**attempt)
-                    continue
-                if response.is_error:
-                    raise GitHubError(category, response.status_code)
-                if response.status_code == 204 or not response.content:
-                    return {}
-                data = response.json()
-                if not isinstance(data, (dict, list)):
-                    raise GitHubError(category, response.status_code)
-                return data
-        finally:
-            redactor.clear()
-        raise GitHubError(category)
+        attempt = 0
+        while True:
+            try:
+                response = await self.client.request(
+                    method,
+                    f"{self.base_url}{path}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    json=json,
+                )
+            except httpx.RequestError as exc:
+                attempt += 1
+                if attempt >= attempts:
+                    raise GitHubError(category) from exc
+                await asyncio.sleep(0.25 * 2 ** (attempt - 1))
+                continue
+            if response.status_code in {502, 503, 504} and attempt + 1 < attempts:
+                attempt += 1
+                await asyncio.sleep(0.25 * 2 ** (attempt - 1))
+                continue
+            if response.is_error:
+                raise GitHubError(category, response.status_code)
+            if response.status_code == 204 or not response.content:
+                return {}
+            data = response.json()
+            if not isinstance(data, (dict, list)):
+                raise GitHubError(category, response.status_code)
+            return data
 
     @staticmethod
     def _repository_path(repository: str) -> str:

@@ -782,7 +782,6 @@ settings:
     Run: ${RUN_ID}
   timeout_per_node_seconds: 1800
   max_review_iterations: 5
-  max_subworkflow_depth: 8
   max_output_variable_bytes: 65536
 ```
 
@@ -896,7 +895,6 @@ settings:
   mr_description_template: Triggered by ${USER_NAME} from ${BASE_COMMIT_SHA}.
   timeout_per_node_seconds: 1800
   max_review_iterations: 5
-  max_subworkflow_depth: 8
   max_output_variable_bytes: 65536
 ```
 
@@ -917,8 +915,9 @@ config:
 
 Behavior:
 
-- Expand public `${VAR}` placeholders before execution.
-- Execute through the configured shell.
+- Pass the command unchanged to the configured shell.
+- Expose public context through the shell environment; `$VAR` and `${VAR}` are
+  expanded by the shell after it parses command syntax.
 - Set `cwd` to the run worktree.
 - Inject the complete public context and all decrypted credentials into the process environment.
 - Capture stdout and stderr separately.
@@ -978,7 +977,6 @@ config:
   skill: .agents/skills/implementation/SKILL.md
   timeout: 1800
   allow_failure: false
-  project_trust: never
 ```
 
 Pi must be invoked in JSON event-stream mode so that the backend can parse structured agent events.
@@ -1144,7 +1142,8 @@ Behavior:
 9. Mark the sub-workflow node successful only when the child invocation succeeds
    and, for an isolated child, integration completes.
 
-Child workflows may call further child workflows up to `max_subworkflow_depth`.
+Child workflows may call further child workflows up to the deployment's
+`MAX_SUBWORKFLOW_DEPTH` limit.
 
 Recursive workflow references are invalid, even if the recursion would be reached only conditionally.
 
@@ -1236,7 +1235,7 @@ When saving or triggering:
 
 1. Every referenced workflow file exists in the same commit snapshot.
 2. The complete workflow-reference graph is acyclic.
-3. The maximum reference depth does not exceed `max_subworkflow_depth`.
+3. The maximum reference depth does not exceed the deployment's `MAX_SUBWORKFLOW_DEPTH`.
 4. All required child inputs are mapped or have defaults.
 5. Every mapped child output exists in the child's output definition.
 6. A child workflow cannot reference itself directly or indirectly.
@@ -1322,8 +1321,7 @@ For a successful or `allow_failure` process node, conditions use the actual exit
 
 For a skipped source node:
 
-- Its outgoing edges are evaluated as false unless the edge has no condition and the workflow setting `propagate_skips` is explicitly enabled.
-- Version 1 defaults to false propagation to avoid surprising execution.
+- Its outgoing edges are evaluated as false.
 
 ## 8.4 AND Join
 
@@ -3506,7 +3504,7 @@ workflow-engine/
 ```bash
 # Application
 APP_ENV=production
-APP_BASE_URL=https://workflow.example.internal
+APP_HOST=workflow.example.internal
 LOG_LEVEL=INFO
 
 # Database
@@ -3532,12 +3530,14 @@ RUN_DATA_BASE_PATH=/var/workflowengine/run_data
 
 # Engine
 MAX_CONCURRENT_RUNS=10
-DEFAULT_NODE_TIMEOUT_SECONDS=1800
 MAX_NODE_TIMEOUT_SECONDS=14400
 MAX_REVIEW_ITERATIONS=10
 MAX_SUBWORKFLOW_DEPTH=8
 MAX_OUTPUT_VARIABLE_BYTES=65536
 PROCESS_TERMINATION_GRACE_SECONDS=10
+PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS=30
+MAX_ATTEMPT_OUTPUT_BYTES=104857600
+WORKFLOW_CATALOG_CACHE_TTL_SECONDS=30
 QUEUE_RECONCILIATION_INTERVAL_SECONDS=60
 STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS=3600
 STALE_FAILED_RUN_DAYS=7

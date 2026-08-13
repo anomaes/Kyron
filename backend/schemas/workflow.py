@@ -122,7 +122,6 @@ class PromptConfig(StrictModel):
     skill: str | None = Field(default=None, min_length=1, max_length=1024)
     timeout: int | None = Field(default=None, gt=0)
     allow_failure: bool = False
-    project_trust: Literal["never"] = "never"
 
     @field_validator("skill")
     @classmethod
@@ -246,9 +245,7 @@ class WorkflowSettings(StrictModel):
     )
     timeout_per_node_seconds: int = Field(default=1800, gt=0)
     max_review_iterations: int = Field(default=5, gt=0)
-    max_subworkflow_depth: int = Field(default=8, gt=0)
     max_output_variable_bytes: int = Field(default=65536, ge=1024)
-    propagate_skips: bool = False
 
 
 class WorkflowDefinition(StrictModel):

@@ -281,7 +281,6 @@ At minimum, review every value below:
 
 ```dotenv
 APP_ENV=production
-APP_BASE_URL=https://kyron.example.com
 APP_HOST=kyron.example.com
 LOG_LEVEL=INFO
 
@@ -305,7 +304,7 @@ SESSION_MAX_AGE_SECONDS=28800
 Important details:
 
 - `APP_HOST` is only the hostname. Do not include `https://`, a port, or a path.
-- `APP_BASE_URL` and `OAUTH_REDIRECT_URI` use HTTPS and the same hostname.
+- `OAUTH_REDIRECT_URI` uses HTTPS and the same hostname as `APP_HOST`.
 - `POSTGRES_PASSWORD` and the password inside `DATABASE_URL` must be identical.
   The hexadecimal generation command above avoids URL-encoding problems.
 - All three in-container data paths should remain beneath
@@ -787,7 +786,7 @@ not owned by UID/GID `10001`.
 Compare all four locations character-for-character:
 
 - the browser URL;
-- `APP_BASE_URL`;
+- the public HTTPS origin configured by `APP_HOST`;
 - `OAUTH_REDIRECT_URI`; and
 - the provider OAuth application's callback URL.
 

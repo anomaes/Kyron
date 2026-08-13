@@ -64,13 +64,16 @@ variables:
   RETRY_COUNT: 2
 ```
 
-Expand public values with exact `${NAME}` syntax in supported fields:
+Use native shell environment expansion in Bash commands:
 
 ```yaml
 command: ${TEST_COMMAND}
 ```
 
-An unknown name fails execution; it is not left as literal text. Templates are intentionally not expanded in IDs, labels, executable paths, providers, models, skills, or interpreter names.
+Kyron expands exact `${NAME}` templates in supported non-shell fields such as prompts,
+Script arguments, mappings, and publication text. An unknown name in those fields fails
+execution; it is not left as literal text. Templates are intentionally not expanded in
+IDs, labels, executable paths, providers, models, skills, or interpreter names.
 
 Secrets use native environment syntax such as `$NPM_TOKEN`, never `${NPM_TOKEN}`. See [variables and outputs](/reference/variables) for the full built-in list and precedence.
 
@@ -112,9 +115,7 @@ Workflow settings control checkpoint and safety limits:
 | `mr_title_template` | `Workflow: ${WORKFLOW_NAME} (${RUN_ID_SHORT})` | Default change-request title |
 | `timeout_per_node_seconds` | `1800` | Workflow-level process timeout |
 | `max_review_iterations` | `5` | Default loop bound |
-| `max_subworkflow_depth` | `8` | Invocation nesting bound |
 | `max_output_variable_bytes` | `65536` | Bounded public output preview |
-| `propagate_skips` | `false` | Skip propagation behavior |
 
 Server-wide limits can further constrain workflow settings.
 

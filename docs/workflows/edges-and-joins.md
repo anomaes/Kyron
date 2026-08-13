@@ -100,7 +100,9 @@ Do not use OR as a substitute for tolerating failure. If a source may fail witho
 
 ## Skip propagation
 
-When no valid incoming route can make a node ready, it becomes skipped. `settings.propagate_skips` controls how aggressively that state flows through dependent graph regions. Keep the default until you have a tested branching case; small changes to skip semantics can affect large downstream sections.
+When no valid incoming route can make a node ready, it becomes skipped. A skipped
+source makes its outgoing edges false, and downstream join evaluation determines
+whether dependent nodes are also unreachable.
 
 ## Design guidance
 

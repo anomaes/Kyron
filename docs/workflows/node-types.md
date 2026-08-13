@@ -84,7 +84,6 @@ config:
   skill: null
   timeout: 3600
   allow_failure: false
-  project_trust: never
 ```
 
 `prompt` supports public templates. `provider`, `model`, and `skill` are passed as
@@ -94,7 +93,7 @@ directory containing `SKILL.md`; Kyron loads the exact file from the pinned work
 and explicitly invokes the skill. The manifest must declare a `description` in its
 frontmatter; `name` is optional and defaults to the containing directory's name. A
 skill that cannot be loaded is recorded as a `PI_SKILL_SKIPPED` warning on the run log
-and skipped, and the prompt runs without it. `project_trust` remains fixed to `never`.
+and skipped, and the prompt runs without it.
 
 Prompt stdout contains Pi's raw JSONL event stream. Kyron also parses events into readable live logs and uses the terminal result event to determine success.
 

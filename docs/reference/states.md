@@ -49,7 +49,7 @@ Historical attempts are never rewritten to look successful.
 
 ## Skipped nodes
 
-A node becomes skipped when its incoming edge decisions and join mode prove that it cannot become ready. Skipping is a graph result, not a process failure. `settings.propagate_skips` affects how downstream skip state is resolved.
+A node becomes skipped when its incoming edge decisions and join mode prove that it cannot become ready. Skipping is a graph result, not a process failure; skipped sources persist false outgoing edges.
 
 ## Feedback lifecycle
 

@@ -104,7 +104,7 @@ class CleanupService:
         if RunStatus(run.status) not in DELETABLE_RUN_STATUSES:
             raise ValueError(
                 "Only completed, failed, interrupted, or cancelled runs can be deleted"
-        )
+            )
         await self.cleanup_worktree(run)
         await self.cleanup_output(run, require_removed=True)
         await self._delete_records(run.id)

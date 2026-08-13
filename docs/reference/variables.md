@@ -11,9 +11,8 @@ Kyron keeps persistable public context separate from ephemeral secret environmen
 
 Public templates use exact `${NAME}` syntax. Names match `[A-Za-z_][A-Za-z0-9_]*`. Expansion converts the public value to text and fails when the name is unknown.
 
-Supported locations include:
+Kyron template expansion is supported in:
 
-- Bash `config.command`;
 - each Script `config.args` item;
 - Prompt `config.prompt`;
 - sub-workflow and review-loop mappings;
@@ -22,8 +21,10 @@ Supported locations include:
 
 Templates do not expand in IDs, labels, paths, `script`, `python`, `shell`, `provider`, or `model`.
 
-Public context is also copied into the environment of every Bash, Script, and Prompt
-process. Bash may therefore read `$TARGET_DIR`, and a repository script may read
+Public context is copied into the environment of every Bash, Script, and Prompt
+process. Bash commands are passed to the shell unchanged and may read `$TARGET_DIR`
+or `${TARGET_DIR}` using native shell expansion; this prevents context values from
+being parsed as new shell syntax. A repository script may read
 `os.environ["TARGET_DIR"]`. Script arguments and prompt text use Kyron's `${TARGET_DIR}`
 template syntax instead. Prompt nodes are launched without a shell, so `$TARGET_DIR` in
 the prompt remains literal text; use `${TARGET_DIR}` when the value should become part of
@@ -99,7 +100,10 @@ NODE_<node_id>_STDOUT_PATH
 NODE_<node_id>_STDERR_PATH
 ```
 
-For node ID `tests`, use `${NODE_tests_EXIT_CODE}`. Text values are bounded previews controlled by output limits. Use path variables inside trusted repository code when complete output is required.
+For node ID `tests`, use `${NODE_tests_EXIT_CODE}` in a template field or
+`$NODE_tests_EXIT_CODE` in a Bash command. Text values are bounded previews controlled
+by output limits. Use path variables inside trusted repository code when complete
+output is required.
 
 A downstream node can consume these values after an edge has made it depend on the
 producer. For example, if `choose_environment` prints only `staging`, a later Prompt node

@@ -176,8 +176,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Update `.env` with:
 
-- `APP_HOST`, `APP_BASE_URL`, and enabled provider URLs;
-- OAuth client ID, secret, and the exact callback URL `${APP_BASE_URL}/auth/callback`;
+- `APP_HOST` and enabled provider URLs;
+- OAuth client ID, secret, and the exact HTTPS callback URL for `APP_HOST` ending in `/auth/callback`;
 - the generated Fernet and session-signing keys;
 - webhook secrets; and
 - the same database password in `POSTGRES_PASSWORD` and `DATABASE_URL`.
@@ -197,7 +197,7 @@ docker compose -f deploy/docker-compose.yml config
 docker compose -f deploy/docker-compose.yml up --build -d
 ```
 
-Open the configured `APP_BASE_URL`. Caddy presents the configured GitLab/GitHub sign-in options, then serves the UI and authenticated API from the same origin.
+Open the HTTPS origin configured by `APP_HOST`. Caddy presents the configured GitLab/GitHub sign-in options, then serves the UI and authenticated API from the same origin.
 
 ```bash
 # Follow the services
@@ -245,7 +245,6 @@ nodes:
 
         Inspect the existing code first, keep the change scoped, and run relevant tests.
       allow_failure: false
-      project_trust: never
     position:
       x: 100
       y: 120

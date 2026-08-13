@@ -104,38 +104,32 @@ class ProjectService:
         project = await self.get(project_id)
         token = self.cipher.decrypt(project.encrypted_access_token)
         async with project_git_locks.for_project(project.id):
-            try:
-                await self.git.fetch(
-                    Path(project.local_path), token, username=git_username(project.provider)
-                )
-                return await self.git.resolve_remote_sha(
-                    Path(project.local_path), project.default_branch
-                )
-            finally:
-                token = ""
+            await self.git.fetch(
+                Path(project.local_path), token, username=git_username(project.provider)
+            )
+            return await self.git.resolve_remote_sha(
+                Path(project.local_path), project.default_branch
+            )
 
     async def validate(self, project_id: uuid.UUID) -> dict[str, str | bool]:
         project = await self.get(project_id)
         token = self.cipher.decrypt(project.encrypted_access_token)
-        try:
-            async with code_host_client(project.provider, self.settings) as provider:
-                metadata = await provider.get_repository(
-                    repository_locator(
-                        project.provider,
-                        project.provider_project_id,
-                        project.provider_project_path,
-                    ),
-                    token,
-                )
-            project.provider_project_id = metadata.id
-            project.provider_project_path = metadata.path
-            return {
-                "valid": True,
-                "default_branch": metadata.default_branch or project.default_branch,
-                "provider_project_path": metadata.path,
-            }
-        finally:
-            token = ""
+        async with code_host_client(project.provider, self.settings) as provider:
+            metadata = await provider.get_repository(
+                repository_locator(
+                    project.provider,
+                    project.provider_project_id,
+                    project.provider_project_path,
+                ),
+                token,
+            )
+        project.provider_project_id = metadata.id
+        project.provider_project_path = metadata.path
+        return {
+            "valid": True,
+            "default_branch": metadata.default_branch or project.default_branch,
+            "provider_project_path": metadata.path,
+        }
 
     async def delete(self, project_id: uuid.UUID) -> None:
         project = await self.get(project_id)
