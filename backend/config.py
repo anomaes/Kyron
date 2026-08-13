@@ -5,16 +5,44 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import Field, HttpUrl, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+SHARED_ENV_KEYS = {
+    "APP_HOST",
+    "GITHUB_OAUTH_CLIENT_ID",
+    "GITHUB_OAUTH_CLIENT_SECRET",
+    "GITHUB_WEB_URL",
+    "GITLAB_OAUTH_CLIENT_ID",
+    "GITLAB_OAUTH_CLIENT_SECRET",
+    "OAUTH_REDIRECT_URI",
+    "PI_VERSION",
+    "POSTGRES_PASSWORD",
+    "SESSION_MAX_AGE_SECONDS",
+    "SESSION_PREVIOUS_SIGNING_KEY",
+    "SESSION_SIGNING_KEY",
+    "WORKFLOW_DATA_HOST_PATH",
+}
+
+
+class SharedEnvDotEnvSettingsSource(DotEnvSettingsSource):
+    def __call__(self) -> dict[str, Any]:
+        values = super().__call__()
+        for key in SHARED_ENV_KEYS:
+            values.pop(key, None)
+        return values
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=True
+        env_file=".env", env_file_encoding="utf-8", extra="forbid", case_sensitive=True
     )
 
     APP_ENV: str = "development"
-    APP_BASE_URL: HttpUrl = HttpUrl("http://localhost")
     LOG_LEVEL: str = "INFO"
 
     DATABASE_URL: str = "sqlite+aiosqlite:///./kyron.db"
@@ -25,11 +53,9 @@ class Settings(BaseSettings):
     CREDENTIALS_ENCRYPTION_KEY_VERSION: int = Field(1, ge=1)
 
     GITLAB_URL: HttpUrl = HttpUrl("https://gitlab.com")
-    GITLAB_OAUTH_CLIENT_ID: str = ""
     GITLAB_WEBHOOK_SECRET: str = ""
     GITLAB_WEBHOOK_SIGNING_SECRET: str = ""
     GITHUB_API_URL: HttpUrl = HttpUrl("https://api.github.com")
-    GITHUB_OAUTH_CLIENT_ID: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
 
     PROJECT_CLONE_BASE_PATH: Path = Path("/var/workflowengine/repos")
@@ -38,12 +64,13 @@ class Settings(BaseSettings):
     PI_MODELS_CONFIG_PATH: Path | None = None
 
     MAX_CONCURRENT_RUNS: int = Field(10, ge=1)
-    DEFAULT_NODE_TIMEOUT_SECONDS: int = Field(1800, ge=1)
     MAX_NODE_TIMEOUT_SECONDS: int = Field(14400, ge=1)
     MAX_REVIEW_ITERATIONS: int = Field(10, ge=1)
     MAX_SUBWORKFLOW_DEPTH: int = Field(8, ge=1)
     MAX_OUTPUT_VARIABLE_BYTES: int = Field(65536, ge=1024)
     PROCESS_TERMINATION_GRACE_SECONDS: float = Field(10, ge=0)
+    PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS: float = Field(30, gt=0)
+    MAX_ATTEMPT_OUTPUT_BYTES: int = Field(100 * 1024**2, ge=1024)
     QUEUE_RECONCILIATION_INTERVAL_SECONDS: int = Field(60, ge=1)
     STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS: int = Field(3600, ge=60)
     STALE_FAILED_RUN_DAYS: int = Field(7, ge=1)
@@ -56,6 +83,7 @@ class Settings(BaseSettings):
     RUN_DATA_USAGE_WARNING_BYTES: int = Field(50 * 1024**3, ge=0)
     FILESYSTEM_USAGE_WARNING_PERCENT: int = Field(85, ge=1, le=100)
     AUTH_USER_TOUCH_INTERVAL_SECONDS: int = Field(300, ge=0)
+    WORKFLOW_CATALOG_CACHE_TTL_SECONDS: int = Field(30, ge=0)
 
     @field_validator("LOG_LEVEL")
     @classmethod
@@ -75,13 +103,22 @@ class Settings(BaseSettings):
             raise ValueError("PI_MODELS_CONFIG_PATH must be an absolute path")
         return value
 
-    @field_validator("MAX_NODE_TIMEOUT_SECONDS")
     @classmethod
-    def max_timeout_covers_default(cls, value: int, info: object) -> int:
-        data = getattr(info, "data", {})
-        if value < data.get("DEFAULT_NODE_TIMEOUT_SECONDS", 0):
-            raise ValueError("MAX_NODE_TIMEOUT_SECONDS must cover the default timeout")
-        return value
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        assert isinstance(dotenv_settings, DotEnvSettingsSource)
+        shared_dotenv = SharedEnvDotEnvSettingsSource(
+            settings_cls,
+            env_file=dotenv_settings.env_file,
+            env_file_encoding=dotenv_settings.env_file_encoding,
+        )
+        return init_settings, env_settings, shared_dotenv, file_secret_settings
 
     @property
     def is_production(self) -> bool:
@@ -90,10 +127,6 @@ class Settings(BaseSettings):
     def validate_runtime_secrets(self) -> None:
         if self.is_production and not self.CREDENTIALS_ENCRYPTION_KEY:
             raise ValueError("CREDENTIALS_ENCRYPTION_KEY is required in production")
-        if self.is_production and self.GITLAB_OAUTH_CLIENT_ID and not self.GITLAB_WEBHOOK_SECRET:
-            raise ValueError("GITLAB_WEBHOOK_SECRET is required in production")
-        if self.is_production and self.GITHUB_OAUTH_CLIENT_ID and not self.GITHUB_WEBHOOK_SECRET:
-            raise ValueError("GITHUB_WEBHOOK_SECRET is required in production")
 
 
 @lru_cache

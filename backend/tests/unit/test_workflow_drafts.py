@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 from backend.config import Settings
 from backend.db.models import Project, WorkflowRun
 from backend.engine.coordinator import should_publish_run
+from backend.engine.definition_yaml import dump_definition_yaml
 from backend.engine.validation import parse_workflow
 from backend.integrations.git_manager import GitManager
 from backend.schemas.run import RunTriggerRequest
@@ -169,6 +170,59 @@ def test_local_definition_runs_never_publish() -> None:
 def test_local_definition_paths_reject_traversal() -> None:
     with pytest.raises(ValueError, match="invalid"):
         WorkflowService._require_identifier("../../escape")
+
+
+async def test_malformed_remote_yaml_is_skipped_with_a_catalog_warning(
+    tmp_path: Path, db_session: Any
+) -> None:
+    key = Fernet.generate_key()
+    cipher = SecretCipher(key)
+    settings = Settings(
+        PROJECT_CLONE_BASE_PATH=tmp_path / "repos",
+        CREDENTIALS_ENCRYPTION_KEY=key.decode(),
+        _env_file=None,
+    )
+
+    class CatalogGit(GitManager):
+        def __init__(self, clone_base_path: Path) -> None:
+            super().__init__(clone_base_path)
+            self.fetch_calls = 0
+            self.archive_calls = 0
+
+        async def fetch(self, *args: object, **kwargs: object) -> None:
+            self.fetch_calls += 1
+
+        async def resolve_remote_sha(self, *_: object) -> str:
+            return "a" * 40
+
+        async def archive_files(self, *_: object) -> dict[str, str]:
+            self.archive_calls += 1
+            return {
+                ".workflowEngine/broken.yaml": "broken: [",
+                ".workflowEngine/root.yaml": dump_definition_yaml(workflow()),
+            }
+
+    git = CatalogGit(settings.PROJECT_CLONE_BASE_PATH)
+    service = WorkflowService(
+        db_session,
+        settings,
+        cipher,
+        git,
+    )
+    test_project = project(tmp_path, cipher)
+
+    _sha, definitions, _templates, _paths = await service._load_remote(
+        test_project
+    )
+    second_service = WorkflowService(db_session, settings, cipher, git)
+    await second_service._load_remote(test_project)
+
+    assert list(definitions) == ["root"]
+    assert [warning.code for warning in service.load_warnings] == ["INVALID_YAML"]
+    assert service.load_warnings[0].path == ".workflowEngine/broken.yaml"
+    assert [warning.code for warning in second_service.load_warnings] == ["INVALID_YAML"]
+    assert git.fetch_calls == 1
+    assert git.archive_calls == 1
 
 
 @pytest.mark.parametrize("folder", ["../escape", "/absolute", "templates", "bad\\path"])

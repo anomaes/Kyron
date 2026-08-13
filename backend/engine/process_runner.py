@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 LineCallback = Callable[[str, str], Awaitable[None]]
 DIAGNOSTIC_TAIL_BYTES = 4096
 STREAM_READ_CHUNK_BYTES = 64 * 1024
+MAX_STREAM_FRAME_BYTES = 1 << 20
+DEFAULT_MAX_ATTEMPT_OUTPUT_BYTES = 100 * 1024 * 1024
+DEFAULT_STREAM_DRAIN_TIMEOUT_SECONDS = 30.0
+OUTPUT_TRUNCATION_MARKER = "\n[Kyron output truncated: attempt byte limit reached]\n"
 
 
 async def iter_stream_lines(stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
@@ -32,8 +36,26 @@ async def iter_stream_lines(stream: asyncio.StreamReader) -> AsyncIterator[bytes
             line_end = newline + 1
             yield bytes(pending[:line_end])
             del pending[:line_end]
+        while len(pending) >= MAX_STREAM_FRAME_BYTES:
+            yield bytes(pending[:MAX_STREAM_FRAME_BYTES])
+            del pending[:MAX_STREAM_FRAME_BYTES]
     if pending:
         yield bytes(pending)
+
+
+async def wait_for_process_exit(process: asyncio.subprocess.Process) -> None:
+    """Wait for the direct child without waiting for inherited pipe handles to close."""
+    exited = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def check_returncode() -> None:
+        if process.returncode is None:
+            loop.call_later(0.01, check_returncode)
+        else:
+            exited.set()
+
+    check_returncode()
+    await exited.wait()
 
 
 @dataclass(slots=True)
@@ -65,6 +87,7 @@ class ProcessResult:
     stderr_tail_truncated: bool = False
     timed_out: bool = False
     cancelled: bool = False
+    output_truncated: bool = False
     pi_usage: dict[str, Any] | None = None
     pi_skill_warning: str | None = None
 
@@ -102,16 +125,47 @@ class BoundedTail:
         return self._content.decode("utf-8", errors="replace")
 
 
+class AttemptOutputBudget:
+    def __init__(self, maximum_bytes: int) -> None:
+        self.maximum_bytes = maximum_bytes
+        self.written_bytes = 0
+        self.truncated = False
+        self._lock = asyncio.Lock()
+
+    async def take(self, text: str) -> str:
+        encoded = text.encode("utf-8")
+        async with self._lock:
+            remaining = self.maximum_bytes - self.written_bytes
+            if len(encoded) <= remaining:
+                self.written_bytes += len(encoded)
+                return text
+            if self.truncated or remaining <= 0:
+                self.truncated = True
+                return ""
+            marker = OUTPUT_TRUNCATION_MARKER.encode("utf-8")
+            content_bytes = max(0, remaining - len(marker))
+            bounded = encoded[:content_bytes].decode("utf-8", errors="ignore")
+            result = bounded + OUTPUT_TRUNCATION_MARKER
+            result_bytes = result.encode("utf-8")[:remaining]
+            self.written_bytes += len(result_bytes)
+            self.truncated = True
+            return result_bytes.decode("utf-8", errors="ignore")
+
+
 class ProcessRunner:
     def __init__(
         self,
         registry: ProcessRegistry,
         broadcaster: LogBroadcaster,
         termination_grace_seconds: float = 10,
+        max_attempt_output_bytes: int = DEFAULT_MAX_ATTEMPT_OUTPUT_BYTES,
+        stream_drain_timeout_seconds: float = DEFAULT_STREAM_DRAIN_TIMEOUT_SECONDS,
     ) -> None:
         self.registry = registry
         self.broadcaster = broadcaster
         self.termination_grace_seconds = termination_grace_seconds
+        self.max_attempt_output_bytes = max_attempt_output_bytes
+        self.stream_drain_timeout_seconds = stream_drain_timeout_seconds
 
     async def execute(
         self,
@@ -127,6 +181,7 @@ class ProcessRunner:
         stderr_preview = BoundedPreview(spec.max_preview_bytes)
         stdout_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
         stderr_tail = BoundedTail(DIAGNOSTIC_TAIL_BYTES)
+        output_budget = AttemptOutputBudget(self.max_attempt_output_bytes)
         redactor = SecretRedactor(secret_values)
         logger.debug(
             "Starting node process (run=%s, attempt=%s, node_path=%s, timeout_seconds=%s)",
@@ -167,6 +222,9 @@ class ProcessRunner:
             async with aiofiles.open(path, "w", encoding="utf-8") as output:
                 async for chunk in iter_stream_lines(stream):
                     text = redactor.redact(chunk.decode("utf-8", errors="replace"))
+                    text = await output_budget.take(text)
+                    if not text:
+                        continue
                     await output.write(text)
                     preview.append(text)
                     tail.append(text)
@@ -196,7 +254,9 @@ class ProcessRunner:
         cancelled = False
         try:
             try:
-                await asyncio.wait_for(process.wait(), timeout=spec.timeout_seconds)
+                await asyncio.wait_for(
+                    wait_for_process_exit(process), timeout=spec.timeout_seconds
+                )
             except TimeoutError:
                 timed_out = True
                 logger.warning(
@@ -209,7 +269,30 @@ class ProcessRunner:
                 )
                 await terminate_process_group(pgid, self.termination_grace_seconds)
                 await process.wait()
-            await asyncio.gather(stdout_task, stderr_task)
+            drain = asyncio.gather(stdout_task, stderr_task)
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(drain),
+                    timeout=self.stream_drain_timeout_seconds,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Node process streams remained open after exit; terminating process group "
+                    "(run=%s, attempt=%s, node_path=%s)",
+                    spec.run_id,
+                    spec.attempt_id,
+                    spec.node_path,
+                )
+                await terminate_process_group(pgid, self.termination_grace_seconds)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(drain),
+                        timeout=self.stream_drain_timeout_seconds,
+                    )
+                except TimeoutError:
+                    stdout_task.cancel()
+                    stderr_task.cancel()
+                    await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
         except asyncio.CancelledError:
             cancelled = True
             logger.info(
@@ -247,4 +330,5 @@ class ProcessRunner:
             stderr_tail_truncated=stderr_tail.truncated,
             timed_out=timed_out,
             cancelled=cancelled,
+            output_truncated=output_budget.truncated,
         )

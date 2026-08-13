@@ -74,6 +74,9 @@ async def list_workflows(
     change_status = await workflows.change_status(project)
     return {
         "base_commit_sha": sha,
+        "warnings": [
+            warning.model_dump(mode="json") for warning in workflows.load_warnings
+        ],
         **change_status,
         "items": [
             {

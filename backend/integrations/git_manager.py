@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import shutil
+import tarfile
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
@@ -136,6 +138,38 @@ class GitManager:
             ["ls-tree", "-r", "--name-only", commit_sha, "--", prefix], cwd=local_path
         )
         return [line for line in output.splitlines() if line]
+
+    async def archive_files(
+        self, local_path: Path, commit_sha: str, prefix: str
+    ) -> dict[str, str]:
+        if not prefix or prefix.startswith("/") or ".." in Path(prefix).parts:
+            raise GitError("Repository archive path is unsafe")
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "archive",
+            "--format=tar",
+            commit_sha,
+            "--",
+            prefix,
+            cwd=local_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode:
+            message = stderr.decode("utf-8", errors="replace").strip()
+            raise GitError(f"Git archive failed ({process.returncode}): {message}")
+        files: dict[str, str] = {}
+        with tarfile.open(fileobj=io.BytesIO(stdout), mode="r:") as archive:
+            for member in archive.getmembers():
+                if not member.isfile():
+                    continue
+                archived = archive.extractfile(member)
+                if archived is not None:
+                    files[member.name] = archived.read().decode(
+                        "utf-8", errors="replace"
+                    )
+        return files
 
     async def create_run_worktree(
         self,

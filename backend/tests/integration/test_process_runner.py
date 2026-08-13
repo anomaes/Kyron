@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
+import time
 import uuid
 from pathlib import Path
 
 from backend.engine.pi.json_events import PiEventCollector
 from backend.engine.process_registry import ProcessRegistry
-from backend.engine.process_runner import ProcessRunner, ProcessSpec
+from backend.engine.process_runner import (
+    MAX_STREAM_FRAME_BYTES,
+    OUTPUT_TRUNCATION_MARKER,
+    ProcessRunner,
+    ProcessSpec,
+    iter_stream_lines,
+)
 from backend.services.log_broadcaster import LogBroadcaster
 
 
@@ -191,3 +199,85 @@ async def test_timeout_terminates_the_process_group(tmp_path: Path) -> None:
     )
     assert result.timed_out
     assert result.exit_code != 0
+
+
+async def test_stream_framing_bounds_output_without_newlines() -> None:
+    stream = asyncio.StreamReader()
+    stream.feed_data(b"x" * (MAX_STREAM_FRAME_BYTES * 2 + 17))
+    stream.feed_eof()
+
+    frames = [frame async for frame in iter_stream_lines(stream)]
+
+    assert [len(frame) for frame in frames] == [
+        MAX_STREAM_FRAME_BYTES,
+        MAX_STREAM_FRAME_BYTES,
+        17,
+    ]
+
+
+async def test_attempt_output_budget_truncates_combined_streams(tmp_path: Path) -> None:
+    runner = ProcessRunner(
+        ProcessRegistry(),
+        LogBroadcaster(),
+        max_attempt_output_bytes=1024,
+    )
+    result = await runner.execute(
+        ProcessSpec(
+            run_id=uuid.uuid4(),
+            attempt_id=uuid.uuid4(),
+            node_path="root/chatty",
+            command=[
+                sys.executable,
+                "-c",
+                "import sys; print('x' * 4000); print('y' * 4000, file=sys.stderr)",
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "bounded-output",
+            timeout_seconds=5,
+            max_preview_bytes=2048,
+        )
+    )
+
+    persisted = result.stdout_path.read_text() + result.stderr_path.read_text()
+    assert result.output_truncated
+    assert len(result.stdout_path.read_bytes()) + len(result.stderr_path.read_bytes()) <= 1024
+    assert OUTPUT_TRUNCATION_MARKER.strip() in persisted
+
+
+async def test_stream_drain_timeout_terminates_background_pipe_holder(
+    tmp_path: Path,
+) -> None:
+    runner = ProcessRunner(
+        ProcessRegistry(),
+        LogBroadcaster(),
+        termination_grace_seconds=0.1,
+        stream_drain_timeout_seconds=0.1,
+    )
+    started = time.monotonic()
+
+    result = await runner.execute(
+        ProcessSpec(
+            run_id=uuid.uuid4(),
+            attempt_id=uuid.uuid4(),
+            node_path="root/background",
+            command=[
+                sys.executable,
+                "-c",
+                (
+                    "import subprocess, sys; "
+                    "subprocess.Popen([sys.executable, '-c', "
+                    "'import time; time.sleep(30)']); print('done')"
+                ),
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "background-output",
+            timeout_seconds=5,
+            max_preview_bytes=100,
+        )
+    )
+
+    assert time.monotonic() - started < 3
+    assert result.exit_code == 0
+    assert result.stdout_preview == "done\n"

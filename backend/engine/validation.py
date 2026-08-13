@@ -54,6 +54,7 @@ def validate_workflow_bundle(
     max_timeout: int = 14400,
     max_review_iterations: int = 10,
     max_subworkflow_depth: int = 8,
+    max_output_variable_bytes: int = 65536,
 ) -> WorkflowValidationResponse:
     errors: list[ValidationIssue] = []
     root = workflows.get(root_workflow_id)
@@ -79,7 +80,15 @@ def validate_workflow_bundle(
 
     for workflow_id, workflow in workflows.items():
         errors.extend(_validate_dag(workflow_id, workflow))
-        errors.extend(_validate_limits(workflow_id, workflow, max_timeout, max_review_iterations))
+        errors.extend(
+            _validate_limits(
+                workflow_id,
+                workflow,
+                max_timeout,
+                max_review_iterations,
+                max_output_variable_bytes,
+            )
+        )
         errors.extend(_validate_parallel_output_mappings(workflow_id, workflow))
 
     graph = {
@@ -290,6 +299,7 @@ def _validate_limits(
     workflow: WorkflowDefinition,
     max_timeout: int,
     max_review_iterations: int,
+    max_output_variable_bytes: int,
 ) -> list[ValidationIssue]:
     errors: list[ValidationIssue] = []
     if workflow.settings.timeout_per_node_seconds > max_timeout:
@@ -306,6 +316,17 @@ def _validate_limits(
                 path=f"workflows.{workflow_id}.settings.max_review_iterations",
                 code="LIMIT_EXCEEDED",
                 message=f"Review iteration limit exceeds {max_review_iterations}",
+            )
+        )
+    if workflow.settings.max_output_variable_bytes > max_output_variable_bytes:
+        errors.append(
+            ValidationIssue(
+                path=f"workflows.{workflow_id}.settings.max_output_variable_bytes",
+                code="LIMIT_EXCEEDED",
+                message=(
+                    "Output variable preview limit exceeds "
+                    f"{max_output_variable_bytes} bytes"
+                ),
             )
         )
     for index, node in enumerate(workflow.nodes):

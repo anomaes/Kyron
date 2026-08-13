@@ -187,6 +187,8 @@ class EngineRuntime:
                 process_registry,
                 log_broadcaster,
                 settings.PROCESS_TERMINATION_GRACE_SECONDS,
+                settings.MAX_ATTEMPT_OUTPUT_BYTES,
+                settings.PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS,
             )
             engine_logs = EngineLogService(session, log_broadcaster)
             pi_models_document = run.pi_models_config_snapshot

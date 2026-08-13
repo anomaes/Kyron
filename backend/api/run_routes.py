@@ -17,6 +17,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import ColumnElement, func, select
 
 from backend.approval_policy_defaults import DEFAULT_APPROVAL_POLICY_KEY
@@ -80,6 +81,34 @@ from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 websocket_router = APIRouter(tags=["run logs"])
+TAIL_READ_BLOCK_BYTES = 64 * 1024
+MAX_TAIL_READ_BYTES = 1 << 20
+
+
+def _read_tail_lines(path: Path, line_count: int) -> tuple[str, bool]:
+    with path.open("rb") as source:
+        source.seek(0, 2)
+        file_size = source.tell()
+        position = file_size
+        chunks: list[bytes] = []
+        buffered = 0
+        newline_count = 0
+        while position > 0 and buffered < MAX_TAIL_READ_BYTES:
+            read_size = min(
+                TAIL_READ_BLOCK_BYTES,
+                position,
+                MAX_TAIL_READ_BYTES - buffered,
+            )
+            position -= read_size
+            source.seek(position)
+            chunk = source.read(read_size)
+            chunks.append(chunk)
+            buffered += len(chunk)
+            newline_count += chunk.count(b"\n")
+            if newline_count > line_count:
+                break
+    content = b"".join(reversed(chunks)).decode("utf-8", errors="replace")
+    return "\n".join(content.splitlines()[-line_count:]), position > 0
 
 
 @router.get("", response_model=PaginatedRuns)
@@ -333,10 +362,17 @@ async def node_output(
     )
     if not output.is_relative_to(root) or not await asyncio.to_thread(output.is_file):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Output does not exist")
-    content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
     if tail_lines:
-        content = "\n".join(content.splitlines()[-tail_lines:])
-    return Response(content, media_type="text/plain; charset=utf-8")
+        content, truncated = await asyncio.to_thread(
+            _read_tail_lines, output, tail_lines
+        )
+        headers = {"X-Kyron-Tail-Truncated": "true"} if truncated else None
+        return Response(
+            content,
+            media_type="text/plain; charset=utf-8",
+            headers=headers,
+        )
+    return FileResponse(output, media_type="text/plain; charset=utf-8")
 
 
 @router.get("/{run_id}/nodes/{node_execution_id}/pi-events")
@@ -746,6 +782,7 @@ async def websocket_logs(websocket: WebSocket, run_id: uuid.UUID, after_id: int 
                 select(RunLog)
                 .where(RunLog.run_id == run_id, RunLog.id > after_id)
                 .order_by(RunLog.id)
+                .limit(5000)
             )
         )
         last_sequence = after_id

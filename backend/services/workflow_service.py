@@ -7,8 +7,10 @@ import logging
 import re
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from time import monotonic
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +24,7 @@ from backend.engine.definition_yaml import (
     dump_definition_yaml,
     load_definition_yaml,
 )
-from backend.engine.snapshot import WorkflowSnapshotLoader
+from backend.engine.snapshot import WorkflowNotFoundError, WorkflowSnapshotLoader
 from backend.engine.validation import (
     parse_workflow,
     validate_trigger_inputs,
@@ -39,6 +41,7 @@ from backend.schemas.pi import PiSettings
 from backend.schemas.run import ChangeRequestRunSubject, RunSubject
 from backend.schemas.workflow import (
     NodeTemplate,
+    ValidationIssue,
     WorkflowBundle,
     WorkflowDefinition,
     WorkflowValidationResponse,
@@ -48,6 +51,23 @@ from backend.services.crypto import SecretCipher
 from backend.services.pi_models_config_service import PiModelsConfigService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteCatalogCacheEntry:
+    loaded_at: float
+    sha: str
+    definitions: dict[str, WorkflowDefinition]
+    templates: dict[str, NodeTemplate]
+    paths: dict[str, str]
+    warnings: tuple[ValidationIssue, ...]
+
+
+_remote_catalog_cache: dict[uuid.UUID, RemoteCatalogCacheEntry] = {}
+
+
+def invalidate_workflow_catalog(project_id: uuid.UUID) -> None:
+    _remote_catalog_cache.pop(project_id, None)
 
 
 class WorkflowConflictError(RuntimeError):
@@ -73,6 +93,7 @@ class WorkflowService:
         self.settings = settings
         self.cipher = cipher
         self.git = git
+        self.load_warnings: list[ValidationIssue] = []
 
     async def list(self, project: Project) -> tuple[str, list[WorkflowDefinition]]:
         sha, definitions, _templates, _paths = await self._load_all(project)
@@ -350,7 +371,6 @@ class WorkflowService:
         finally:
             if await asyncio.to_thread(worktree.exists):
                 await self.git.remove_worktree(repository, worktree, branch=None)
-            token = ""
 
     async def snapshot_for_run(
         self,
@@ -400,6 +420,7 @@ class WorkflowService:
                     max_timeout=self.settings.MAX_NODE_TIMEOUT_SECONDS,
                     max_review_iterations=self.settings.MAX_REVIEW_ITERATIONS,
                     max_subworkflow_depth=self.settings.MAX_SUBWORKFLOW_DEPTH,
+                    max_output_variable_bytes=self.settings.MAX_OUTPUT_VARIABLE_BYTES,
                     project_pi=PiSettings.model_validate(project.pi),
                 )
                 logger.info(
@@ -413,7 +434,6 @@ class WorkflowService:
             if snapshot_worktree is not None:
                 if await asyncio.to_thread(snapshot_worktree.exists):
                     await self.git.remove_worktree(repository, snapshot_worktree, branch=None)
-            token = ""
 
     async def create_run(
         self,
@@ -438,19 +458,16 @@ class WorkflowService:
         expected_subject_sha: str | None = None
         if isinstance(subject, ChangeRequestRunSubject):
             token = self.cipher.decrypt(project.encrypted_access_token)
-            try:
-                async with code_host_client(project.provider, self.settings) as provider:
-                    change_request = await provider.get_change_request(
-                        repository_locator(
-                            project.provider,
-                            project.provider_project_id,
-                            project.provider_project_path,
-                        ),
-                        subject.number,
-                        token,
-                    )
-            finally:
-                token = ""
+            async with code_host_client(project.provider, self.settings) as provider:
+                change_request = await provider.get_change_request(
+                    repository_locator(
+                        project.provider,
+                        project.provider_project_id,
+                        project.provider_project_path,
+                    ),
+                    subject.number,
+                    token,
+                )
             if change_request.state.casefold() not in {"open", "opened"}:
                 raise ValueError("Change-request subject must be open")
             if not change_request.source_branch or not change_request.head_sha:
@@ -465,6 +482,7 @@ class WorkflowService:
         elif subject is not None:
             subject_ref = subject.ref
 
+        restrictive_legacy_fallback = False
         try:
             definition_sha, trusted_bundle = await self.snapshot_for_run(
                 project,
@@ -472,7 +490,7 @@ class WorkflowService:
                 project.default_branch,
                 use_local_definitions=use_local_definitions,
             )
-        except Exception:
+        except WorkflowNotFoundError:
             if not legacy_trigger:
                 raise
             definition_sha, trusted_bundle = await self.snapshot_for_run(
@@ -481,8 +499,13 @@ class WorkflowService:
                 subject_ref,
                 use_local_definitions=use_local_definitions,
             )
+            restrictive_legacy_fallback = True
         trusted_workflow = trusted_bundle.workflows[workflow_id]
-        delivery_mode = trusted_workflow.settings.delivery_mode
+        delivery_mode = (
+            "report_only"
+            if restrictive_legacy_fallback
+            else trusted_workflow.settings.delivery_mode
+        )
 
         if delivery_mode == "report_only" or use_local_definitions:
             bundle = trusted_bundle
@@ -499,10 +522,13 @@ class WorkflowService:
         await ApprovalPolicyService(self.session).validate_bundle(project, bundle)
         validated_inputs = validate_trigger_inputs(workflow, inputs)
         credential_access = trusted_workflow.settings.credential_access
-        effective_mode = credential_access.mode
-        if effective_mode == "default":
-            effective_mode = "none" if delivery_mode == "report_only" else "all"
-        effective_policy = {"mode": effective_mode, "keys": list(credential_access.keys)}
+        if restrictive_legacy_fallback:
+            effective_policy = {"mode": "none", "keys": []}
+        else:
+            effective_mode = credential_access.mode
+            if effective_mode == "default":
+                effective_mode = "none" if delivery_mode == "report_only" else "all"
+            effective_policy = {"mode": effective_mode, "keys": list(credential_access.keys)}
         pi_models_config = await PiModelsConfigService(self.session, self.settings).resolve()
         run = WorkflowRun(
             root_workflow_id=workflow_id,
@@ -555,15 +581,12 @@ class WorkflowService:
 
     async def _resolve_subject_sha(self, project: Project, ref: str) -> str:
         token = self.cipher.decrypt(project.encrypted_access_token)
-        try:
-            async with project_git_locks.for_project(project.id):
-                repository = Path(project.local_path)
-                await self.git.fetch(
-                    repository, token, username=git_username(project.provider)
-                )
-                return await self.git.resolve_remote_sha(repository, ref)
-        finally:
-            token = ""
+        async with project_git_locks.for_project(project.id):
+            repository = Path(project.local_path)
+            await self.git.fetch(
+                repository, token, username=git_username(project.provider)
+            )
+            return await self.git.resolve_remote_sha(repository, ref)
 
     def _validate_bundle(
         self, root_id: str, definitions: dict[str, WorkflowDefinition]
@@ -575,6 +598,7 @@ class WorkflowService:
             max_timeout=self.settings.MAX_NODE_TIMEOUT_SECONDS,
             max_review_iterations=self.settings.MAX_REVIEW_ITERATIONS,
             max_subworkflow_depth=self.settings.MAX_SUBWORKFLOW_DEPTH,
+            max_output_variable_bytes=self.settings.MAX_OUTPUT_VARIABLE_BYTES,
         )
 
     async def _load_all(
@@ -602,20 +626,42 @@ class WorkflowService:
         dict[str, NodeTemplate],
         dict[str, str],
     ]:
-        token = self.cipher.decrypt(project.encrypted_access_token)
-        repository = Path(project.local_path)
-        try:
+        cached = _remote_catalog_cache.get(project.id)
+        if (
+            cached is not None
+            and monotonic() - cached.loaded_at
+            <= self.settings.WORKFLOW_CATALOG_CACHE_TTL_SECONDS
+        ):
+            self.load_warnings = list(cached.warnings)
+            return (
+                cached.sha,
+                dict(cached.definitions),
+                dict(cached.templates),
+                dict(cached.paths),
+            )
+
+        self.load_warnings = []
+
+        async def load_uncached() -> tuple[
+            str,
+            dict[str, WorkflowDefinition],
+            dict[str, NodeTemplate],
+            dict[str, str],
+        ]:
+            token = self.cipher.decrypt(project.encrypted_access_token)
+            repository = Path(project.local_path)
             async with project_git_locks.for_project(project.id):
                 await self.git.fetch(repository, token, username=git_username(project.provider))
                 sha = await self.git.resolve_remote_sha(repository, project.default_branch)
-                files = await self.git.list_files(repository, sha, ".workflowEngine")
+                archived_files = await self.git.archive_files(
+                    repository, sha, ".workflowEngine"
+                )
                 definitions: dict[str, WorkflowDefinition] = {}
                 templates: dict[str, NodeTemplate] = {}
                 paths: dict[str, str] = {}
-                for filename in files:
+                for filename, raw in archived_files.items():
                     if not filename.endswith(".yaml"):
                         continue
-                    raw = await self.git.show_file(repository, sha, filename)
                     try:
                         data = load_definition_yaml(raw)
                     except DefinitionYamlError as exc:
@@ -629,7 +675,14 @@ class WorkflowService:
                             exc.column,
                             str(exc),
                         )
-                        raise
+                        self.load_warnings.append(
+                            ValidationIssue(
+                                path=filename,
+                                code="INVALID_YAML",
+                                message=str(exc),
+                            )
+                        )
+                        continue
                     if not isinstance(data, dict):
                         logger.warning(
                             "Definition parsing skipped (project=%s, file=%s, commit=%s): "
@@ -712,9 +765,17 @@ class WorkflowService:
                     len(definitions),
                     len(templates),
                 )
+                _remote_catalog_cache[project.id] = RemoteCatalogCacheEntry(
+                    loaded_at=monotonic(),
+                    sha=sha,
+                    definitions=dict(definitions),
+                    templates=dict(templates),
+                    paths=dict(paths),
+                    warnings=tuple(self.load_warnings),
+                )
                 return sha, definitions, templates, paths
-        finally:
-            token = ""
+
+        return await load_uncached()
 
     async def _overlay_workflows(
         self,

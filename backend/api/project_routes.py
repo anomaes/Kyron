@@ -23,6 +23,7 @@ from backend.schemas.project import (
     ProjectValidationResponse,
 )
 from backend.services.project_service import ProjectService
+from backend.services.workflow_service import invalidate_workflow_catalog
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -176,9 +177,22 @@ async def fetch_project(
         project = await project_service.get(project_id)
         require_project_provider(user, project.provider)
         await authorize_project(db, user, project_id, PROJECT_MANAGE)
-        return {"commit_sha": await project_service.fetch(project_id)}
+        commit_sha = await project_service.fetch(project_id)
+        invalidate_workflow_catalog(project_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    db.add(
+        audit_event(
+            user,
+            "PROJECT_FETCHED",
+            "project",
+            project_id=project_id,
+            target_id=str(project_id),
+            details={"commit_sha": commit_sha},
+        )
+    )
+    await db.commit()
+    return {"commit_sha": commit_sha}
 
 
 @router.post("/{project_id}/validate", response_model=ProjectValidationResponse)
@@ -210,9 +224,19 @@ async def delete_project(
         require_project_provider(user, project.provider)
         await authorize_project(db, user, project_id, PROJECT_MANAGE)
         await project_service.delete(project_id)
+        invalidate_workflow_catalog(project_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    db.add(
+        audit_event(
+            user,
+            "PROJECT_DELETED",
+            "project",
+            project_id=project_id,
+            target_id=str(project_id),
+        )
+    )
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

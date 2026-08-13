@@ -58,6 +58,19 @@ export function useRunLogs(runId: string, terminal: boolean) {
       }
     }
 
+    function startPolling() {
+      if (pollTimer === undefined) {
+        pollTimer = window.setInterval(() => { void backfill(); }, 10000);
+      }
+    }
+
+    function stopPolling() {
+      if (pollTimer !== undefined) {
+        window.clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+    }
+
     function connect() {
       if (cancelled || terminal) return;
       setConnectionState("connecting");
@@ -67,9 +80,10 @@ export function useRunLogs(runId: string, terminal: boolean) {
         const event = JSON.parse(message.data) as LogEvent;
         if (event.type !== "heartbeat") append([event]);
       };
-      socket.onopen = () => { retry = 500; setConnectionState("live"); };
+      socket.onopen = () => { retry = 500; stopPolling(); setConnectionState("live"); };
       socket.onclose = () => {
         if (!cancelled && !terminal) {
+          startPolling();
           setConnectionState("retrying");
           reconnectTimer = window.setTimeout(connect, retry);
           retry = Math.min(retry * 2, 10000);
@@ -81,13 +95,13 @@ export function useRunLogs(runId: string, terminal: boolean) {
     if (terminal) {
       setConnectionState("complete");
     } else {
+      startPolling();
       connect();
-      pollTimer = window.setInterval(() => { void backfill(); }, 3000);
     }
     return () => {
       cancelled = true;
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      if (pollTimer !== undefined) window.clearInterval(pollTimer);
+      stopPolling();
       socket?.close();
     };
   }, [runId, terminal]);
