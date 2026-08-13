@@ -104,12 +104,66 @@
 }
 
 .vp-doc table {
-  display: table;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   width: 100%;
 }
 
 .vp-doc .custom-block {
   border-radius: 10px;
+}
+
+.vp-doc .mermaid {
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  overflow-x: auto;
+  padding: 16px 0;
+  text-align: center;
+  width: 100%;
+}
+
+.vp-doc .mermaid svg {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  max-width: none !important;
+  min-width: 820px;
+  width: 100% !important;
+}
+
+.vp-doc._architecture_containers .mermaid svg {
+  min-width: 1100px;
+}
+
+.vp-doc._architecture_deployment .mermaid svg {
+  min-width: 960px;
+}
+
+.vp-doc._architecture_configuration-flow .mermaid svg {
+  min-width: 1000px;
+}
+
+.vp-doc._architecture_backend-components .mermaid svg {
+  min-width: 1320px;
+}
+
+.vp-doc._architecture_runtime-sequences .mermaid svg {
+  min-width: 1040px;
+}
+
+.dark .vp-doc .mermaid svg .flowchart-link,
+.dark .vp-doc .mermaid svg .messageLine0,
+.dark .vp-doc .mermaid svg .messageLine1,
+.dark .vp-doc .mermaid svg .loopLine {
+  stroke: #c9ccbf !important;
+}
+
+.dark .vp-doc .mermaid svg marker path {
+  fill: #c9ccbf !important;
+  stroke: #c9ccbf !important;
 }
 
 .doc-path {

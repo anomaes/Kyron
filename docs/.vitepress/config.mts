@@ -1,9 +1,10 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
 const base = process.env.DOCS_BASE || "/";
 const hostname = process.env.DOCS_HOSTNAME || "https://anomaes.github.io/Kyron/";
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   base,
   lang: "en-US",
   title: "Kyron",
@@ -43,6 +44,13 @@ export default defineConfig({
   ],
   markdown: {
     lineNumbers: true,
+  },
+  mermaid: {
+    flowchart: {
+      curve: "basis",
+      htmlLabels: true,
+    },
+    securityLevel: "strict",
   },
   themeConfig: {
     siteTitle: "Kyron docs",
@@ -137,6 +145,31 @@ export default defineConfig({
           ],
         },
       ],
+      "/architecture": [
+        {
+          text: "Technical architecture",
+          items: [
+            { text: "Overview", link: "/architecture" },
+            { text: "Runtime containers", link: "/architecture/containers" },
+            { text: "Deployment topology", link: "/architecture/deployment" },
+            {
+              text: "Configuration and secrets",
+              link: "/architecture/configuration-flow",
+            },
+            { text: "Backend components", link: "/architecture/backend-components" },
+            { text: "Runtime sequences", link: "/architecture/runtime-sequences" },
+          ],
+        },
+        {
+          text: "Related contracts",
+          items: [
+            { text: "Security model", link: "/deployment/security" },
+            { text: "Run states", link: "/reference/states" },
+            { text: "Provider contract", link: "/code-host-provider-spec" },
+            { text: "Decision log", link: "/decisions" },
+          ],
+        },
+      ],
       "/contributing/": [
         {
           text: "Contribute",
@@ -168,4 +201,4 @@ export default defineConfig({
       copyright: "Copyright © 2026 Noah Mäschli",
     },
   },
-});
+}));
