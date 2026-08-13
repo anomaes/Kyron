@@ -31,6 +31,15 @@ async def test_credentials_are_write_only_and_user_scoped(db_session: AsyncSessi
     await service.update(
         user.id,
         credential.id,
-        CredentialUpdate(value="replacement", description="Pi provider"),
+        CredentialUpdate(
+            key_name="CLAUDE_API_KEY", value="replacement", description="Pi provider"
+        ),
     )
-    assert await service.decrypted_environment(user.id) == {"ANTHROPIC_API_KEY": "replacement"}
+    assert await service.decrypted_environment(user.id) == {"CLAUDE_API_KEY": "replacement"}
+
+    await service.update(
+        user.id,
+        credential.id,
+        CredentialUpdate(key_name="CLAUDE_TOKEN", description="Renamed only"),
+    )
+    assert await service.decrypted_environment(user.id) == {"CLAUDE_TOKEN": "replacement"}

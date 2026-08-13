@@ -39,7 +39,7 @@ headers and secrets.
 | POST | `/api/projects/{project_id}/validate` | Validate provider and repository access |
 | PUT | `/api/projects/{project_id}/pi` | Replace project-wide Pi provider, model, and skill defaults |
 | GET/POST | `/api/credentials` | List metadata or create a write-only credential |
-| PUT/DELETE | `/api/credentials/{credential_id}` | Edit (replace the value and description) or remove a credential; values remain write-only |
+| PUT/DELETE | `/api/credentials/{credential_id}` | Edit the key, description, and optionally replace the write-only value, or remove a credential |
 | GET | `/api/projects/{project_id}/workflows` | List tagged definitions at the default-branch SHA for catalog search/grouping and workflow selection |
 | GET/PUT/DELETE | `/api/projects/{project_id}/workflows/{workflow_id}` | Read or store a project-local definition change |
 | POST | `/api/projects/{project_id}/workflows/validate` | Validate one definition and related drafts |

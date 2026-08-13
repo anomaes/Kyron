@@ -70,10 +70,11 @@ Kyron stores Fernet ciphertext plus safe metadata. Read endpoints never return t
 
 ## Edit a workflow credential
 
-Choose **Edit** next to a credential to replace its secret value or change its
-description. Credential names are immutable because they are the environment-variable
-contract used by workflows. Kyron never fills the secret field with the stored value;
-enter a new secret every time you save an edit.
+Choose **Edit** next to a credential to rename its environment key, change its
+description, or replace its secret value. Renaming a key changes the environment-variable
+contract used by workflows, so update any workflow references at the same time. Kyron
+never fills the secret field with the stored value; leave it blank to preserve the
+current secret.
 
 At each Bash, Script, or Prompt attempt, Kyron loads all credentials owned by the user
 who triggered the run. The same rule applies to process nodes in sub-workflows and review

@@ -13,7 +13,8 @@ class CredentialCreate(BaseModel):
 
 
 class CredentialUpdate(BaseModel):
-    value: str = Field(min_length=1)
+    key_name: str = Field(min_length=1, max_length=255, pattern=CREDENTIAL_KEY_PATTERN.pattern)
+    value: str | None = Field(default=None, min_length=1)
     description: str | None = None
 
 

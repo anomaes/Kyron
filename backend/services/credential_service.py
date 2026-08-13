@@ -37,8 +37,10 @@ class CredentialService:
         self, user_id: uuid.UUID, credential_id: uuid.UUID, request: CredentialUpdate
     ) -> Credential:
         credential = await self._owned(user_id, credential_id)
-        credential.encrypted_value = self.cipher.encrypt(request.value)
-        credential.key_version = self.cipher.key_version
+        credential.key_name = request.key_name
+        if request.value is not None:
+            credential.encrypted_value = self.cipher.encrypt(request.value)
+            credential.key_version = self.cipher.key_version
         credential.description = request.description
         await self.session.flush()
         return credential

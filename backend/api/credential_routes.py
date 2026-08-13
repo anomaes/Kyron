@@ -47,6 +47,12 @@ async def update_credential(
         credential = await CredentialService(db, cipher).update(user.id, credential_id, request)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f'A credential named "{request.key_name}" already exists',
+        ) from exc
     await db.commit()
     return CredentialResponse.model_validate(credential)
 

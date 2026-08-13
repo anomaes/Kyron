@@ -2063,7 +2063,9 @@ PUT    /api/credentials/{credential_id}
 DELETE /api/credentials/{credential_id}
 ```
 
-Credential update always requires a new plaintext value. The old value cannot be retrieved.
+Credential update requires the key name and accepts a description and optional new
+plaintext value. Omitting the value preserves the existing ciphertext; the old value
+cannot be retrieved.
 
 ## 14.5 Workflow Definitions
 
@@ -3085,7 +3087,7 @@ Display only:
 Actions:
 
 - Add.
-- Edit the description and replace the value with a newly entered secret; the key name is immutable.
+- Edit the key name and description, and optionally replace the value with a newly entered secret.
 - Delete.
 
 Never show a stored value.

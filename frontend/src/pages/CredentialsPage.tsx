@@ -54,7 +54,10 @@ export function CredentialsPage() {
     const description = String(data.get("description") ?? "") || null;
     const value = String(data.get("value") ?? "");
     if (editing) {
-      update.mutate({ id: editing.id, body: { value, description } });
+      update.mutate({
+        id: editing.id,
+        body: { key_name: data.get("key_name"), description, ...(value ? { value } : {}) },
+      });
       return;
     }
     create.mutate({ key_name: data.get("key_name"), value, description });
@@ -67,6 +70,6 @@ export function CredentialsPage() {
     {query.error && <p className="error" role="alert">{query.error.message}</p>}
     {query.data?.length ? <div className="table-card"><table><thead><tr><th>Key</th><th>Description</th><th>Updated</th><th>Value</th><th /></tr></thead><tbody>{query.data.map((item) => <tr key={item.id}><td className="mono">{item.key_name}</td><td>{item.description ?? "—"}</td><td>{new Date(item.updated_at).toLocaleString()}</td><td><span className="secret-dots">••••••••••••</span></td><td><div className="credential-actions"><button className="ghost" onClick={() => openEditor(item)}>Edit</button><button className="danger-link" onClick={() => { if (confirm(`Delete ${item.key_name}?`)) remove.mutate(item.id); }}>Delete</button></div></td></tr>)}</tbody></table></div> : <EmptyState title="No credentials stored">Add an AI-provider API key for prompt nodes.</EmptyState>}
     {remove.error && <p className="error" role="alert">{remove.error.message}</p>}
-    {open && <div className="modal-backdrop"><form className="modal" onSubmit={submit}><h2>{editing ? "Edit credential" : "Add credential"}</h2><label>Environment key<input name="key_name" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="ANTHROPIC_API_KEY" defaultValue={editing?.key_name ?? ""} readOnly={Boolean(editing)} required /></label><label>{editing ? "New secret value" : "Secret value"}<input name="value" type="password" autoComplete="new-password" required /></label><label>Description<input name="description" defaultValue={editing?.description ?? ""} /></label><p className="hint">{editing ? "Enter a new secret value to replace the stored value. Stored values can never be retrieved." : "Credential names must be unique. Stored values can be replaced, never retrieved."}</p>{saveError && <p className="error" role="alert">{saveError.message}</p>}<footer><button type="button" className="secondary" onClick={closeEditor}>Cancel</button><button disabled={saving}>{saving ? "Encrypting…" : editing ? "Encrypt & update" : "Encrypt & save"}</button></footer></form></div>}
+    {open && <div className="modal-backdrop"><form className="modal" onSubmit={submit}><h2>{editing ? "Edit credential" : "Add credential"}</h2><label>Environment key<input name="key_name" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="ANTHROPIC_API_KEY" defaultValue={editing?.key_name ?? ""} required /></label><label>{editing ? "New secret value (optional)" : "Secret value"}<input className={editing ? "credential-secret-input" : undefined} name="value" type="password" autoComplete="new-password" placeholder={editing ? "••••••••" : undefined} required={!editing} /></label><label>Description<input name="description" defaultValue={editing?.description ?? ""} /></label><p className="hint">{editing ? "The dots represent the stored secret. Leave this field unchanged to keep its current value." : "Credential names must be unique. Stored values can be replaced, never retrieved."}</p>{saveError && <p className="error" role="alert">{saveError.message}</p>}<footer><button type="button" className="secondary" onClick={closeEditor}>Cancel</button><button disabled={saving}>{saving ? "Encrypting…" : editing ? "Save changes" : "Encrypt & save"}</button></footer></form></div>}
   </section>;
 }

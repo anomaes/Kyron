@@ -38,7 +38,7 @@ describe("CredentialsPage", () => {
     expect(screen.getByRole("heading", { name: "Add credential" })).toBeInTheDocument();
   });
 
-  it("edits a credential without retrieving or renaming its stored value", async () => {
+  it("edits credential metadata without retrieving or replacing its stored value", async () => {
     const credential = {
       id: "credential-id",
       key_name: "ANTHROPIC_API_KEY",
@@ -58,19 +58,47 @@ describe("CredentialsPage", () => {
 
     expect(screen.getByRole("heading", { name: "Edit credential" })).toBeInTheDocument();
     expect(screen.getByLabelText("Environment key")).toHaveValue("ANTHROPIC_API_KEY");
-    expect(screen.getByLabelText("Environment key")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("New secret value")).toHaveValue("");
+    expect(screen.getByLabelText("New secret value (optional)")).toHaveValue("");
+    expect(screen.getByLabelText("New secret value (optional)")).toHaveAttribute("placeholder", "••••••••");
     expect(screen.getByLabelText("Description")).toHaveValue("Old description");
 
-    await userEvent.type(screen.getByLabelText("New secret value"), "replacement-secret");
+    await userEvent.clear(screen.getByLabelText("Environment key"));
+    await userEvent.type(screen.getByLabelText("Environment key"), "CLAUDE_API_KEY");
     await userEvent.clear(screen.getByLabelText("Description"));
     await userEvent.type(screen.getByLabelText("Description"), "Rotated provider key");
-    await userEvent.click(screen.getByRole("button", { name: "Encrypt & update" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(api).toHaveBeenCalledWith("/credentials/credential-id", {
       method: "PUT",
-      body: JSON.stringify({ value: "replacement-secret", description: "Rotated provider key" }),
+      body: JSON.stringify({ key_name: "CLAUDE_API_KEY", description: "Rotated provider key" }),
     }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Edit credential" })).not.toBeInTheDocument());
+  });
+
+  it("replaces the secret when a new value is entered while editing", async () => {
+    const credential = {
+      id: "credential-id",
+      key_name: "ANTHROPIC_API_KEY",
+      description: null,
+      created_at: "2026-08-12T10:00:00Z",
+      updated_at: "2026-08-12T10:00:00Z",
+      configured: true,
+    };
+    vi.mocked(api).mockImplementation(async (_path, init) => init?.method === "PUT" ? credential : [credential]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><CredentialsPage /></QueryClientProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await userEvent.type(screen.getByLabelText("New secret value (optional)"), "replacement-secret");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith("/credentials/credential-id", {
+      method: "PUT",
+      body: JSON.stringify({
+        key_name: "ANTHROPIC_API_KEY",
+        description: null,
+        value: "replacement-secret",
+      }),
+    }));
   });
 });
