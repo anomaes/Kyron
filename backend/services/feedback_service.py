@@ -220,7 +220,6 @@ class FeedbackService:
         except Exception:
             await self.session.rollback()
             await self.session.refresh(run)
-            token = ""
             raise
 
         event = FeedbackEvent(
@@ -311,42 +310,39 @@ class FeedbackService:
             run.current_wave_id = None
         await self.session.commit()
 
-        try:
-            if source == "frontend" and provider_number:
-                if event_type == "approval":
-                    note = (
-                        f"Approved via Workflow Engine by {author_username}.\n"
-                        "The intermediate approval was consumed; a fresh provider approval is "
-                        "required for final merge."
-                    )
-                else:
-                    note = (
-                        f"@kyron {clean_message}\n\n"
-                        f"Submitted via Workflow Engine by {author_username}."
-                    )
-                try:
-                    note_result = await self.code_host.post_comment(
-                        repository_locator(
-                            project.provider,
-                            project.provider_project_id,
-                            project.provider_project_path,
-                        ),
-                        provider_number,
-                        token,
-                        note,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Could not publish gate response to code host (run=%s, gate=%s)",
-                        run.id,
-                        gate.id,
-                    )
-                else:
-                    event.provider_comment_id = note_result.id
-                    decision.provider_event_id = decision.provider_event_id or note_result.id
-                    await self.session.commit()
-        finally:
-            token = ""
+        if source == "frontend" and provider_number:
+            if event_type == "approval":
+                note = (
+                    f"Approved via Workflow Engine by {author_username}.\n"
+                    "The intermediate approval was consumed; a fresh provider approval is "
+                    "required for final merge."
+                )
+            else:
+                note = (
+                    f"@kyron {clean_message}\n\n"
+                    f"Submitted via Workflow Engine by {author_username}."
+                )
+            try:
+                note_result = await self.code_host.post_comment(
+                    repository_locator(
+                        project.provider,
+                        project.provider_project_id,
+                        project.provider_project_path,
+                    ),
+                    provider_number,
+                    token,
+                    note,
+                )
+            except Exception:
+                logger.exception(
+                    "Could not publish gate response to code host (run=%s, gate=%s)",
+                    run.id,
+                    gate.id,
+                )
+            else:
+                event.provider_comment_id = note_result.id
+                decision.provider_event_id = decision.provider_event_id or note_result.id
+                await self.session.commit()
         if run.status == RunStatus.RUNNING:
             await self.schedule_continuation(run.id)
         return decision

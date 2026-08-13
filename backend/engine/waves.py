@@ -51,6 +51,30 @@ class NodeProcessFailure(RuntimeError):
         self.result = result
 
 
+async def load_run_credentials(
+    policy: dict[str, object] | None,
+    user_id: uuid.UUID,
+    credential_loader: CredentialLoader,
+    wave_id: uuid.UUID,
+) -> dict[str, str]:
+    effective_policy = policy or {}
+    mode = effective_policy.get("mode")
+    if mode == "all":
+        return await credential_loader(user_id)
+    if mode == "allowlist":
+        raw_keys = effective_policy.get("keys", [])
+        if not isinstance(raw_keys, list) or not all(
+            isinstance(key, str) for key in raw_keys
+        ):
+            raise WaveExecutionError(wave_id, "Credential allowlist keys must be strings")
+        allowed = set(raw_keys)
+        loaded = await credential_loader(user_id)
+        return {key: value for key, value in loaded.items() if key in allowed}
+    if mode == "none":
+        return {}
+    raise WaveExecutionError(wave_id, f"Unknown credential policy mode {mode!r}")
+
+
 class WaveExecutor:
     def __init__(
         self,
@@ -187,14 +211,12 @@ class WaveExecutor:
                 node.type,
                 attempt.attempt_number,
             )
-            policy = run.effective_credential_policy or {"mode": "all", "keys": []}
-            if policy.get("mode") == "none":
-                secrets = {}
-            else:
-                secrets = await self.credential_loader(run.triggered_by)
-            if policy.get("mode") == "allowlist":
-                allowed = set(policy.get("keys", []))
-                secrets = {key: value for key, value in secrets.items() if key in allowed}
+            secrets = await load_run_credentials(
+                run.effective_credential_policy,
+                run.triggered_by,
+                self.credential_loader,
+                wave.id,
+            )
             node_pi = (
                 PiSettings(
                     provider=node.config.provider,

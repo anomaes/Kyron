@@ -66,6 +66,44 @@ async def test_same_email_on_different_providers_creates_distinct_users(
     assert github.id != gitlab.id
 
 
+async def test_unchanged_auth_identity_does_not_commit(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(AUTH_USER_TOUCH_INTERVAL_SECONDS=3600, _env_file=None)
+    await upsert_user(
+        db_session,
+        settings,
+        email="stable@example.com",
+        display_name="Stable",
+        avatar_url=None,
+        provider="gitlab",
+        provider_user_id="stable-7",
+        provider_username="stable",
+    )
+    commit_calls = 0
+    original_commit = db_session.commit
+
+    async def count_commit() -> None:
+        nonlocal commit_calls
+        commit_calls += 1
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", count_commit)
+
+    await upsert_user(
+        db_session,
+        settings,
+        email="stable@example.com",
+        display_name="Stable",
+        avatar_url=None,
+        provider="gitlab",
+        provider_user_id="stable-7",
+        provider_username="stable",
+    )
+
+    assert commit_calls == 0
+
+
 def test_cross_provider_project_control_is_forbidden() -> None:
     user = AuthenticatedUser(
         id=uuid.uuid4(),

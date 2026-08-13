@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +26,7 @@ from backend.db.models import (
     User,
 )
 from backend.services.approval_policy_service import (
+    ApprovalPolicyError,
     ApprovalPolicyService,
     approvals_satisfy,
 )
@@ -124,6 +126,22 @@ async def test_default_policy_only_selects_the_workflow_triggerer(
     db_session.add_all([owner_identity, triggerer_identity, project])
     await db_session.flush()
     await seed_project_roles(db_session, project.id, owner.id)
+    approver_role = await db_session.scalar(
+        select(ProjectRole).where(
+            ProjectRole.project_id == project.id,
+            ProjectRole.key == "approver",
+        )
+    )
+    assert approver_role is not None
+    triggerer_membership = ProjectMembership(project_id=project.id, user_id=triggerer.id)
+    db_session.add(triggerer_membership)
+    await db_session.flush()
+    db_session.add(
+        ProjectMembershipRole(
+            membership_id=triggerer_membership.id,
+            role_id=approver_role.id,
+        )
+    )
     await db_session.commit()
 
     policy_snapshot, eligible = await ApprovalPolicyService(db_session).snapshot(
@@ -144,6 +162,66 @@ async def test_default_policy_only_selects_the_workflow_triggerer(
     assert [
         actor["provider_user_id"] for actor in eligible["requirements"][0]["users"]
     ] == ["default-triggerer"]
+
+
+async def test_default_policy_rejects_triggerer_without_gate_permission(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    owner = User(email="owner-operator@example.com", display_name="Owner")
+    triggerer = User(email="operator@example.com", display_name="Operator")
+    db_session.add_all([owner, triggerer])
+    await db_session.flush()
+    project = Project(
+        name="Operator policy project",
+        git_url="https://gitlab.example/group/operator.git",
+        provider="gitlab",
+        provider_project_id="operator-policy",
+        provider_project_path="group/operator",
+        encrypted_access_token=b"encrypted",
+        local_path=str(tmp_path / "operator-policy"),
+        default_branch="main",
+        added_by=owner.id,
+    )
+    db_session.add_all(
+        [
+            ProviderIdentity(
+                user_id=owner.id,
+                provider="gitlab",
+                provider_user_id="operator-owner",
+                username="owner",
+            ),
+            ProviderIdentity(
+                user_id=triggerer.id,
+                provider="gitlab",
+                provider_user_id="operator-triggerer",
+                username="triggerer",
+            ),
+            project,
+        ]
+    )
+    await db_session.flush()
+    await seed_project_roles(db_session, project.id, owner.id)
+    operator_role = await db_session.scalar(
+        select(ProjectRole).where(
+            ProjectRole.project_id == project.id,
+            ProjectRole.key == "operator",
+        )
+    )
+    assert operator_role is not None
+    membership = ProjectMembership(project_id=project.id, user_id=triggerer.id)
+    db_session.add(membership)
+    await db_session.flush()
+    db_session.add(
+        ProjectMembershipRole(membership_id=membership.id, role_id=operator_role.id)
+    )
+    await db_session.commit()
+
+    with pytest.raises(ApprovalPolicyError, match="needs 1 eligible approvers"):
+        await ApprovalPolicyService(db_session).snapshot(
+            project,
+            DEFAULT_APPROVAL_POLICY_KEY,
+            triggering_user_id=triggerer.id,
+        )
 
 
 async def test_policy_snapshot_resolves_role_members_and_excludes_initiator(

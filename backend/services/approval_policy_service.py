@@ -251,17 +251,8 @@ class ApprovalPolicyService:
     async def _triggering_user(
         self, project: Project, user_id: uuid.UUID
     ) -> tuple[User, ProviderIdentity] | None:
-        row = await self.session.execute(
-            select(User, ProviderIdentity)
-            .join(ProviderIdentity, ProviderIdentity.user_id == User.id)
-            .where(
-                User.id == user_id,
-                User.is_active.is_(True),
-                ProviderIdentity.provider == project.provider,
-            )
-        )
-        result = row.one_or_none()
-        return None if result is None else (result[0], result[1])
+        users = await self._eligible_users(project, {user_id})
+        return users[0] if users else None
 
     async def _has_gate_permission(self, project_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return (

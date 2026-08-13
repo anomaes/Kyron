@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,23 @@ async def cancel_run(
     await session.commit()
     await processes.terminate_run(run.id, grace_seconds)
     await tasks.cancel(run.id)
+    run = cast(
+        WorkflowRun | None,
+        await session.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.id == run_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ),
+    )
+    if run is None:
+        raise LookupError("Run does not exist")
+    if run.status in {
+        RunStatus.COMPLETED,
+        RunStatus.CANCELLED,
+        RunStatus.FAILED,
+    }:
+        return run
     now = datetime.now(UTC)
     await session.execute(
         update(NodeAttempt)

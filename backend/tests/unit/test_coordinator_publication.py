@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
     GateInstance,
+    InvocationWorkspace,
     NodeExecution,
     Project,
     RunLog,
@@ -18,10 +19,16 @@ from backend.db.models import (
     WorkflowRun,
 )
 from backend.db.statuses import NodeStatus, RunStatus
-from backend.engine.coordinator import RunCoordinator
+from backend.engine.context import UnresolvedVariableError
+from backend.engine.coordinator import (
+    RunCoordinator,
+    RunExecutionError,
+    RunPaused,
+    stop_for_terminal_parallel_run,
+)
 from backend.engine.waves import WaveExecutor
 from backend.integrations.code_host import ChangeRequest, CodeHostError, ProviderUser
-from backend.integrations.git_manager import GitManager
+from backend.integrations.git_manager import GitError, GitManager
 from backend.schemas.workflow import WorkflowBundle, WorkflowDefinition
 from backend.services.crypto import SecretCipher
 from backend.services.engine_log_service import EngineLogService
@@ -84,6 +91,23 @@ class RejectedCreateCodeHost:
 
     async def update_change_request_reviewers(self, *args: Any, **kwargs: Any) -> None:
         raise AssertionError("reviewers must not be updated after rejected MR creation")
+
+
+class ReviewerFailureCodeHost(AmbiguousCreateCodeHost):
+    async def update_change_request_reviewers(
+        self,
+        repository: str,
+        number: int,
+        token: str,
+        reviewers: list[ProviderUser],
+    ) -> None:
+        self.calls.append("reviewers")
+        raise CodeHostError(
+            "github",
+            "reviewer assignment",
+            422,
+            detail="Reviewer is not a collaborator",
+        )
 
 
 class CheckpointGit:
@@ -224,6 +248,162 @@ async def test_ambiguous_change_request_creation_is_reconciled_before_retry(
     assert stored.change_request_number == 17
     assert stored.change_request_url == "https://github.test/acme/widget/pull/17"
     assert code_host.calls == ["find", "create", "find", "reviewers"]
+
+
+async def test_reviewer_assignment_failure_keeps_created_change_request(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    user = User(email="reviewer-failure@example.com", display_name="Runner")
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(
+        name="Reviewer failure",
+        git_url="https://github.test/acme/reviewer-failure.git",
+        provider="github",
+        provider_project_id="reviewer-failure",
+        provider_project_path="acme/reviewer-failure",
+        encrypted_access_token=b"encrypted",
+        local_path=str(tmp_path / "repository-reviewer-failure"),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.RUNNING,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        public_context={},
+        branch_name="workflow/reviewer_failure",
+        reviewer_provider="github",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    definition_data = workflow()
+    definition_data["settings"] = {
+        "mr_title_template": "Workflow run",
+        "mr_description_template": "Review this run",
+    }
+    definition = WorkflowDefinition.model_validate(definition_data)
+    code_host = ReviewerFailureCodeHost(run)
+    coordinator = RunCoordinator(
+        db_session,
+        cast(GitManager, object()),
+        cast(Any, code_host),
+        cast(SecretCipher, object()),
+        cast(WaveExecutor, object()),
+        EngineLogService(db_session, LogBroadcaster()),
+    )
+
+    await coordinator._ensure_merge_request(run, project, definition, "token")
+
+    assert run.change_request_number == 17
+    assert code_host.calls == ["find", "create", "find", "reviewers"]
+    warning = await db_session.scalar(
+        select(RunLog).where(
+            RunLog.run_id == run.id,
+            RunLog.event_type == "CHANGE_REQUEST_REVIEWERS_NOT_ASSIGNED",
+        )
+    )
+    assert warning is not None
+    assert "not a collaborator" in warning.message
+
+
+@pytest.mark.parametrize(
+    ("exception", "error_type"),
+    [
+        (UnresolvedVariableError("Public variable 'TYPO' is not defined"),
+         "WORKFLOW_TEMPLATE_ERROR"),
+        (GitError("worktree is dirty"), "GIT_ERROR"),
+    ],
+)
+async def test_authoring_errors_are_recorded_as_normal_run_failures(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exception: Exception,
+    error_type: str,
+) -> None:
+    user = User(email=f"{error_type.lower()}@example.com", display_name="Runner")
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(
+        name=f"{error_type} project",
+        git_url="https://github.test/acme/errors.git",
+        provider="github",
+        provider_project_id=error_type,
+        provider_project_path="acme/errors",
+        encrypted_access_token=b"encrypted",
+        local_path=str(tmp_path / error_type),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.RUNNING,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        public_context={},
+        reviewer_provider="github",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    coordinator = RunCoordinator(
+        db_session,
+        cast(GitManager, object()),
+        cast(Any, object()),
+        cast(SecretCipher, object()),
+        cast(WaveExecutor, object()),
+    )
+
+    async def fail(_: uuid.UUID) -> None:
+        raise exception
+
+    monkeypatch.setattr(coordinator, "_execute_run", fail)
+    await coordinator.execute_run(run.id)
+
+    assert run.status == RunStatus.FAILED
+    assert run.error_type == error_type
+    assert run.error_message == str(exception)
+
+
+def test_parallel_child_terminal_status_stops_parent_processing() -> None:
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=uuid.uuid4(),
+        triggered_by=uuid.uuid4(),
+        status=RunStatus.FAILED,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        public_context={},
+        reviewer_provider="github",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+        error_message="nested batch failed",
+    )
+
+    with pytest.raises(RunExecutionError, match="nested batch failed"):
+        stop_for_terminal_parallel_run(run)
+    run.status = RunStatus.CANCELLED
+    with pytest.raises(RunPaused):
+        stop_for_terminal_parallel_run(run)
 
 
 async def test_code_host_error_is_recorded_as_normal_run_failure(
@@ -486,4 +666,145 @@ async def test_pending_feedback_publication_opens_existing_gate(
     assert run.status == RunStatus.AWAITING_FEEDBACK
     assert run.pending_operation is None
     assert execution.status == NodeStatus.AWAITING_FEEDBACK
+    assert gate.status == "OPEN"
+
+
+async def test_isolated_feedback_gate_does_not_replace_root_compatibility_pointer(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    user = User(email="isolated-review@example.com", display_name="Reviewer")
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(
+        name="Isolated review project",
+        git_url="https://github.test/acme/isolated-review.git",
+        provider="github",
+        provider_project_id="isolated-review",
+        provider_project_path="acme/isolated-review",
+        encrypted_access_token=b"unused",
+        local_path=str(tmp_path / "repository-isolated-review"),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    worktree = tmp_path / "worktree-isolated-review"
+    worktree.mkdir()
+    run = WorkflowRun(
+        root_workflow_id="root",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.RUNNING,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        local_definition_test=True,
+        public_context={},
+        branch_name="workflow/isolated_review",
+        worktree_path=str(worktree),
+        current_head_sha="b" * 40,
+        reviewer_provider="github",
+        reviewer_provider_user_id="7",
+        reviewer_provider_username="alice",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    root_invocation = WorkflowInvocation(
+        run_id=run.id,
+        workflow_id="root",
+        invocation_path="root",
+        status="RUNNING",
+    )
+    child_invocation = WorkflowInvocation(
+        run_id=run.id,
+        workflow_id="root",
+        invocation_path="root/child",
+        parent_invocation_id=root_invocation.id,
+        status="RUNNING",
+    )
+    db_session.add_all([root_invocation, child_invocation])
+    await db_session.flush()
+    root_execution = NodeExecution(
+        run_id=run.id,
+        invocation_id=root_invocation.id,
+        node_id="root-control",
+        node_path="root/root-control",
+        node_type="subworkflow",
+        status=NodeStatus.RUNNING,
+    )
+    child_execution = NodeExecution(
+        run_id=run.id,
+        invocation_id=child_invocation.id,
+        node_id="review",
+        node_path="root/child/review",
+        node_type="human_feedback",
+        status=NodeStatus.INTERRUPTED,
+        output_values={"review_iteration": 1},
+    )
+    db_session.add_all([root_execution, child_execution])
+    await db_session.flush()
+    child_workspace = InvocationWorkspace(
+        run_id=run.id,
+        owner_invocation_id=child_invocation.id,
+        mode="ISOLATED",
+        status="AWAITING_FEEDBACK",
+        base_commit_sha="a" * 40,
+        current_head_sha="b" * 40,
+        branch_name="workflow/isolated_child",
+        worktree_path=str(worktree),
+    )
+    db_session.add(child_workspace)
+    await db_session.flush()
+    child_invocation.workspace_id = child_workspace.id
+    gate = GateInstance(
+        run_id=run.id,
+        invocation_id=child_invocation.id,
+        node_execution_id=child_execution.id,
+        workspace_id=child_workspace.id,
+        iteration=1,
+        checkpoint_commit_sha="b" * 40,
+        policy_key="default_review",
+        policy_snapshot={},
+        eligible_snapshot={},
+        status="PUBLISHING",
+    )
+    db_session.add(gate)
+    run.current_invocation_id = root_invocation.id
+    run.current_node_execution_id = root_execution.id
+    await db_session.commit()
+    definition = WorkflowDefinition.model_validate(
+        workflow(
+            nodes=[
+                {
+                    "id": "review",
+                    "type": "human_feedback",
+                    "label": "Review",
+                    "config": {},
+                    "position": {"x": 0, "y": 0},
+                }
+            ]
+        )
+    )
+    coordinator = RunCoordinator(
+        db_session,
+        cast(GitManager, object()),
+        cast(Any, object()),
+        cast(SecretCipher, object()),
+        cast(WaveExecutor, object()),
+    )
+
+    await coordinator._publish_feedback_checkpoint(
+        run,
+        child_invocation,
+        definition,
+        cast(Any, definition.nodes[0]),
+        child_execution,
+        project,
+        iteration=1,
+    )
+
+    assert run.current_invocation_id == root_invocation.id
+    assert run.current_node_execution_id == root_execution.id
+    assert child_execution.status == NodeStatus.AWAITING_FEEDBACK
     assert gate.status == "OPEN"

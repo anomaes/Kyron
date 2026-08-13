@@ -76,7 +76,7 @@ class ProcessNodeExecutor:
                 command = [
                     node.config.shell,
                     "-lc",
-                    expand_public_variables(node.config.command, request.public_context),
+                    node.config.command,
                 ]
             elif isinstance(node, ScriptNode):
                 script = (request.worktree / node.config.script).resolve()

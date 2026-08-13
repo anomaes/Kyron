@@ -101,6 +101,7 @@ async def test_wave_persists_pi_usage_on_the_attempt(
         base_commit_sha="a" * 40,
         workflow_definition_commit_sha="a" * 40,
         workflow_bundle_snapshot={},
+        effective_credential_policy={"mode": "none", "keys": []},
         public_context={},
         run_data_path=str(run_data),
         reviewer_provider="github",

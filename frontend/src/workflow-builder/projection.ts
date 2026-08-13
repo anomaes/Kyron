@@ -315,7 +315,6 @@ function buildComposite(
 
   if (truncated) {
     warning = "Preview truncated";
-    context.warnings.push({ instanceKey, message: warning });
   }
   if (layout.clamped) {
     context.warnings.push({ instanceKey, message: "Preview dimensions were limited" });

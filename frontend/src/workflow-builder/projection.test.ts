@@ -176,6 +176,7 @@ describe("projectBuilderGraph", () => {
     expect(result.nodes.some((item) => item.id === previewNodeId(key, "near"))).toBe(true);
     expect(result.nodes.some((item) => item.id === previewNodeId(key, "far"))).toBe(false);
     expect(result.warnings).toContainEqual({ instanceKey: key, message: "Preview truncated" });
+    expect(result.warnings.filter((warning) => warning.message === "Preview truncated")).toHaveLength(1);
   });
 
   it.each([

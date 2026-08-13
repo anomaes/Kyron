@@ -93,6 +93,7 @@ async def test_skipped_pi_skill_is_recorded_on_the_run_log(
         base_commit_sha="a" * 40,
         workflow_definition_commit_sha="a" * 40,
         workflow_bundle_snapshot={},
+        effective_credential_policy={"mode": "none", "keys": []},
         public_context={},
         run_data_path=str(run_data),
         reviewer_provider="github",

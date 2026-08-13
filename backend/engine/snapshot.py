@@ -17,6 +17,10 @@ class BundleResolutionError(RuntimeError):
     pass
 
 
+class WorkflowNotFoundError(BundleResolutionError):
+    pass
+
+
 class WorkflowSnapshotLoader:
     def __init__(self, git: GitManager) -> None:
         self.git = git
@@ -30,6 +34,7 @@ class WorkflowSnapshotLoader:
         max_timeout: int,
         max_review_iterations: int,
         max_subworkflow_depth: int,
+        max_output_variable_bytes: int = 65536,
         project_pi: PiSettings | None = None,
     ) -> WorkflowBundle:
         logger.info(
@@ -46,7 +51,7 @@ class WorkflowSnapshotLoader:
                 continue
             candidates = workflow_paths.get(workflow_id, [])
             if not candidates:
-                raise BundleResolutionError(
+                raise WorkflowNotFoundError(
                     f"Workflow '{workflow_id}' does not exist at commit {_short_sha(commit_sha)}"
                 )
             if len(candidates) > 1:
@@ -130,6 +135,7 @@ class WorkflowSnapshotLoader:
             max_timeout=max_timeout,
             max_review_iterations=max_review_iterations,
             max_subworkflow_depth=max_subworkflow_depth,
+            max_output_variable_bytes=max_output_variable_bytes,
         )
         if not report.valid:
             details = _issue_details(report.errors)

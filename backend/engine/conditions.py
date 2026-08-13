@@ -28,6 +28,14 @@ def compare(left: Any, operator: str, right: Any) -> bool:
     raise ValueError(f"Unknown condition operator '{operator}'")
 
 
+def comparable_ordering_values(left: Any, right: Any) -> tuple[Any, Any]:
+    """Prefer numeric ordering when both operands represent numbers."""
+    try:
+        return float(left), float(right)
+    except (TypeError, ValueError):
+        return str(left), str(right)
+
+
 def safe_worktree_path(worktree: Path, relative: str) -> Path:
     candidate = (worktree / relative).resolve()
     root = worktree.resolve()
@@ -60,5 +68,9 @@ def evaluate_condition(
         if condition.name not in public_context:
             raise ValueError(f"Condition variable '{condition.name}' is not defined")
         value = public_context[condition.name]
-        return compare(str(value), condition.operator, str(condition.value)), str(value)
+        if condition.operator in {"equals", "not_equals"}:
+            left, right = str(value), str(condition.value)
+        else:
+            left, right = comparable_ordering_values(value, condition.value)
+        return compare(left, condition.operator, right), str(value)
     raise ValueError("Unknown condition type")

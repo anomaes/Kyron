@@ -168,6 +168,7 @@ async def test_ready_parallel_children_use_distinct_worktrees_and_integrate(
             base_commit_sha=base_sha,
             workflow_definition_commit_sha=base_sha,
             workflow_bundle_snapshot=bundle.model_dump(mode="json"),
+            effective_credential_policy={"mode": "none", "keys": []},
             local_definition_test=True,
             public_context={},
             reviewer_provider="github",

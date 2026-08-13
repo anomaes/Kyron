@@ -44,10 +44,10 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
         raise ResumeError("Run is not resumable")
     if run.error_type == "WORKTREE_RECOVERY_FAILED":
         raise ResumeError("Worktree must be repaired before resume")
-    await session.execute(delete(RunReport).where(RunReport.run_id == run.id))
     if run.status == RunStatus.CANCELLED and not run.worktree_path:
         if run.started_at is not None:
             raise ResumeError("The cancelled run's retained checkpoint is no longer available")
+        await session.execute(delete(RunReport).where(RunReport.run_id == run.id))
         run.status = RunStatus.QUEUED
         run.cancel_requested_at = None
         run.finished_at = None
@@ -64,6 +64,7 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
             )
         )
         if open_gate is not None:
+            await session.execute(delete(RunReport).where(RunReport.run_id == run.id))
             run.status = RunStatus.AWAITING_FEEDBACK
             run.cancel_requested_at = None
             run.finished_at = None
@@ -95,36 +96,30 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
             select(InvocationWorkspace).where(InvocationWorkspace.run_id == run.id)
         )
     )
-    for workspace in workspaces:
+    resettable_workspaces = [
+        workspace
+        for workspace in workspaces
+        if workspace.status not in {"INTEGRATED", "SUCCESS"}
+    ]
+    for workspace in resettable_workspaces:
         path = Path(workspace.worktree_path)
         if not await asyncio.to_thread(path.exists):
             raise ResumeError(f"Invocation worktree is missing: {workspace.id}")
-        await git.reset_wave(path, workspace.current_head_sha)
-        if workspace.status in {"FAILED", "INTERRUPTED", "CANCELLED"}:
-            workspace.status = "READY"
-            workspace.error_type = None
-            workspace.error_message = None
+
+    root_reset_sha: str | None = None
+    nodes: list[NodeExecution] = []
     if run.pending_operation is not None:
         if not run.current_head_sha:
             raise ResumeError("Pending run operation has no durable Git checkpoint")
-        await git.reset_wave(Path(run.worktree_path), run.current_head_sha)
-        run.status = RunStatus.RESUMING
-        run.status_version += 1
-        run.cancel_requested_at = None
-        run.finished_at = None
-        run.error_type = None
-        run.error_message = None
-        run.current_wave_id = None
-        await session.commit()
-        return run
-    if wave is not None:
-        await git.reset_wave(Path(run.worktree_path), wave.start_commit_sha)
+        root_reset_sha = run.current_head_sha
+    elif wave is not None:
+        root_reset_sha = wave.start_commit_sha
         nodes = list(
             await session.scalars(select(NodeExecution).where(NodeExecution.wave_id == wave.id))
         )
     else:
         if run.current_head_sha:
-            await git.reset_wave(Path(run.worktree_path), run.current_head_sha)
+            root_reset_sha = run.current_head_sha
         node_statuses = (
             [NodeStatus.CANCELLED]
             if run.status == RunStatus.CANCELLED
@@ -146,6 +141,26 @@ async def prepare_resume(session: AsyncSession, git: GitManager, run_id: uuid.UU
                 else "No resumable wave or control operation exists"
             )
             raise ResumeError(detail)
+
+    await session.execute(delete(RunReport).where(RunReport.run_id == run.id))
+    for workspace in resettable_workspaces:
+        await git.reset_wave(Path(workspace.worktree_path), workspace.current_head_sha)
+        if workspace.status in {"FAILED", "INTERRUPTED", "CANCELLED"}:
+            workspace.status = "READY"
+            workspace.error_type = None
+            workspace.error_message = None
+    if root_reset_sha is not None:
+        await git.reset_wave(Path(run.worktree_path), root_reset_sha)
+    if run.pending_operation is not None:
+        run.status = RunStatus.RESUMING
+        run.status_version += 1
+        run.cancel_requested_at = None
+        run.finished_at = None
+        run.error_type = None
+        run.error_message = None
+        run.current_wave_id = None
+        await session.commit()
+        return run
     for node in nodes:
         _reset_node(node)
     await _reset_parent_controls(session, nodes)

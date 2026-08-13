@@ -174,6 +174,27 @@ async def test_bash_node_does_not_use_pi_write_confinement(tmp_path: Path) -> No
     assert runner.broadcast_stdout
 
 
+async def test_bash_node_leaves_public_variables_for_the_shell_environment(
+    tmp_path: Path,
+) -> None:
+    runner = CapturingRunner()
+    operation = request(tmp_path, {})
+    operation.public_context["TASK"] = 'ok"; id #'
+
+    await ProcessNodeExecutor(runner).execute(
+        BashNode(
+            type="bash",
+            id="bash",
+            label="Bash",
+            config=BashConfig(command='printf "%s" "$TASK"'),
+        ),
+        operation,
+    )
+
+    assert runner.command == ["/bin/bash", "-lc", 'printf "%s" "$TASK"']
+    assert runner.environment["TASK"] == 'ok"; id #'
+
+
 async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: Path) -> None:
     runner = CapturingRunner()
     runner.stdout_lines = [

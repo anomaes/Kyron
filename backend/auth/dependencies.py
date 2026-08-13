@@ -74,16 +74,21 @@ async def upsert_user(
         user = existing_user
         if not user.is_active:
             raise PermissionError("This Kyron user has been disabled")
-        user.email = email
-        user.display_name = display_name
-        user.avatar_url = avatar_url
-        identity.username = provider_username
+        if user.email != email:
+            user.email = email
+        if user.display_name != display_name:
+            user.display_name = display_name
+        if user.avatar_url != avatar_url:
+            user.avatar_url = avatar_url
+        if identity.username != provider_username:
+            identity.username = provider_username
         last_login = user.last_login_at
         if last_login.tzinfo is None:
             last_login = last_login.replace(tzinfo=UTC)
         if now - last_login >= timedelta(seconds=settings.AUTH_USER_TOUCH_INTERVAL_SECONDS):
             user.last_login_at = now
-    await session.commit()
+    if session.new or session.dirty:
+        await session.commit()
     return AuthenticatedUser(
         id=user.id,
         email=user.email,

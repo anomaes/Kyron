@@ -5,12 +5,14 @@ import uuid
 from pathlib import Path
 from typing import cast
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import (
     ExecutionWave,
     GateInstance,
+    InvocationWorkspace,
     NodeAttempt,
     NodeExecution,
     Project,
@@ -21,7 +23,7 @@ from backend.db.models import (
     WorkflowRun,
 )
 from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
-from backend.engine.resume import mark_run_interrupted, prepare_resume
+from backend.engine.resume import ResumeError, mark_run_interrupted, prepare_resume
 from backend.engine.task_registry import TaskRegistry
 from backend.integrations.git_manager import GitManager
 
@@ -321,6 +323,77 @@ async def test_pending_publication_resumes_without_a_failed_wave(
     assert resumed.status == RunStatus.RESUMING
     assert resumed.pending_operation == "FINAL_PUBLICATION"
     assert git.resets == [(Path(run.worktree_path or ""), "b" * 40)]
+
+
+async def test_invalid_pending_resume_does_not_mutate_any_worktree(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.INTERRUPTED)
+    run.pending_operation = "FINAL_PUBLICATION"
+    run.current_head_sha = None
+    invocation = WorkflowInvocation(
+        run_id=run.id, workflow_id="root", invocation_path="root", status="RUNNING"
+    )
+    db_session.add(invocation)
+    await db_session.flush()
+    child_worktree = tmp_path / "resume-child"
+    child_worktree.mkdir()
+    workspace = InvocationWorkspace(
+        run_id=run.id,
+        owner_invocation_id=invocation.id,
+        mode="ISOLATED",
+        status="FAILED",
+        base_commit_sha="a" * 40,
+        current_head_sha="c" * 40,
+        branch_name="workflow/child",
+        worktree_path=str(child_worktree),
+    )
+    db_session.add(workspace)
+    await db_session.commit()
+    git = RecordingGit()
+
+    with pytest.raises(ResumeError, match="no durable Git checkpoint"):
+        await prepare_resume(db_session, cast(GitManager, git), run.id)
+
+    assert git.resets == []
+    assert workspace.status == "FAILED"
+
+
+async def test_resume_skips_integrated_workspaces(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.INTERRUPTED)
+    invocation = WorkflowInvocation(
+        run_id=run.id, workflow_id="root", invocation_path="root", status="RUNNING"
+    )
+    db_session.add(invocation)
+    await db_session.flush()
+    integrated = InvocationWorkspace(
+        run_id=run.id,
+        owner_invocation_id=invocation.id,
+        mode="ISOLATED",
+        status="INTEGRATED",
+        base_commit_sha="a" * 40,
+        current_head_sha="c" * 40,
+        branch_name="workflow/integrated",
+        worktree_path=str(tmp_path / "already-removed-integrated-worktree"),
+    )
+    node = NodeExecution(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        node_id="control",
+        node_path="root/control",
+        node_type="subworkflow",
+        status=NodeStatus.INTERRUPTED,
+    )
+    db_session.add_all([integrated, node])
+    await db_session.commit()
+    git = RecordingGit()
+
+    await prepare_resume(db_session, cast(GitManager, git), run.id)
+
+    assert git.resets == [(Path(run.worktree_path or ""), "b" * 40)]
+    assert integrated.status == "INTEGRATED"
 
 
 async def test_interrupted_control_node_does_not_replay_historical_failed_wave(

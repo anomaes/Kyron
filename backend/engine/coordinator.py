@@ -26,7 +26,7 @@ from backend.db.models import (
 from backend.db.repositories import InvalidStateTransition, RunRepository
 from backend.db.statuses import InvocationStatus, NodeStatus, RunStatus
 from backend.engine.conditions import evaluate_condition
-from backend.engine.context import expand_public_variables
+from backend.engine.context import UnresolvedVariableError, expand_public_variables
 from backend.engine.scheduler import DagScheduler, GraphDeadlockError, LogicalStatus
 from backend.engine.waves import WaveExecutionError, WaveExecutor
 from backend.integrations.code_host import (
@@ -61,6 +61,15 @@ class RunPaused(RuntimeError):
 
 class RunExecutionError(RuntimeError):
     pass
+
+
+def stop_for_terminal_parallel_run(run: WorkflowRun) -> None:
+    if run.status == RunStatus.FAILED:
+        raise RunExecutionError(
+            run.error_message or "A parallel sub-workflow failed the run"
+        )
+    if run.status in {RunStatus.COMPLETED, RunStatus.CANCELLED}:
+        raise RunPaused()
 
 
 class RunCoordinator:
@@ -125,6 +134,32 @@ class RunCoordinator:
                 exc.provider,
                 exc.category,
                 exc.status_code,
+                exc,
+            )
+        except (UnresolvedVariableError, GitError) as exc:
+            run = await self._run(run_id)
+            run.status = RunStatus.FAILED
+            run.error_type = (
+                "WORKFLOW_TEMPLATE_ERROR"
+                if isinstance(exc, UnresolvedVariableError)
+                else "GIT_ERROR"
+            )
+            run.error_message = str(exc)
+            if run.delivery_mode == "REPORT_ONLY":
+                run.verification_conclusion = "FAILURE"
+            await self._write_log(
+                run.id,
+                "ERROR",
+                "RUN_FAILED",
+                run.error_message,
+                metadata={"error_type": run.error_type},
+            )
+            await self.session.commit()
+            logger.error(
+                "Workflow run failed because of an authoring error "
+                "(run=%s, error_type=%s): %s",
+                run.id,
+                run.error_type,
                 exc,
             )
 
@@ -455,8 +490,6 @@ class RunCoordinator:
             logger.exception(
                 "Optional verification publication failed (run=%s)", run.id
             )
-        finally:
-            token = ""
 
     async def _publish_change_request(
         self,
@@ -474,37 +507,34 @@ class RunCoordinator:
         if not worktree_path or not branch_name:
             raise RunExecutionError("Publication workspace is incomplete")
         token = self.cipher.decrypt(project.encrypted_access_token)
-        try:
-            if workspace and workspace.parent_workspace_id:
-                parent = await self.session.get(
-                    InvocationWorkspace, workspace.parent_workspace_id
-                )
-                if parent is None:
-                    raise RunExecutionError("Child review has no parent workspace")
-                await self.git.push(
-                    Path(parent.worktree_path),
-                    parent.branch_name,
-                    token,
-                    username=git_username(project.provider),
-                )
+        if workspace and workspace.parent_workspace_id:
+            parent = await self.session.get(
+                InvocationWorkspace, workspace.parent_workspace_id
+            )
+            if parent is None:
+                raise RunExecutionError("Child review has no parent workspace")
             await self.git.push(
-                Path(worktree_path),
-                branch_name,
+                Path(parent.worktree_path),
+                parent.branch_name,
                 token,
                 username=git_username(project.provider),
             )
-            await self._ensure_merge_request(
-                run,
-                project,
-                workflow,
-                token,
-                node=node,
-                reviewers=reviewers,
-                workspace=workspace,
-                context=context,
-            )
-        finally:
-            token = ""
+        await self.git.push(
+            Path(worktree_path),
+            branch_name,
+            token,
+            username=git_username(project.provider),
+        )
+        await self._ensure_merge_request(
+            run,
+            project,
+            workflow,
+            token,
+            node=node,
+            reviewers=reviewers,
+            workspace=workspace,
+            context=context,
+        )
 
     async def execute_invocation(
         self,
@@ -963,6 +993,8 @@ class RunCoordinator:
                     for member in runnable_members
                 ]
             )
+            await self.session.refresh(run)
+            stop_for_terminal_parallel_run(run)
         else:
             results = []
             for member in runnable_members:
@@ -991,8 +1023,6 @@ class RunCoordinator:
                 await self.session.commit()
 
         await self.session.refresh(batch)
-        if batch is None:
-            raise RunExecutionError("Sub-workflow batch disappeared")
         members = list(
             await self.session.scalars(
                 select(SubworkflowBatchMember)
@@ -1092,9 +1122,6 @@ class RunCoordinator:
                 run.error_message = str(exc)
                 await self.session.commit()
                 raise RunExecutionError(str(exc)) from exc
-            finally:
-                token = ""
-
         parent_workspace.current_head_sha = integrated_head
         if parent_workspace.mode == "ROOT":
             run.current_head_sha = integrated_head
@@ -1456,9 +1483,10 @@ class RunCoordinator:
             and run.current_node_execution_id == execution.id
         ):
             run.pending_operation = None
-        run.current_invocation_id = invocation.id
-        run.current_node_execution_id = execution.id
-        run.current_wave_id = None
+        if workspace is None or workspace.mode == "ROOT":
+            run.current_invocation_id = invocation.id
+            run.current_node_execution_id = execution.id
+            run.current_wave_id = None
         await self._write_log(
             run.id,
             "INFO",
@@ -1646,14 +1674,35 @@ class RunCoordinator:
                 run.id,
                 change_request.number,
             )
-        if provider_number is None:
-            raise RunExecutionError("Change request publication did not return a number")
-        await self.code_host.update_change_request_reviewers(
-            repository,
-            provider_number,
-            token,
-            reviewers,
-        )
+        try:
+            await self.code_host.update_change_request_reviewers(
+                repository,
+                provider_number,
+                token,
+                reviewers,
+            )
+        except CodeHostError as exc:
+            await self._write_log(
+                run.id,
+                "WARNING",
+                "CHANGE_REQUEST_REVIEWERS_NOT_ASSIGNED",
+                f"Change request opened, but reviewers could not be assigned: {exc}",
+                metadata={
+                    "change_request_number": provider_number,
+                    "provider": exc.provider,
+                    "status_code": exc.status_code,
+                },
+            )
+            await self.session.commit()
+            logger.warning(
+                "Change request reviewers could not be assigned "
+                "(run=%s, change_request=%s, reviewers=%s): %s",
+                run.id,
+                provider_number,
+                len(reviewers),
+                exc,
+            )
+            return
         logger.info(
             "Change request reviewers updated (run=%s, change_request=%s, reviewers=%s)",
             run.id,
