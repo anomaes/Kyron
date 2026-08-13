@@ -41,9 +41,9 @@
     >
       <div class="diagram-viewer__stage">
         <div
+          ref="canvas"
           class="diagram-viewer__canvas"
           :style="canvasStyle"
-          v-html="svgMarkup"
         />
       </div>
     </div>
@@ -60,8 +60,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 
 const dialog = ref<HTMLDialogElement>();
 const viewport = ref<HTMLDivElement>();
+const canvas = ref<HTMLDivElement>();
 const title = ref("Diagram");
-const svgMarkup = ref("");
 const sourceWidth = ref(1);
 const sourceHeight = ref(1);
 const zoom = ref(1);
@@ -73,7 +73,8 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragScrollLeft = 0;
 let dragScrollTop = 0;
-let activeContainer: HTMLElement | undefined;
+let activeSvg: SVGSVGElement | undefined;
+let sourceAnchor: Comment | undefined;
 
 const zoomPercent = computed(() => Math.round(zoom.value * 100));
 const canvasStyle = computed(() => ({
@@ -92,54 +93,20 @@ function diagramTitle(container: HTMLElement): string {
   return document.querySelector(".vp-doc h1")?.textContent?.replace(/​/g, "").trim() || "Diagram";
 }
 
-function cloneSvg(source: SVGSVGElement): string {
-  const clone = source.cloneNode(true) as SVGSVGElement;
-  const suffix = `viewer-${Date.now().toString(36)}`;
-  const replacements = new Map<string, string>();
-
-  clone.querySelectorAll<HTMLElement>("[id]").forEach((element) => {
-    const current = element.id;
-    const replacement = `${current}-${suffix}`;
-    replacements.set(current, replacement);
-    element.id = replacement;
-  });
-
-  clone.querySelectorAll<HTMLElement>("*").forEach((element) => {
-    for (const attribute of Array.from(element.attributes)) {
-      let value = attribute.value;
-      value = value.replace(/url\(#([^)]+)\)/g, (reference, id: string) => {
-        const replacement = replacements.get(id);
-        return replacement ? `url(#${replacement})` : reference;
-      });
-      if ((attribute.name === "href" || attribute.name === "xlink:href") && value.startsWith("#")) {
-        const replacement = replacements.get(value.slice(1));
-        if (replacement) value = `#${replacement}`;
-      }
-      if (value !== attribute.value) {
-        element.setAttribute(attribute.name, value);
-      }
-    }
-  });
-
-  clone.removeAttribute("width");
-  clone.removeAttribute("height");
-  clone.removeAttribute("style");
-  return clone.outerHTML;
-}
-
 async function openDiagram(container: HTMLElement): Promise<void> {
   const source = container.querySelector<SVGSVGElement>("svg");
-  if (!source || !dialog.value) return;
+  if (!source || !dialog.value || !canvas.value) return;
 
   const viewBox = source.viewBox.baseVal;
   sourceWidth.value = viewBox.width || source.getBoundingClientRect().width;
   sourceHeight.value = viewBox.height || source.getBoundingClientRect().height;
   title.value = diagramTitle(container);
-  svgMarkup.value = cloneSvg(source);
-  activeContainer = container;
-  activeContainer.classList.add("is-expanded");
+  activeSvg = source;
+  sourceAnchor = document.createComment("diagram-viewer-source");
+  source.before(sourceAnchor);
+  canvas.value.append(source);
   dialog.value.showModal();
-  document.documentElement.classList.add("diagram-viewer-open");
+  document.body.classList.add("diagram-viewer-open");
   await nextTick();
   fit();
   viewport.value?.focus();
@@ -228,10 +195,12 @@ function close(): void {
 }
 
 function reset(): void {
-  document.documentElement.classList.remove("diagram-viewer-open");
-  activeContainer?.classList.remove("is-expanded");
-  activeContainer = undefined;
-  svgMarkup.value = "";
+  document.body.classList.remove("diagram-viewer-open");
+  if (activeSvg && sourceAnchor?.parentNode) {
+    sourceAnchor.replaceWith(activeSvg);
+  }
+  activeSvg = undefined;
+  sourceAnchor = undefined;
   dragging.value = false;
 }
 
@@ -244,7 +213,9 @@ onMounted(() => {
 onUnmounted(() => {
   observer?.disconnect();
   if (enhancementFrame !== undefined) cancelAnimationFrame(enhancementFrame);
-  document.documentElement.classList.remove("diagram-viewer-open");
-  activeContainer?.classList.remove("is-expanded");
+  document.body.classList.remove("diagram-viewer-open");
+  if (activeSvg && sourceAnchor?.parentNode) {
+    sourceAnchor.replaceWith(activeSvg);
+  }
 });
 </script>

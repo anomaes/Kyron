@@ -137,10 +137,6 @@
   width: 100% !important;
 }
 
-.vp-doc .mermaid.is-expanded > svg {
-  visibility: hidden;
-}
-
 .vp-doc .diagram-expand {
   align-items: center;
   background: var(--vp-c-bg-elv);
