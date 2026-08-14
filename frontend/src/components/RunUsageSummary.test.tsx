@@ -27,6 +27,7 @@ function runUsage(): RunUsage {
   const retry = piUsage(64_000, 1, 0.59);
   return {
     usage: piUsage(184_000, 3, 1.84),
+    models: [{ provider: "anthropic", model: "claude-sonnet-4-5", response_models: [] }],
     prompt_node_count: 1,
     attempt_count: 2,
     nodes: [{
@@ -35,9 +36,10 @@ function runUsage(): RunUsage {
       node_path: "root/implement",
       status: "SUCCESS",
       usage: piUsage(184_000, 3, 1.84),
+      models: [{ provider: "anthropic", model: "claude-sonnet-4-5", response_models: [] }],
       attempts: [
-        { attempt_id: "attempt-1", attempt_number: 1, status: "FAILED", usage: retry, source: "persisted" },
-        { attempt_id: "attempt-2", attempt_number: 2, status: "SUCCESS", usage: first, source: "persisted" },
+        { attempt_id: "attempt-1", attempt_number: 1, status: "FAILED", usage: retry, models: [{ provider: "anthropic", model: "claude-sonnet-4-5", response_models: [] }], source: "persisted" },
+        { attempt_id: "attempt-2", attempt_number: 2, status: "SUCCESS", usage: first, models: [{ provider: "anthropic", model: "claude-sonnet-4-5", response_models: [] }], source: "persisted" },
       ],
     }],
   };
@@ -50,6 +52,7 @@ describe("run usage summary", () => {
 
     const summary = container.querySelector("summary");
     expect(summary).toHaveTextContent("184K tokens");
+    expect(summary).toHaveTextContent("anthropic/claude-sonnet-4-5");
     expect(screen.getByText("3 model calls · $1.84")).toBeVisible();
 
     const details = container.querySelector("details");
@@ -65,6 +68,7 @@ describe("run usage summary", () => {
   it("distinguishes a run with no recorded Pi calls", () => {
     const empty = runUsage();
     empty.usage = piUsage(0, 0, 0);
+    empty.models = [];
     render(<RunUsageSummary data={empty} />);
 
     expect(screen.getByText("0 tokens")).toBeVisible();

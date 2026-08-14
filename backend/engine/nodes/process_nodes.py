@@ -195,6 +195,7 @@ class ProcessNodeExecutor:
             )
             if collector is not None:
                 result.pi_usage = collector.usage
+                result.pi_models = collector.models
             result.pi_skill_warning = pi_skill_warning
         finally:
             request.secrets.clear()
@@ -226,6 +227,7 @@ class ProcessNodeExecutor:
                     timed_out=result.timed_out,
                     cancelled=result.cancelled,
                     pi_usage=result.pi_usage,
+                    pi_models=result.pi_models,
                     pi_skill_warning=result.pi_skill_warning,
                 )
         return result

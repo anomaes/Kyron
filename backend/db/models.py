@@ -572,6 +572,7 @@ class NodeAttempt(Base):
     error_type: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
     pi_usage: Mapped[dict[str, Any] | None] = mapped_column(JSON_TYPE)
+    pi_models: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON_TYPE)
 
 
 class EdgeEvaluation(Base):

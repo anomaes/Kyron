@@ -567,6 +567,7 @@ Every retry or resume creates a new attempt and preserves history.
 | `error_type` | VARCHAR(100) NULL | |
 | `error_message` | TEXT NULL | Sanitized |
 | `pi_usage` | JSONB NULL | Aggregate provider-reported token usage and estimated cost for prompt attempts |
+| `pi_models` | JSONB NULL | Distinct Pi-reported provider/model identities and optional upstream response models for prompt attempts |
 
 Constraint:
 
@@ -2194,7 +2195,8 @@ Query:
 The endpoint must not read arbitrary paths supplied by the client.
 
 The Pi-events endpoint accepts an optional positive `attempt`, parses the corresponding
-redacted `pi_events.jsonl`, and returns Kyron's stable UI event schema plus attempt status.
+redacted `pi_events.jsonl`, and returns Kyron's stable UI event schema, attempt status, and
+the distinct Pi-reported model identities observed for that attempt.
 It is valid for an active attempt to return an empty event list before Pi emits its first
 record. Non-prompt nodes are rejected.
 
@@ -2203,7 +2205,11 @@ node and attempt, including failed, interrupted, cancelled, and superseded attem
 returns input, output, cache-read, cache-write, total-token, model-call, and estimated-cost
 values with node and attempt breakdowns. Completed attempts persist their aggregate in
 `node_attempts.pi_usage`; active attempts and historical rows without an aggregate fall
-back to their validated `pi_events.jsonl` path.
+back to their validated `pi_events.jsonl` path. The endpoint also returns distinct
+provider/model identities at run, node, and attempt granularity. Kyron persists the
+identity emitted by Pi rather than duplicating Pi's default-model resolution, so a model
+selected by Pi when no workflow model is configured remains auditable. Optional
+provider-reported `responseModel` values are retained separately from Pi's selected model.
 
 ## 14.8 Approve
 
@@ -3263,6 +3269,7 @@ Header:
 - MR link.
 - Started and elapsed time.
 - Aggregate Pi token usage and estimated cost across all attempts.
+- Pi-reported model identity, including a model chosen through Pi's default resolution.
 
 ### Graph view
 
@@ -3336,10 +3343,12 @@ The activity view:
 The global run log may show concise Pi lifecycle and tool-boundary messages, but must not
 render raw Pi JSON lines or individual assistant/tool-update deltas.
 
-The run summary shows total Pi tokens and estimated cost. Expanding it shows input, output,
-cache-read, cache-write, and model-call totals plus per-node and per-attempt rows. Failed
-attempts remain visible because provider usage is consumed even when Kyron rolls back the
-wave.
+The run summary shows total Pi tokens, estimated cost, and a compact model summary.
+Expanding it shows input, output, cache-read, cache-write, model-call totals, and the
+Pi-reported model identities in per-node and per-attempt rows. The selected prompt-node
+activity header repeats the attempt's model identity without making it the primary focus.
+Failed attempts remain visible because provider usage is consumed even when Kyron rolls
+back the wave.
 
 ### Feedback panel
 

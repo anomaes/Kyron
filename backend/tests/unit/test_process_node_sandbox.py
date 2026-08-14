@@ -254,12 +254,14 @@ async def test_prompt_node_returns_usage_for_every_pi_model_call(tmp_path: Path)
     runner.stdout_lines = [
         '{"type":"message_end","message":{"role":"assistant","content":'
         '[{"type":"toolCall","name":"read","id":"call-1","arguments":{}}],'
+        '"provider":"anthropic","model":"claude-sonnet-4-5",'
         '"stopReason":"toolUse","usage":{"input":100,"output":20,"cacheRead":50,'
         '"cacheWrite":0,"totalTokens":170,"cost":{"input":0.1,"output":0.2,'
         '"cacheRead":0.01,"cacheWrite":0,"total":0.31}}}}\n',
         '{"type":"message_end","message":{"role":"assistant","content":'
-        '[{"type":"text","text":"Done"}],"stopReason":"stop","usage":'
-        '{"input":200,"output":30,"cacheRead":0,"cacheWrite":10,'
+        '[{"type":"text","text":"Done"}],"stopReason":"stop",'
+        '"provider":"anthropic","model":"claude-sonnet-4-5",'
+        '"usage":{"input":200,"output":30,"cacheRead":0,"cacheWrite":10,'
         '"totalTokens":240,"cost":{"input":0.2,"output":0.3,'
         '"cacheRead":0,"cacheWrite":0.02,"total":0.52}}}}\n',
     ]
@@ -278,3 +280,39 @@ async def test_prompt_node_returns_usage_for_every_pi_model_call(tmp_path: Path)
     assert result.pi_usage["requestCount"] == 2
     assert result.pi_usage["totalTokens"] == 410
     assert result.pi_usage["cost"]["total"] == pytest.approx(0.83)
+    assert result.pi_models == [
+        {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5",
+            "response_models": [],
+        }
+    ]
+
+
+async def test_prompt_node_records_the_default_selected_by_pi(tmp_path: Path) -> None:
+    runner = CapturingRunner()
+    runner.stdout_lines = [
+        '{"type":"message_start","message":{"role":"assistant","content":[],'
+        '"provider":"anthropic","model":"claude-sonnet-4-5"}}\n'
+    ]
+    operation = request(tmp_path, {})
+    operation.pi = PiSettings()
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert "--model" not in runner.command
+    assert result.pi_models == [
+        {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5",
+            "response_models": [],
+        }
+    ]

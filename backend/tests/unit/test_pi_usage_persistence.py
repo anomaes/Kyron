@@ -56,6 +56,13 @@ class UsageExecutor:
                 },
                 "requestCount": 1,
             },
+            pi_models=[
+                {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "response_models": [],
+                }
+            ],
         )
 
 
@@ -161,3 +168,10 @@ async def test_wave_persists_pi_usage_on_the_attempt(
     assert attempt.pi_usage is not None
     assert attempt.pi_usage["totalTokens"] == 100
     assert attempt.pi_usage["requestCount"] == 1
+    assert attempt.pi_models == [
+        {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5",
+            "response_models": [],
+        }
+    ]

@@ -89,6 +89,7 @@ class ProcessResult:
     cancelled: bool = False
     output_truncated: bool = False
     pi_usage: dict[str, Any] | None = None
+    pi_models: list[dict[str, Any]] | None = None
     pi_skill_warning: str | None = None
 
 

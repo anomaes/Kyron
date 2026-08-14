@@ -64,8 +64,15 @@ export type PiUsage = {
   requestCount: number;
 };
 
+export type PiModelIdentity = {
+  provider: string;
+  model: string;
+  response_models: string[];
+};
+
 export type RunUsage = {
   usage: PiUsage;
+  models: PiModelIdentity[];
   prompt_node_count: number;
   attempt_count: number;
   nodes: Array<{
@@ -74,11 +81,13 @@ export type RunUsage = {
     node_path: string;
     status: string;
     usage: PiUsage;
+    models: PiModelIdentity[];
     attempts: Array<{
       attempt_id: string;
       attempt_number: number;
       status: string;
       usage: PiUsage;
+      models: PiModelIdentity[];
       source: "persisted" | "events" | "none";
     }>;
   }>;
@@ -245,6 +254,7 @@ export type RunGraph = {
     started_at: string;
     finished_at: string | null;
     exit_code: number | null;
+    pi_models: PiModelIdentity[] | null;
   }>;
   edge_evaluations: Array<Record<string, unknown>>;
   feedback: Array<{ node_execution_id: string; iteration: number; message: string; event_type: string }>;
@@ -358,5 +368,6 @@ export type PiActivityEvent = {
 export type PiEventsResponse = {
   attempt: number;
   status: string;
+  models: PiModelIdentity[];
   events: PiActivityEvent[];
 };

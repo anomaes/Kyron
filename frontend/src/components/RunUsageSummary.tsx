@@ -1,4 +1,4 @@
-import type { RunUsage } from "../types";
+import type { PiModelIdentity, RunUsage } from "../types";
 import { StatusBadge } from "./StatusBadge";
 
 const compactNumber = new Intl.NumberFormat(undefined, {
@@ -18,6 +18,19 @@ export function formatCost(value: number): string {
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function modelLabel(identity: PiModelIdentity): string {
+  const selected = `${identity.provider}/${identity.model}`;
+  const routed = identity.response_models.filter((model) => model !== identity.model);
+  return routed.length ? `${selected} → ${routed.join(", ")}` : selected;
+}
+
+function modelSummary(models: PiModelIdentity[] | undefined): string {
+  if (!models?.length) return "Model unavailable";
+  const [onlyModel] = models;
+  if (models.length === 1 && onlyModel) return modelLabel(onlyModel);
+  return `${models.length} models`;
+}
+
 function UsageBreakdown({ data }: { data: RunUsage }) {
   return <div className="run-usage-popover">
     <header>
@@ -33,7 +46,7 @@ function UsageBreakdown({ data }: { data: RunUsage }) {
     </div>
     <div className="run-usage-table-wrap">
       <table>
-        <thead><tr><th>Prompt / attempt</th><th>Status</th><th>Input</th><th>Output</th><th>Cache R/W</th><th>Total</th><th>Cost</th></tr></thead>
+        <thead><tr><th>Prompt / attempt</th><th>Status</th><th>Model</th><th>Input</th><th>Output</th><th>Cache R/W</th><th>Total</th><th>Cost</th></tr></thead>
         <tbody>{data.nodes.map((node) => <NodeUsageRows key={node.node_execution_id} node={node} />)}</tbody>
       </table>
     </div>
@@ -45,6 +58,7 @@ function NodeUsageRows({ node }: { node: RunUsage["nodes"][number] }) {
     <tr className="run-usage-node-row">
       <td><strong>{node.node_id}</strong><code>{node.node_path}</code></td>
       <td><StatusBadge status={node.status} /></td>
+      <td className="run-usage-models">{node.models?.map((model) => <code key={`${model.provider}/${model.model}`}>{modelLabel(model)}</code>)}</td>
       <td>{formatTokens(node.usage.input)}</td>
       <td>{formatTokens(node.usage.output)}</td>
       <td>{formatTokens(node.usage.cacheRead)} / {formatTokens(node.usage.cacheWrite)}</td>
@@ -54,6 +68,7 @@ function NodeUsageRows({ node }: { node: RunUsage["nodes"][number] }) {
     {node.attempts.map((attempt) => <tr key={attempt.attempt_id} className="run-usage-attempt-row">
       <td>↳ Attempt {attempt.attempt_number}</td>
       <td><StatusBadge status={attempt.status} /></td>
+      <td className="run-usage-models">{attempt.models?.map((model) => <code key={`${model.provider}/${model.model}`}>{modelLabel(model)}</code>)}</td>
       <td>{formatTokens(attempt.usage.input)}</td>
       <td>{formatTokens(attempt.usage.output)}</td>
       <td>{formatTokens(attempt.usage.cacheRead)} / {formatTokens(attempt.usage.cacheWrite)}</td>
@@ -79,13 +94,13 @@ export function RunUsageSummary({
     return <div className="run-usage-overview"><span>AI usage</span><strong>Unavailable</strong><small>Usage could not be loaded</small></div>;
   }
   if (!data || data.usage.requestCount === 0) {
-    return <div className="run-usage-overview"><span>AI usage</span><strong>0 tokens</strong><small>No Pi model calls recorded</small></div>;
+    return <div className="run-usage-overview"><span>AI usage</span><strong>0 tokens</strong><small>{data?.models.length ? `${modelSummary(data.models)} · No completed model calls` : "No Pi model calls recorded"}</small></div>;
   }
   return <details className="run-usage-overview">
     <summary>
       <span>AI usage</span>
       <strong>{formatTokens(data.usage.totalTokens)} tokens</strong>
-      <small>{data.usage.requestCount} model call{data.usage.requestCount === 1 ? "" : "s"} · {formatCost(data.usage.cost.total)}</small>
+      <small><span>{modelSummary(data.models)}</span> · <span>{data.usage.requestCount} model call{data.usage.requestCount === 1 ? "" : "s"} · {formatCost(data.usage.cost.total)}</span></small>
     </summary>
     <UsageBreakdown data={data} />
   </details>;

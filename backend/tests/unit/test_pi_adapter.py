@@ -164,6 +164,30 @@ async def test_known_and_unknown_events_are_preserved() -> None:
     assert render_event(collector.events[1]) == "Pi event: future_event"
 
 
+async def test_collector_records_the_model_selected_by_pi() -> None:
+    collector = PiEventCollector()
+    await collector.accept(
+        "stdout",
+        '{"type":"message_start","message":{"role":"assistant",'
+        '"provider":"openrouter","model":"anthropic/claude-sonnet-4-5",'
+        '"content":[]}}\n',
+    )
+    await collector.accept(
+        "stdout",
+        '{"type":"message_end","message":{"role":"assistant",'
+        '"provider":"openrouter","model":"anthropic/claude-sonnet-4-5",'
+        '"responseModel":"claude-sonnet-4-5-20250929","content":[]}}\n',
+    )
+
+    assert collector.models == [
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4-5",
+            "response_models": ["claude-sonnet-4-5-20250929"],
+        }
+    ]
+
+
 async def test_terminal_assistant_error_is_a_pi_failure() -> None:
     collector = PiEventCollector()
     await collector.accept(

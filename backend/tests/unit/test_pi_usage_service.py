@@ -91,6 +91,13 @@ async def test_run_usage_includes_persisted_and_historical_attempts(
         attempt_number=1,
         status="FAILED",
         pi_usage=stored_usage(100, 0.1),
+        pi_models=[
+            {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5",
+                "response_models": [],
+            }
+        ],
     )
     historical = NodeAttempt(
         id=uuid.uuid4(),
@@ -102,6 +109,8 @@ async def test_run_usage_includes_persisted_and_historical_attempts(
     output.mkdir(parents=True)
     (output / "pi_events.jsonl").write_text(
         '{"type":"message_end","message":{"role":"assistant","content":[],'
+        '"provider":"openrouter","model":"anthropic/claude-sonnet-4-5",'
+        '"responseModel":"claude-sonnet-4-5-20250929",'
         '"usage":{"input":180,"output":20,"cacheRead":50,"cacheWrite":0,'
         '"totalTokens":250,"cost":{"input":0.1,"output":0.1,"cacheRead":0.01,'
         '"cacheWrite":0,"total":0.21}}}}\n',
@@ -115,6 +124,18 @@ async def test_run_usage_includes_persisted_and_historical_attempts(
     assert result["usage"]["totalTokens"] == 350
     assert result["usage"]["requestCount"] == 2
     assert result["attempt_count"] == 2
+    assert result["models"] == [
+        {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5",
+            "response_models": [],
+        },
+        {
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4-5",
+            "response_models": ["claude-sonnet-4-5-20250929"],
+        },
+    ]
     assert [item["source"] for item in result["nodes"][0]["attempts"]] == [
         "persisted",
         "events",

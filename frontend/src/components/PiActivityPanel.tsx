@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { LogEvent, PiActivityEvent, PiEventsResponse, RunGraph } from "../types";
+import type { LogEvent, PiActivityEvent, PiEventsResponse, PiModelIdentity, RunGraph } from "../types";
 import type { RunLogConnectionState } from "../hooks/useRunLogs";
 import { StatusBadge } from "./StatusBadge";
 
@@ -72,6 +72,12 @@ function toolSummary(name: string, args: unknown): string {
     : [values.path, values.file_path, values.pattern, values.query, values.command];
   const summary = candidates.find((value) => typeof value === "string");
   return summary ? abbreviated(summary) : abbreviated(args);
+}
+
+function piModelLabel(identity: PiModelIdentity): string {
+  const selected = `${identity.provider}/${identity.model}`;
+  const routed = identity.response_models.filter((model) => model !== identity.model);
+  return routed.length ? `${selected} → ${routed.join(", ")}` : selected;
 }
 
 export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
@@ -282,6 +288,7 @@ export function PiActivityPanel({
   }
 
   const attemptStatus = history.data?.status ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.status ?? node.status;
+  const attemptModels = history.data?.models ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.pi_models ?? [];
   const liveState = attemptStatus === "RUNNING" ? connectionState : "complete";
   return <div className={`panel log-panel pi-activity-panel ${fullscreen ? "panel-fullscreen" : ""}`}>
     <div className="panel-title">
@@ -296,7 +303,7 @@ export function PiActivityPanel({
         <button type="button" className="panel-expand-button" aria-label={fullscreen ? "Exit Pi activity fullscreen" : "Show Pi activity fullscreen"} title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"} onClick={onToggleFullscreen}>{fullscreen ? "Close" : "Fullscreen"}</button>
       </div>
     </div>
-    <div className="pi-node-context"><div><span>Prompt node</span><strong>{node.label}</strong><code>{node.nodePath}</code></div><StatusBadge status={attemptStatus} /></div>
+    <div className="pi-node-context"><div className="pi-node-copy"><span>Prompt node</span><strong>{node.label}</strong><code>{node.nodePath}</code></div><div className="pi-node-meta">{attemptModels.length > 0 && <div className="pi-model-list"><span>Model</span>{attemptModels.map((model) => <code key={`${model.provider}/${model.model}`}>{piModelLabel(model)}</code>)}</div>}<StatusBadge status={attemptStatus} /></div></div>
     <div className="pi-activity" ref={activityRef} onScroll={handleScroll}>
       {history.isError && events.length === 0 && <div className="pi-activity-empty error">Could not load this Pi attempt.</div>}
       {!history.isError && events.length === 0 && <div className="pi-activity-empty">{attemptStatus === "RUNNING" ? "Waiting for Pi output…" : "No Pi activity was recorded for this attempt."}</div>}

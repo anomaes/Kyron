@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.engine.pi.model_identity import aggregate_pi_models_events
 from backend.engine.pi.usage import aggregate_pi_usage_events
 
 KNOWN_EVENT_TYPES = {
@@ -108,3 +109,7 @@ class PiEventCollector:
     @property
     def usage(self) -> dict[str, Any]:
         return aggregate_pi_usage_events(self.events)
+
+    @property
+    def models(self) -> list[dict[str, Any]]:
+        return aggregate_pi_models_events(self.events)

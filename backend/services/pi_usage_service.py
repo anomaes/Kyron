@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import NodeAttempt, NodeExecution, WorkflowRun
 from backend.engine.output_paths import node_attempt_directory
+from backend.engine.pi.model_identity import (
+    aggregate_pi_models_content,
+    merge_pi_models,
+    normalize_pi_models,
+)
 from backend.engine.pi.usage import (
     add_pi_usage,
     aggregate_pi_usage_content,
@@ -53,23 +58,29 @@ class PiUsageService:
             else None
         )
         total = empty_pi_usage()
+        run_models: list[dict[str, Any]] = []
         breakdown: list[dict[str, Any]] = []
         for node in nodes:
             node_usage = empty_pi_usage()
+            node_models: list[dict[str, Any]] = []
             attempt_breakdown: list[dict[str, Any]] = []
             for attempt in attempts_by_node.get(node.id, []):
                 usage, source = await self._attempt_usage(root, node, attempt)
+                models = await self._attempt_models(root, node, attempt)
                 add_pi_usage(node_usage, usage)
+                merge_pi_models(node_models, models)
                 attempt_breakdown.append(
                     {
                         "attempt_id": str(attempt.id),
                         "attempt_number": attempt.attempt_number,
                         "status": attempt.status,
                         "usage": usage,
+                        "models": models,
                         "source": source,
                     }
                 )
             add_pi_usage(total, node_usage)
+            merge_pi_models(run_models, node_models)
             breakdown.append(
                 {
                     "node_execution_id": str(node.id),
@@ -77,11 +88,13 @@ class PiUsageService:
                     "node_path": node.node_path,
                     "status": node.status,
                     "usage": node_usage,
+                    "models": node_models,
                     "attempts": attempt_breakdown,
                 }
             )
         return {
             "usage": total,
+            "models": run_models,
             "prompt_node_count": len(nodes),
             "attempt_count": len(attempts),
             "nodes": breakdown,
@@ -107,3 +120,22 @@ class PiUsageService:
         if stored is not None:
             return stored, "persisted"
         return empty_pi_usage(), "none"
+
+    async def _attempt_models(
+        self,
+        root: Path | None,
+        node: NodeExecution,
+        attempt: NodeAttempt,
+    ) -> list[dict[str, Any]]:
+        if attempt.pi_models is not None:
+            return normalize_pi_models(attempt.pi_models)
+        if root is None:
+            return []
+        output = (
+            node_attempt_directory(root, node.node_path, attempt.attempt_number)
+            / "pi_events.jsonl"
+        ).resolve()
+        if not output.is_relative_to(root) or not await asyncio.to_thread(output.is_file):
+            return []
+        content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
+        return aggregate_pi_models_content(content)

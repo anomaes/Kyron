@@ -65,6 +65,7 @@ from backend.db.statuses import RunStatus
 from backend.dependencies import Cipher
 from backend.engine.cancellation import cancel_run
 from backend.engine.output_paths import node_attempt_directory
+from backend.engine.pi.model_identity import aggregate_pi_models_content, normalize_pi_models
 from backend.engine.pi.ui_events import parse_pi_ui_events
 from backend.engine.process_registry import process_registry
 from backend.engine.resume import ResumeError, prepare_resume
@@ -417,9 +418,13 @@ async def node_pi_events(
     content = ""
     if await asyncio.to_thread(output.is_file):
         content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
+    models = aggregate_pi_models_content(content)
+    if not models and attempt_row.pi_models is not None:
+        models = normalize_pi_models(attempt_row.pi_models)
     return {
         "attempt": selected_attempt,
         "status": attempt_row.status,
+        "models": models,
         "events": parse_pi_ui_events(content),
     }
 
