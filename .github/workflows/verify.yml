@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [frontend, auth-service]
+        package: [frontend, auth-service, vscode-extension]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
