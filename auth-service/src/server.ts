@@ -41,6 +41,7 @@ const config = {
   previousSigningKey: process.env.SESSION_PREVIOUS_SIGNING_KEY ?? "",
   maximumAge: Number(process.env.SESSION_MAX_AGE_SECONDS ?? 28_800),
   secure: (process.env.APP_ENV ?? "production") !== "development",
+  backendUrl: (process.env.KYRON_BACKEND_URL ?? "http://backend:8000").replace(/\/$/, ""),
 };
 
 if (config.signingKey.length < 32) throw new Error("SESSION_SIGNING_KEY must have at least 32 characters");
@@ -171,7 +172,45 @@ async function githubIdentity(code: string): Promise<Identity> {
   return { email, name: user.name || user.login, avatar: user.avatar_url ?? null, provider: "github", providerUserId: String(user.id), providerUsername: user.login, expiresAt: 0 };
 }
 
-app.get("/auth/verify", (request: Request, response: Response) => {
+type TokenIdentity = {
+  email: string;
+  display_name: string;
+  avatar_url: string | null;
+  provider: Provider;
+  provider_user_id: string;
+  provider_username: string;
+};
+
+async function verifyBearerToken(authorization: string): Promise<TokenIdentity | null> {
+  try {
+    const tokenResponse = await fetch(`${config.backendUrl}/internal/auth/vscode-token`, {
+      method: "POST",
+      headers: { Authorization: authorization },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!tokenResponse.ok) return null;
+    const identity = await tokenResponse.json() as TokenIdentity;
+    if (!identity.email || !requestedProvider(identity.provider) || !identity.provider_user_id || !identity.provider_username) return null;
+    return identity;
+  } catch {
+    return null;
+  }
+}
+
+app.get("/auth/verify", async (request: Request, response: Response) => {
+  const authorization = request.header("Authorization");
+  if (authorization?.startsWith("Bearer ")) {
+    const identity = await verifyBearerToken(authorization);
+    if (!identity) { response.status(401).send("Invalid or expired bearer token"); return; }
+    response.setHeader("X-Token-User-Email", identity.email);
+    response.setHeader("X-Token-User-Name", identity.display_name);
+    if (identity.avatar_url) response.setHeader("X-Token-User-Avatar", identity.avatar_url);
+    response.setHeader("X-Token-Provider", identity.provider);
+    response.setHeader("X-Token-Provider-User-Id", identity.provider_user_id);
+    response.setHeader("X-Token-Provider-Username", identity.provider_username);
+    response.status(200).end();
+    return;
+  }
   const identity = verify<Identity>(parse(request.headers.cookie ?? "").kyron_session);
   if (!identity || !requestedProvider(identity.provider) || !identity.providerUserId || !identity.providerUsername || identity.expiresAt < Date.now()) {
     const returnTo = safeReturnTo(request.header("X-Forwarded-Uri"));

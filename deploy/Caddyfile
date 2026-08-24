@@ -25,6 +25,21 @@
 			reverse_proxy auth-service:3001
 		}
 
+		# The VS Code device and token endpoints authenticate with high-entropy
+		# one-time or rotating credentials. They must remain reachable before a
+		# browser or bearer session exists.
+		handle /api/auth/vscode/device {
+			reverse_proxy backend:8000
+		}
+
+		handle /api/auth/vscode/token {
+			reverse_proxy backend:8000
+		}
+
+		handle /api/auth/vscode/revoke {
+			reverse_proxy backend:8000
+		}
+
 		handle /api/* {
 			route {
 				forward_auth auth-service:3001 {

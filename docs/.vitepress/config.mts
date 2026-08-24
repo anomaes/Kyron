@@ -95,6 +95,7 @@ export default withMermaid(defineConfig({
             { text: "Access and governance", link: "/guides/access-and-governance" },
             { text: "Visual workflow builder", link: "/guides/workflow-builder" },
             { text: "Run workflows", link: "/guides/running-workflows" },
+            { text: "Visual Studio Code", link: "/guides/vscode" },
             { text: "Reviews and feedback", link: "/guides/review-and-feedback" },
             { text: "Failure and recovery", link: "/guides/recovery" },
           ],

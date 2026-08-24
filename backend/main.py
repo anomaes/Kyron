@@ -15,6 +15,8 @@ from backend.api.pi_models_routes import router as pi_models_router
 from backend.api.project_routes import router as project_router
 from backend.api.run_routes import router as run_router
 from backend.api.run_routes import websocket_router
+from backend.api.vscode_auth_routes import internal_router as vscode_internal_auth_router
+from backend.api.vscode_auth_routes import router as vscode_auth_router
 from backend.api.webhook_routes import router as webhook_router
 from backend.api.workflow_routes import router as workflow_router
 from backend.config import get_settings
@@ -56,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router, prefix="/api")
     app.include_router(pi_models_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
+    app.include_router(vscode_auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(project_router, prefix="/api")
     app.include_router(credential_router, prefix="/api")
@@ -63,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(run_router, prefix="/api")
     app.include_router(webhook_router, prefix="/api")
     app.include_router(websocket_router, prefix="/api")
+    app.include_router(vscode_internal_auth_router)
     return app
 
 

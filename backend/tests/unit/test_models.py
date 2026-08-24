@@ -7,6 +7,8 @@ def test_complete_domain_tables_are_declared() -> None:
     assert set(Base.metadata.tables) == {
         "users",
         "provider_identities",
+        "vscode_device_authorizations",
+        "vscode_client_sessions",
         "credentials",
         "pi_models_config_revisions",
         "pi_models_config_state",

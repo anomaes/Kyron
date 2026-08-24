@@ -1,5 +1,21 @@
 # Acceptance verification
 
+## VS Code client local record — 2026-08-24
+
+- Ruff and strict MyPy passed across 153 Python source files; 243 backend tests
+  passed and one environment-dependent test was skipped.
+- Device-auth coverage passed for code expiry, one-time exchange, hash-only
+  storage, access/refresh rotation, revocation, identity resolution, model
+  inventory, and API route inventory.
+- Frontend, auth-service, and VS Code extension TypeScript checks and production
+  builds passed. The extension packaged as `kyron-workflows-0.1.0.vsix`.
+- Frontend, auth-service, documentation, and extension dependency audits reported
+  zero vulnerabilities; documentation build and Compose configuration validation
+  passed.
+
+Installation against a deployed Kyron instance and the live provider-review
+handoff remain environment-dependent checks.
+
 ## 1.0-alpha release preparation — 2026-07-21
 
 - Ruff passed and strict MyPy reported no issues across 113 Python source files.
@@ -58,7 +74,11 @@ Run `./scripts/verify.sh` to repeat the repository-local portion of this gate.
   authentication, and feedback actor/approval-reset semantics.
 - Frontend: strict TypeScript check and production Vite build.
 - Auth service: strict TypeScript check and production build.
-- Supply chain: both Node package trees pass `npm audit --audit-level=high`.
+- VS Code extension: strict TypeScript check, production build, and VSIX packaging;
+  backend tests cover device approval, one-time exchange, credential hashing,
+  rotation, revocation, expiry, and route inventory.
+- Supply chain: frontend, auth-service, documentation, and VS Code package trees
+  pass `npm audit --audit-level=high`.
 
 For workflow catalog and visualization changes, additionally verify that tags survive
 definition serialization; catalog search, tag filtering, and grouping agree; composite
@@ -84,6 +104,9 @@ and GitHub:
 - Inspect a database dump, snapshot, engine log, and output metadata for absence
   of decrypted credentials.
 - Validate/adapt the final Caddy configuration and test spoofed identity headers.
+- Install the VSIX, complete browser-approved device pairing, match a workspace
+  remote to a project, trigger a disposable workflow, and verify that a gate opens
+  in the installed provider review extension before its webhook continues the run.
 
 Record the date, operator, provider/version, Pi version, and result for each item in
 the deployment change record.

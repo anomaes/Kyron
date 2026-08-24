@@ -27,6 +27,12 @@ if [ -d auth-service/node_modules ]; then
   npm --prefix auth-service audit --audit-level=high
 fi
 
+if [ -d vscode-extension/node_modules ]; then
+  npm --prefix vscode-extension run check
+  npm --prefix vscode-extension run build
+  npm --prefix vscode-extension audit --audit-level=high
+fi
+
 if [ -d docs/node_modules ]; then
   npm --prefix docs run build
   npm --prefix docs audit --audit-level=high

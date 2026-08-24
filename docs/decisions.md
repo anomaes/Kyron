@@ -109,3 +109,22 @@ may checkpoint locally, but no result branch or change request is published.
 Stored credentials resolve to none unless the trusted workflow explicitly
 selects an allowlist or all. Reports retain the subject identity, checked SHA,
 definition SHA, conclusion, and freshness as separate evidence.
+
+## D-011 — VS Code is a direct client with provider-native review
+
+Accepted. The VS Code extension is an explicit human-operated client of Kyron's
+existing project, workflow, and run APIs. It does not expose an MCP server or ask
+an AI agent to decide when to trigger execution. Workspace selection uses an
+exact code-host and repository-path match from Git remotes, while the backend
+retains all authorization and exact-commit resolution responsibilities.
+
+The extension authenticates with a browser-approved device flow. Access and
+refresh credentials are high-entropy opaque values stored in VS Code
+`SecretStorage`; Kyron stores hashes only, gives access credentials a short
+lifetime, rotates refresh credentials on every use, and supports revocation.
+
+Provider approval is not duplicated in the extension. GitLab Workflow or GitHub
+Pull Requests performs the diff review and provider action, and Kyron consumes
+the authenticated webhook against the gate's snapshotted eligibility and quorum.
+This preserves one authoritative feedback path while allowing the normal user
+journey to remain inside VS Code after initial device authorization.

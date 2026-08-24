@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Callable
 from typing import Any
 
 import yaml
@@ -74,7 +75,10 @@ for first_character, resolvers in list(_DefinitionLoader.yaml_implicit_resolvers
         if tag not in {"tag:yaml.org,2002:bool", "tag:yaml.org,2002:timestamp"}
     ]
 
-_DefinitionLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+add_definition_implicit_resolver: Callable[
+    [str, re.Pattern[str], list[str]], None
+] = _DefinitionLoader.add_implicit_resolver
+add_definition_implicit_resolver(
     "tag:yaml.org,2002:bool",
     re.compile(r"^(?:true|false)$", re.IGNORECASE),
     list("tTfF"),
@@ -99,6 +103,7 @@ _DefinitionDumper.add_representer(str, _represent_string)
 
 def load_definition_yaml(raw: str) -> Any:
     loader = _DefinitionLoader(raw)
+    dispose_loader: Callable[[], None] = loader.dispose
     try:
         return loader.get_single_data()
     except yaml.YAMLError as exc:
@@ -110,7 +115,7 @@ def load_definition_yaml(raw: str) -> Any:
             column=(mark.column + 1) if mark is not None else None,
         ) from exc
     finally:
-        loader.dispose()  # type: ignore[no-untyped-call]
+        dispose_loader()
 
 
 def dump_definition_yaml(value: Any) -> str:
