@@ -27,6 +27,8 @@ services:
     env_file:
       - path: ../${KYRON_ENV_FILE:-.env}
         required: true
+    environment:
+      KYRON_BACKEND_URL: http://backend:8000
     expose:
       - "3001"
     healthcheck:

@@ -31,6 +31,10 @@ The OAuth callback, Caddy host, and provider application URLs must describe the 
 | `SESSION_PREVIOUS_SIGNING_KEY` | Optional previous key during a bounded rotation window |
 | `SESSION_MAX_AGE_SECONDS` | Signed browser session lifetime |
 | `AUTH_USER_TOUCH_INTERVAL_SECONDS` | Minimum interval between durable user metadata refreshes |
+| `VSCODE_DEVICE_CODE_TTL_SECONDS` | Lifetime of a one-time VS Code connection code |
+| `VSCODE_DEVICE_POLL_INTERVAL_SECONDS` | Minimum client polling interval during device authorization |
+| `VSCODE_ACCESS_TOKEN_TTL_SECONDS` | Lifetime of a short-lived VS Code bearer credential |
+| `VSCODE_REFRESH_TOKEN_TTL_DAYS` | Maximum VS Code client-session lifetime without reconnecting |
 
 Generate the two keys independently and back them up through a secret channel separate from the database backup.
 

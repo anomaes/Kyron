@@ -60,6 +60,44 @@ class ProviderIdentity(Base):
     )
 
 
+class VsCodeDeviceAuthorization(Base):
+    __tablename__ = "vscode_device_authorizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    device_code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_code: Mapped[str] = mapped_column(String(9), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider_identity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("provider_identities.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class VsCodeClientSession(Base):
+    __tablename__ = "vscode_client_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    provider_identity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("provider_identities.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    access_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Credential(Base):
     __tablename__ = "credentials"
     __table_args__ = (

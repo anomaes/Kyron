@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     RUN_DATA_USAGE_WARNING_BYTES: int = Field(50 * 1024**3, ge=0)
     FILESYSTEM_USAGE_WARNING_PERCENT: int = Field(85, ge=1, le=100)
     AUTH_USER_TOUCH_INTERVAL_SECONDS: int = Field(300, ge=0)
+    VSCODE_DEVICE_CODE_TTL_SECONDS: int = Field(600, ge=60, le=1800)
+    VSCODE_DEVICE_POLL_INTERVAL_SECONDS: int = Field(3, ge=1, le=30)
+    VSCODE_ACCESS_TOKEN_TTL_SECONDS: int = Field(900, ge=60, le=86400)
+    VSCODE_REFRESH_TOKEN_TTL_DAYS: int = Field(30, ge=1, le=365)
     WORKFLOW_CATALOG_CACHE_TTL_SECONDS: int = Field(30, ge=0)
 
     @field_validator("LOG_LEVEL")

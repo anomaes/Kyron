@@ -7,12 +7,17 @@ page size of 200.
 
 ## Authentication boundary
 
-Caddy removes every incoming `X-Token-*` identity header, verifies the signed
-OAuth session through the auth service, and copies trusted identity headers to
-the backend. Do not publish the backend port or call it through an untrusted
-proxy. `/api/health`, `/api/webhook/gitlab`, and `/api/webhook/github` bypass
-browser OAuth; each webhook authenticates its raw body with provider-specific
-headers and secrets.
+Caddy removes every incoming `X-Token-*` identity header, verifies either the
+signed browser OAuth session or a short-lived VS Code bearer credential through
+the auth service, and copies trusted identity headers to the backend. Do not
+publish the backend port or call it through an untrusted proxy.
+
+The VS Code device-code creation, token exchange, and revocation routes bypass
+browser OAuth because their one-time or rotating opaque credentials authenticate
+the request. Browser approval of a device code remains behind normal OAuth.
+`/api/health`, `/api/webhook/gitlab`, and `/api/webhook/github` also bypass browser
+OAuth; each webhook authenticates its raw body with provider-specific headers and
+secrets.
 
 ## Route inventory
 
@@ -21,6 +26,10 @@ headers and secrets.
 | GET | `/api/health` | Worker and database health |
 | GET | `/api/metrics` | Authenticated Prometheus-format storage metrics |
 | GET | `/api/auth/me` | Current user and active provider identity |
+| POST | `/api/auth/vscode/device` | Create an expiring VS Code device and user code |
+| GET/POST | `/api/auth/vscode/authorize?user_code=…` | Review and approve a device code through browser OAuth |
+| POST | `/api/auth/vscode/token` | Poll a device code or rotate a refresh credential |
+| POST | `/api/auth/vscode/revoke` | Revoke a VS Code client session |
 | GET/PATCH | `/api/admin/users[/{user_id}]` | System-administrator user activation and global-admin management |
 | GET/PUT | `/api/admin/pi-models` | Inspect or activate the versioned global Pi provider configuration |
 | POST | `/api/admin/pi-models/validate` | Validate a proposed provider configuration without saving it |
