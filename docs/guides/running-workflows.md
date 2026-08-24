@@ -26,6 +26,11 @@ for precedence and cross-node output behavior.
 
 The requested ref is useful context; `base_commit_sha` is the reproducibility boundary.
 
+You can perform the same explicit workflow selection and triggering flow from
+the [Kyron extension for Visual Studio Code](/guides/vscode). The extension uses
+the same authorization and run APIs; it does not delegate the decision to an AI
+agent.
+
 ## Read the run list
 
 ![Kyron run history showing multiple durable states](/assets/screenshots/runs.png)

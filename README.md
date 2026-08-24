@@ -58,6 +58,7 @@ It is designed for trusted internal engineering teams that want the speed of cod
 - **Hierarchical Pi configuration** with project and workflow defaults plus per-prompt provider, model, and repository skill overrides.
 - **Durable execution history** covering invocations, waves, node executions, attempts, edge evaluations, feedback, and engine logs.
 - **Live operations UI** with expanded run graphs, nested review iterations, WebSocket logs, Git checkpoint boundaries, and resume/cancel controls.
+- **VS Code workflow client** with device sign-in, Git-aware project matching, typed triggering, run monitoring, logs, and provider-native gate review.
 - **GitLab and GitHub delivery** with provider-bound OAuth identity, repository registration, workflow-definition reviews, run change requests, and authenticated webhooks.
 - **Secret-aware execution** with Fernet-encrypted credentials, just-in-time decryption, in-memory redaction, and write-only API values.
 - **Worktree-confined Pi writes** enforced for Pi and its child processes with a read-only-root Bubblewrap namespace.

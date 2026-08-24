@@ -24,6 +24,19 @@ deployment acceptance activity; they are listed in `docs/acceptance.md`.
 | 7. Operator UI and visual builder | Complete | Strict TypeScript check and Vite production build |
 | 8. OAuth, deployment and hardening | Complete | Auth build, audits, three image builds, Compose/Caddy validation |
 | 9. Dual code-host providers | Complete | Provider architecture, legacy migration, 66 backend tests, frontend/auth builds |
+| 10. VS Code workflow client | Complete | Device-auth tests, strict extension build, packaged VSIX, and client guide |
+
+## Milestone 10 — VS Code workflow client
+
+Add a human-operated editor client for secure device sign-in, Git-aware project
+selection, workflow discovery and typed triggering, run monitoring and control,
+and provider-native review handoff. Preserve the existing backend authorization,
+exact-commit snapshot, and webhook-driven gate boundaries rather than adding a
+second execution or approval path.
+
+Verification gate: device codes and opaque token rotation/revocation have focused
+tests; backend, auth-service, and extension type checks pass; the extension packages
+as a VSIX; documentation and Compose routing describe the new authentication flow.
 
 ## Milestone 9 — Dual code-host providers
 

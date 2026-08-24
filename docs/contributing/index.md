@@ -35,6 +35,10 @@ npm --prefix frontend run build
 npm --prefix auth-service ci
 npm --prefix auth-service run check
 npm --prefix auth-service run build
+
+npm --prefix vscode-extension ci
+npm --prefix vscode-extension run check
+npm --prefix vscode-extension run build
 ```
 
 ## Documentation site
@@ -103,6 +107,7 @@ State-machine changes require tests.
 | GitLab/GitHub adapters | `backend/integrations/` |
 | Operator UI | `frontend/src/` |
 | OAuth boundary | `auth-service/src/` |
+| VS Code client | `vscode-extension/src/` |
 | Deployment | `deploy/` |
 | Product and architecture docs | `docs/` and the root normative specification |
 

@@ -1,0 +1,203 @@
+{
+  "name": "kyron-workflows",
+  "displayName": "Kyron Workflows",
+  "description": "Trigger and monitor trusted Kyron workflows from Visual Studio Code.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "kyron",
+  "license": "LicenseRef-PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anomaes/Kyron.git",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "workflow",
+    "gitlab",
+    "github",
+    "orchestration"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:kyron.workflows",
+    "onView:kyron.runs",
+    "onCommand:kyron.connect",
+    "onCommand:kyron.runWorkflow"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.1",
+    "@types/vscode": "1.92.0",
+    "@vscode/vsce": "3.6.2",
+    "typescript": "5.7.3"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "kyron.connect",
+        "title": "Connect to Kyron",
+        "category": "Kyron",
+        "icon": "$(account)"
+      },
+      {
+        "command": "kyron.disconnect",
+        "title": "Disconnect from Kyron",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.selectProject",
+        "title": "Select Project",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.runWorkflow",
+        "title": "Run Workflow",
+        "category": "Kyron",
+        "icon": "$(play)"
+      },
+      {
+        "command": "kyron.refresh",
+        "title": "Refresh",
+        "category": "Kyron",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kyron.showRun",
+        "title": "Show Run Details",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.showRunLogs",
+        "title": "Show Run Logs",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.reviewGate",
+        "title": "Review Current Gate",
+        "category": "Kyron",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "kyron.openRunInBrowser",
+        "title": "Open Run in Kyron",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.cancelRun",
+        "title": "Cancel Run",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.resumeRun",
+        "title": "Resume Run",
+        "category": "Kyron"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kyron",
+          "title": "Kyron",
+          "icon": "media/kyron.svg"
+        }
+      ]
+    },
+    "views": {
+      "kyron": [
+        {
+          "id": "kyron.workflows",
+          "name": "Workflows"
+        },
+        {
+          "id": "kyron.runs",
+          "name": "Runs"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "kyron.workflows",
+        "contents": "Connect this workspace to Kyron.\n[Connect to Kyron](command:kyron.connect)",
+        "when": "!kyron.connected"
+      },
+      {
+        "view": "kyron.workflows",
+        "contents": "No Kyron project is selected for this workspace.\n[Select project](command:kyron.selectProject)",
+        "when": "kyron.connected && !kyron.projectSelected"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "kyron.runWorkflow",
+          "when": "view == kyron.workflows && kyron.projectSelected && kyron.canTrigger",
+          "group": "navigation"
+        },
+        {
+          "command": "kyron.refresh",
+          "when": "view == kyron.workflows || view == kyron.runs",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "kyron.runWorkflow",
+          "when": "view == kyron.workflows && viewItem == kyronWorkflow && kyron.canTrigger",
+          "group": "inline"
+        },
+        {
+          "command": "kyron.reviewGate",
+          "when": "view == kyron.runs && viewItem == kyronRunAwaitingFeedback",
+          "group": "inline"
+        },
+        {
+          "command": "kyron.showRunLogs",
+          "when": "view == kyron.runs",
+          "group": "navigation"
+        },
+        {
+          "command": "kyron.openRunInBrowser",
+          "when": "view == kyron.runs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kyron.cancelRun",
+          "when": "view == kyron.runs && (viewItem == kyronRunActive || viewItem == kyronRunAwaitingFeedback)",
+          "group": "navigation@3"
+        },
+        {
+          "command": "kyron.resumeRun",
+          "when": "view == kyron.runs && viewItem == kyronRunResumable",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kyron",
+      "properties": {
+        "kyron.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Kyron deployment, for example https://kyron.example.internal."
+        },
+        "kyron.pollIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 3,
+          "maximum": 120,
+          "description": "How often to refresh active runs while Kyron is connected."
+        }
+      }
+    }
+  }
+}
