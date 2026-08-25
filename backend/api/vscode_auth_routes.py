@@ -81,7 +81,9 @@ async def show_device_authorization(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     safe_code = html.escape(pending.user_code)
     safe_user = html.escape(user.display_name)
-    form_action = f"/api/auth/vscode/authorize?user_code={quote(pending.user_code)}"
+    # Keep the action relative so deployments mounted below a URL prefix (for
+    # example, /kyron) submit back through the same public ingress path.
+    form_action = f"?user_code={quote(pending.user_code)}"
     content = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Connect VS Code to Kyron</title>
