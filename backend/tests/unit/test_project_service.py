@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,58 @@ from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
 from backend.services.crypto import SecretCipher
 from backend.services.project_service import ProjectService
+
+
+async def test_fetch_reclones_a_missing_repository(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone_root = tmp_path / "repos"
+    worktree_root = tmp_path / "worktrees"
+    run_data_root = tmp_path / "run-data"
+    project_id = uuid.uuid4()
+    clone = clone_root / str(project_id)
+    user = User(id=uuid.uuid4(), email="restore@example.com", display_name="Restore")
+    key = Fernet.generate_key()
+    cipher = SecretCipher(key)
+    project = Project(
+        id=project_id,
+        name="Restore",
+        git_url="https://github.example/acme/restore.git",
+        provider="github",
+        provider_project_id="43",
+        provider_project_path="acme/restore",
+        encrypted_access_token=cipher.encrypt("provider-token"),
+        token_key_version=cipher.key_version,
+        local_path=str(clone),
+        default_branch="main",
+        added_by=user.id,
+    )
+    db_session.add_all([user, project])
+    await db_session.commit()
+    settings = Settings(
+        PROJECT_CLONE_BASE_PATH=clone_root,
+        WORKTREE_BASE_PATH=worktree_root,
+        RUN_DATA_BASE_PATH=run_data_root,
+        CREDENTIALS_ENCRYPTION_KEY=key.decode(),
+        _env_file=None,
+    )
+    git = GitManager(clone_root, worktree_root, run_data_root)
+    clone_repository = AsyncMock()
+    fetch_repository = AsyncMock()
+    resolve_remote_sha = AsyncMock(return_value="a" * 40)
+    monkeypatch.setattr(git, "clone", clone_repository)
+    monkeypatch.setattr(git, "fetch", fetch_repository)
+    monkeypatch.setattr(git, "resolve_remote_sha", resolve_remote_sha)
+    service = ProjectService(db_session, settings, cipher, git)
+
+    commit_sha = await service.fetch(project.id)
+
+    assert commit_sha == "a" * 40
+    clone_repository.assert_awaited_once_with(
+        project.git_url, clone, "provider-token", username="x-access-token"
+    )
+    fetch_repository.assert_not_awaited()
+    resolve_remote_sha.assert_awaited_once_with(clone, "main")
 
 
 async def test_delete_removes_clone_and_local_definition_changes(

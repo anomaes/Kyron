@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -103,13 +105,20 @@ class ProjectService:
     async def fetch(self, project_id: uuid.UUID) -> str:
         project = await self.get(project_id)
         token = self.cipher.decrypt(project.encrypted_access_token)
+        local_path = Path(project.local_path)
         async with project_git_locks.for_project(project.id):
-            await self.git.fetch(
-                Path(project.local_path), token, username=git_username(project.provider)
-            )
-            return await self.git.resolve_remote_sha(
-                Path(project.local_path), project.default_branch
-            )
+            if await asyncio.to_thread(os.path.lexists, local_path):
+                await self.git.fetch(
+                    local_path, token, username=git_username(project.provider)
+                )
+            else:
+                await self.git.clone(
+                    project.git_url,
+                    local_path,
+                    token,
+                    username=git_username(project.provider),
+                )
+            return await self.git.resolve_remote_sha(local_path, project.default_branch)
 
     async def validate(self, project_id: uuid.UUID) -> dict[str, str | bool]:
         project = await self.get(project_id)

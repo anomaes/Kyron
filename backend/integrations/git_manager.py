@@ -346,7 +346,18 @@ class GitManager:
     async def remove_worktree(
         self, repository_path: Path, worktree: Path, branch: str | None = None
     ) -> None:
-        self.assert_beneath(worktree, self.worktree_base_path)
+        worktree = self.assert_beneath(worktree, self.worktree_base_path)
+        if not await asyncio.to_thread(os.path.lexists, repository_path):
+            if await asyncio.to_thread(os.path.lexists, worktree):
+                if await asyncio.to_thread(worktree.is_dir) and not await asyncio.to_thread(
+                    worktree.is_symlink
+                ):
+                    await asyncio.to_thread(shutil.rmtree, worktree)
+                else:
+                    await asyncio.to_thread(worktree.unlink)
+            if await asyncio.to_thread(os.path.lexists, worktree):
+                raise GitError(f"Worktree still exists after removal: {worktree}")
+            return
         if await asyncio.to_thread(os.path.lexists, worktree):
             await self.run(
                 ["worktree", "remove", "--force", str(worktree)],

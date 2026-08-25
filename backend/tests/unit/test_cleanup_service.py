@@ -207,6 +207,59 @@ async def test_inactive_run_deletion_removes_local_resources_and_record(
     assert not output.exists()
 
 
+async def test_run_deletion_succeeds_when_container_storage_is_already_missing(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    clone_root = tmp_path / "repos"
+    worktree_root = tmp_path / "worktrees"
+    output_root = tmp_path / "run-data"
+    user = User(id=uuid.uuid4(), email="lost@example.com", display_name="Lost storage")
+    project = Project(
+        id=uuid.uuid4(),
+        name="Lost storage",
+        git_url="https://gitlab.example/group/lost.git",
+        provider="gitlab",
+        provider_project_id="lost",
+        provider_project_path="group/lost",
+        encrypted_access_token=b"ciphertext",
+        local_path=str(clone_root / "missing-project"),
+        default_branch="main",
+        added_by=user.id,
+    )
+    run = WorkflowRun(
+        id=uuid.uuid4(),
+        root_workflow_id="lost",
+        project_id=project.id,
+        triggered_by=user.id,
+        status=RunStatus.FAILED,
+        base_ref="main",
+        base_commit_sha="a" * 40,
+        workflow_definition_commit_sha="a" * 40,
+        workflow_bundle_snapshot={},
+        public_context={},
+        worktree_path=str(worktree_root / str(uuid.uuid4())),
+        run_data_path=str(output_root / str(uuid.uuid4())),
+        branch_name="workflow/lost",
+        reviewer_provider="gitlab",
+        reviewer_provider_user_id="lost",
+        reviewer_provider_username="lost",
+    )
+    db_session.add_all([user, project, run])
+    await db_session.commit()
+
+    cleanup = CleanupService(
+        db_session,
+        GitManager(clone_root, worktree_root, output_root),
+        ProcessRegistry(),
+        TaskRegistry(1),
+        0,
+    )
+    await cleanup.delete_run(run.id)
+    await db_session.commit()
+
+    assert await db_session.get(WorkflowRun, run.id) is None
+
+
 async def test_active_run_cannot_be_deleted(db_session: AsyncSession, tmp_path: Path) -> None:
     user = User(id=uuid.uuid4(), email="active@example.com", display_name="Active")
     project = Project(
