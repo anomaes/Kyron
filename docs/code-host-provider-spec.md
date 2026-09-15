@@ -74,8 +74,10 @@ The unauthenticated webhook endpoints are:
 - `POST /api/webhook/gitlab`
 - `POST /api/webhook/github`
 
-GitLab retains token/optional Standard Webhooks signature validation. GitHub
-requires `X-Hub-Signature-256` HMAC-SHA256 validation over the raw request body.
+Kyron resolves the project from the provider repository ID before business processing.
+GitLab validates the token and optional Standard Webhooks signature with that project's
+encrypted secrets. GitHub validates `X-Hub-Signature-256` HMAC-SHA256 over the raw
+request body with the matching project secret.
 `X-GitHub-Delivery` is the delivery identifier and `X-GitHub-Event` is the event
 name.
 
@@ -110,19 +112,19 @@ not create a session.
 
 ## Configuration
 
-GitLab configuration remains `GITLAB_URL`, `GITLAB_WEBHOOK_SECRET`,
-`GITLAB_OAUTH_CLIENT_ID`, and `GITLAB_OAUTH_CLIENT_SECRET`. GitHub configuration is
-`GITHUB_API_URL`, `GITHUB_WEB_URL`, `GITHUB_WEBHOOK_SECRET`,
-`GITHUB_OAUTH_CLIENT_ID`, and `GITHUB_OAUTH_CLIENT_SECRET`. A provider appears on
-the sign-in page only when both of its OAuth values are configured.
+GitLab deployment configuration consists of `GITLAB_URL`, `GITLAB_OAUTH_CLIENT_ID`,
+and `GITLAB_OAUTH_CLIENT_SECRET`. GitHub deployment configuration consists of
+`GITHUB_API_URL`, `GITHUB_WEB_URL`, `GITHUB_OAUTH_CLIENT_ID`, and
+`GITHUB_OAUTH_CLIENT_SECRET`. Webhook secrets are encrypted per-project settings. A
+provider appears on the sign-in page only when both of its OAuth values are configured.
 
 The shared `OAUTH_REDIRECT_URI` must point to `/auth/callback`. Legacy
 `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` remain GitLab fallbacks for one release.
 
 ## API and UI behavior
 
-Project registration requires `provider`, `provider_project`, HTTPS clone URL, and
-an access token. `provider_project` is a GitLab numeric project ID/path or a GitHub
+Project registration requires `provider`, `provider_project`, HTTPS clone URL, an
+access token, and a webhook secret. `provider_project` is a GitLab numeric project ID/path or a GitHub
 `owner/repository` path. The backend persists canonical metadata returned by the
 provider.
 

@@ -69,6 +69,13 @@ class ProjectService:
                 provider_project_path=metadata.path,
                 encrypted_access_token=self.cipher.encrypt(token),
                 token_key_version=self.cipher.key_version,
+                encrypted_webhook_secret=self.cipher.encrypt(request.webhook_secret),
+                encrypted_webhook_signing_secret=(
+                    self.cipher.encrypt(request.webhook_signing_secret)
+                    if request.webhook_signing_secret
+                    else None
+                ),
+                webhook_secret_key_version=self.cipher.key_version,
                 local_path=str(local_path),
                 default_branch=default_branch,
                 pi=request.pi.model_dump(mode="json", exclude_none=True),
@@ -93,6 +100,27 @@ class ProjectService:
             )
         project.encrypted_access_token = self.cipher.encrypt(token)
         project.token_key_version = self.cipher.key_version
+        await self.session.flush()
+        return project
+
+    async def replace_webhook_secret(
+        self,
+        project_id: uuid.UUID,
+        webhook_secret: str,
+        webhook_signing_secret: str | None,
+        clear_webhook_signing_secret: bool = False,
+    ) -> Project:
+        project = await self.get(project_id)
+        if project.provider != "gitlab" and (
+            webhook_signing_secret or clear_webhook_signing_secret
+        ):
+            raise ValueError("Webhook signing secrets are supported only for GitLab projects")
+        project.encrypted_webhook_secret = self.cipher.encrypt(webhook_secret)
+        if webhook_signing_secret:
+            project.encrypted_webhook_signing_secret = self.cipher.encrypt(webhook_signing_secret)
+        elif clear_webhook_signing_secret:
+            project.encrypted_webhook_signing_secret = None
+        project.webhook_secret_key_version = self.cipher.key_version
         await self.session.flush()
         return project
 

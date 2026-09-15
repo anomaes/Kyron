@@ -27,7 +27,7 @@ recovery are active.
 Configure GitLab webhooks for merge-request and note events at
 `/api/webhook/gitlab`. Configure GitHub webhooks for pull requests, pull-request
 reviews, and issue comments at `/api/webhook/github`; GitHub must send JSON and
-use `GITHUB_WEBHOOK_SECRET`. The GitHub project token needs repository contents
+use the webhook secret configured on the matching Kyron project. The GitHub project token needs repository contents
 and pull-request write access. Its bot/app identity must also be allowed to
 dismiss pull-request reviews so Kyron can consume intermediate approval.
 

@@ -48,7 +48,9 @@ Create a project webhook at:
 https://kyron.example.com/api/webhook/gitlab
 ```
 
-Subscribe to merge-request and note events. Set the same shared token as `GITLAB_WEBHOOK_SECRET`. If Standard Webhooks signing is used, also configure `GITLAB_WEBHOOK_SIGNING_SECRET`.
+Subscribe to merge-request and note events. Copy the project's webhook secret from
+Kyron's Projects page into GitLab's secret-token field. If Standard Webhooks signing is
+used, store its signing secret with the project and configure the same value in GitLab.
 
 ## GitHub setup
 
@@ -73,7 +75,9 @@ Subscribe to:
 - pull-request reviews; and
 - issue comments.
 
-Set the webhook secret to `GITHUB_WEBHOOK_SECRET`. Kyron validates `X-Hub-Signature-256` over the raw request body and uses `X-GitHub-Delivery` for deduplication.
+Copy the project's webhook secret from Kyron's Projects page into GitHub's secret field.
+Kyron resolves the repository project and validates `X-Hub-Signature-256` over the raw
+request body with that project's secret. `X-GitHub-Delivery` is used for deduplication.
 
 ## Protected branches
 

@@ -30,8 +30,8 @@ async def test_fetch_reclones_a_missing_repository(
     project = Project(
         id=project_id,
         name="Restore",
-        git_url="https://github.example/acme/restore.git",
-        provider="github",
+        git_url="https://gitlab.example/acme/restore.git",
+        provider="gitlab",
         provider_project_id="43",
         provider_project_path="acme/restore",
         encrypted_access_token=cipher.encrypt("provider-token"),
@@ -58,11 +58,36 @@ async def test_fetch_reclones_a_missing_repository(
     monkeypatch.setattr(git, "resolve_remote_sha", resolve_remote_sha)
     service = ProjectService(db_session, settings, cipher, git)
 
+    updated = await service.replace_webhook_secret(
+        project.id,
+        "project-webhook-secret",
+        "project-signing-secret",
+    )
+    assert updated.encrypted_webhook_secret != b"project-webhook-secret"
+    assert cipher.decrypt(updated.encrypted_webhook_secret or b"") == "project-webhook-secret"
+    assert cipher.decrypt(updated.encrypted_webhook_signing_secret or b"") == (
+        "project-signing-secret"
+    )
+    assert updated.webhook_secret_key_version == cipher.key_version
+
+    await service.replace_webhook_secret(project.id, "rotated-webhook-secret", None)
+    assert cipher.decrypt(updated.encrypted_webhook_signing_secret or b"") == (
+        "project-signing-secret"
+    )
+
+    await service.replace_webhook_secret(
+        project.id,
+        "rotated-webhook-secret",
+        None,
+        clear_webhook_signing_secret=True,
+    )
+    assert updated.encrypted_webhook_signing_secret is None
+
     commit_sha = await service.fetch(project.id)
 
     assert commit_sha == "a" * 40
     clone_repository.assert_awaited_once_with(
-        project.git_url, clone, "provider-token", username="x-access-token"
+        project.git_url, clone, "provider-token", username="oauth2"
     )
     fetch_repository.assert_not_awaited()
     resolve_remote_sha.assert_awaited_once_with(clone, "main")

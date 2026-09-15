@@ -354,6 +354,9 @@ Credential values are never copied into another database table.
 | `gitlab_project_id` | BIGINT UNIQUE | GitLab project ID |
 | `encrypted_access_token` | BYTEA | Project access token ciphertext |
 | `token_key_version` | INTEGER | Encryption-key version |
+| `encrypted_webhook_secret` | BYTEA | Project webhook token/HMAC secret ciphertext |
+| `encrypted_webhook_signing_secret` | BYTEA NULL | Optional GitLab Standard Webhooks signing-secret ciphertext |
+| `webhook_secret_key_version` | INTEGER | Encryption-key version for webhook secrets |
 | `local_path` | TEXT UNIQUE | Bare/shared clone path |
 | `default_branch` | VARCHAR(255) | Cached project default branch |
 | `pi` | JSONB | Project-wide Pi provider, model, and repository skill defaults |
@@ -1889,7 +1892,13 @@ the REST run and report endpoints.
 
 ## 12.6 Webhook Authentication
 
-At minimum, verify the configured `X-Gitlab-Token` using constant-time comparison.
+Webhook secrets are project-scoped. Parse only the bounded repository identity from the
+untrusted JSON body, resolve the matching `(provider, provider_project_id)` project, and
+verify the delivery against that project's decrypted secret before reserving a delivery
+or performing business processing. Unknown projects and projects without a configured
+secret fail with the same authentication response.
+
+For GitLab, verify `X-Gitlab-Token` using constant-time comparison.
 
 When the GitLab instance supports Standard Webhooks signing, support optional verification of:
 
@@ -1903,7 +1912,8 @@ The signed message format is:
 <webhook-id>.<webhook-timestamp>.<raw-request-body>
 ```
 
-The system may initially use `X-Gitlab-Token`, but webhook delivery idempotency must still be implemented.
+GitHub verifies `X-Hub-Signature-256` over the unchanged raw body using the resolved
+project's secret. Webhook delivery idempotency remains mandatory.
 
 ---
 
@@ -2022,6 +2032,7 @@ POST   /api/projects
 GET    /api/projects/{project_id}
 DELETE /api/projects/{project_id}
 PUT    /api/projects/{project_id}/token
+PUT    /api/projects/{project_id}/webhook-secret
 PUT    /api/projects/{project_id}/pi
 POST   /api/projects/{project_id}/fetch
 POST   /api/projects/{project_id}/validate
@@ -2034,8 +2045,11 @@ GET    /api/projects/{project_id}/workflows
 {
   "name": "Example project",
   "git_url": "https://code.example.com/group/repo.git",
-  "gitlab_project_id": 123,
+  "provider": "gitlab",
+  "provider_project": "group/repo",
   "access_token": "glpat-...",
+  "webhook_secret": "high-entropy-project-secret",
+  "webhook_signing_secret": null,
   "default_branch": "main",
   "pi": {
     "provider": "anthropic",
@@ -2053,7 +2067,11 @@ Registration validation:
 4. Verify token can create or update a temporary branch if a non-destructive capability test is enabled.
 5. Verify token represents a bot user if approval reset is required.
 6. Clone repository.
-7. Store encrypted token only after validation succeeds.
+7. Store the encrypted project token and webhook secrets only after validation succeeds.
+
+The webhook-secret update is write-only and requires `project.manage`. It replaces the
+primary project secret; the optional GitLab signing secret is preserved unless the request
+explicitly replaces or clears it. Read responses expose only configured indicators.
 
 ## 14.4 Credentials
 
@@ -2299,10 +2317,11 @@ Terminal event:
 }
 ```
 
-## 14.11 GitLab Webhook
+## 14.11 Provider Webhooks
 
 ```text
 POST /api/webhook/gitlab
+POST /api/webhook/github
 ```
 
 The raw body must be retained until authentication/signature verification completes.
@@ -2809,14 +2828,16 @@ Atomic run state transitions remain necessary even with delivery deduplication b
 @app.post("/api/webhook/gitlab")
 async def gitlab_webhook(request: Request):
     raw_body = await request.body()
-    verify_gitlab_webhook(request.headers, raw_body)
+    payload = parse_bounded_json(raw_body)
+    project = await projects.by_provider_id("gitlab", payload["project"]["id"])
+    verify_gitlab_webhook(request.headers, raw_body, project.webhook_secret)
 
     delivery_key = get_delivery_key(request.headers)
-    delivery = await webhook_repo.try_begin(delivery_key, request.headers)
+    delivery = await webhook_repo.try_begin(
+        delivery_key, request.headers, provider_project_id=project.provider_project_id
+    )
     if not delivery.created:
         return delivery.previous_result or {"status": "duplicate"}
-
-    payload = json.loads(raw_body)
 
     try:
         result = await route_gitlab_event(payload)
@@ -3067,6 +3088,7 @@ Display:
 - GitLab project ID.
 - Default branch.
 - Token configured indicator.
+- Webhook-secret configured indicator.
 - Added by.
 - Last fetch result.
 - Project-wide Pi provider, model, and skill defaults.
@@ -3077,6 +3099,8 @@ Actions:
 - Validate project and token.
 - Fetch latest.
 - Update token.
+- Copy the webhook endpoint and generate or replace the project webhook secret.
+- Configure or clear the optional GitLab Standard Webhooks signing secret.
 - Update Pi defaults.
 - View workflows.
 - Remove project.
@@ -3528,11 +3552,8 @@ POSTGRES_PASSWORD=<secret>
 CREDENTIALS_ENCRYPTION_KEY=<fernet-key>
 CREDENTIALS_ENCRYPTION_KEY_VERSION=1
 
-# GitLab
+# Code-host endpoints and OAuth credentials
 GITLAB_URL=https://gitlab.example.com
-GITLAB_WEBHOOK_SECRET=<secret>
-# Optional on supported GitLab versions:
-GITLAB_WEBHOOK_SIGNING_SECRET=
 
 # Paths
 PROJECT_CLONE_BASE_PATH=/var/workflowengine/repos

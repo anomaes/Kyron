@@ -62,7 +62,9 @@ Caddy is the only public service. It:
 
 Never publish backend, auth-service, or PostgreSQL ports. A client that can reach the backend directly may forge trusted headers.
 
-The health and webhook endpoints bypass browser OAuth for their intended protocols. Each webhook authenticates its raw body with provider-specific secrets.
+The health and webhook endpoints bypass browser OAuth for their intended protocols. Each
+webhook resolves its repository project and authenticates the raw body with that
+project's encrypted secret.
 
 ## Provider affinity
 

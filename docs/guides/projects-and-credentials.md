@@ -17,11 +17,18 @@ Open **Projects** and choose **Add project**. Supply:
 | Provider project | GitLab project ID/path or GitHub `owner/repository` |
 | Clone URL | HTTPS repository URL without username, token, or embedded credentials |
 | Access token | Write-only token used for Git and provider API operations |
+| Webhook secret | Project-scoped secret used to authenticate repository webhook deliveries |
+| Standard Webhooks signing secret | Optional GitLab signing secret when the instance supports signed Standard Webhooks |
 | Pi defaults | Optional provider, model, and repository-relative skill used by prompt nodes |
 
 Kyron asks the provider for canonical repository metadata. It does not trust a user-provided display name or project identity when the provider can supply one.
 
 The token needs enough access to fetch and push repository contents, create and update a change request, request reviewers, post comments, and consume intermediate approval. Exact provider guidance is in [GitLab and GitHub setup](/deployment/providers).
+
+Kyron generates a high-entropy webhook secret in the registration form. Copy it into the
+repository webhook configuration before saving the project. The secret belongs to the
+project, applies to deliveries for every user of that project, and is never injected into
+workflow processes.
 
 ::: danger Authenticated URLs are forbidden
 Never paste `https://user:token@host/repository.git`. Kyron constructs authenticated Git access in memory for each operation and must never persist or log the result.
@@ -32,6 +39,18 @@ Never paste `https://user:token@host/repository.git`. Kyron constructs authentic
 Use **Validate** after changing provider permissions. Validation checks repository identity and the operations Kyron needs. **Fetch** updates and prunes the local clone. If the clone is missing, Fetch reconstructs it from the configured remote. It does not alter an existing run's pinned commit or workflow snapshot.
 
 Replacing a project token is a write-only operation. The old plaintext is not returned by the API or UI.
+
+## Configure or rotate a project webhook
+
+Choose **Webhook** on a project card to view its endpoint and generate a replacement
+secret. Copy the replacement into the repository webhook configuration as part of the
+same operation: deliveries using the previous value fail authentication as soon as the
+new value is saved.
+
+GitLab projects may also store an optional Standard Webhooks signing secret. GitHub uses
+the project webhook secret to validate `X-Hub-Signature-256` over the raw request body.
+Project administrators can replace these write-only values; other project members share
+the resulting webhook integration without storing their own copies.
 
 ## Configure Pi defaults
 
@@ -114,7 +133,7 @@ This reduces exposure but does not make untrusted workflow code safe. A maliciou
 
 ## Rotation
 
-Replace credentials with the **Edit** action and replace project tokens through their
-write-only update actions. To rotate the master Fernet key, follow the controlled
+Replace credentials with the **Edit** action. Project access tokens and webhook secrets
+have separate write-only replacement actions on the Projects page. To rotate the master Fernet key, follow the controlled
 procedure in the [operations runbook](/operations); replacing it without re-encrypting
 existing values makes those credentials unreadable.

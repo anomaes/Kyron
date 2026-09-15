@@ -180,8 +180,10 @@ Update `.env` with:
 - `APP_HOST` and enabled provider URLs;
 - OAuth client ID, secret, and the exact HTTPS callback URL for `APP_HOST` ending in `/auth/callback`;
 - the generated Fernet and session-signing keys;
-- webhook secrets; and
 - the same database password in `POSTGRES_PASSWORD` and `DATABASE_URL`.
+
+Each project stores its own encrypted webhook secret. The Projects page generates the
+value to copy into the matching GitLab or GitHub webhook configuration.
 
 For GitHub, subscribe the webhook to pull requests, pull-request reviews, and
 issue comments. The repository token needs contents and pull-request write

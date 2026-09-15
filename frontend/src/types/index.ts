@@ -107,6 +107,9 @@ export type Project = {
   created_at: string;
   updated_at: string;
   token_configured: boolean;
+  webhook_secret_configured: boolean;
+  webhook_signing_secret_configured: boolean;
+  can_manage: boolean;
 };
 
 export type Credential = {

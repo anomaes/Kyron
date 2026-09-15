@@ -16,9 +16,12 @@ SHARED_ENV_KEYS = {
     "APP_HOST",
     "GITHUB_OAUTH_CLIENT_ID",
     "GITHUB_OAUTH_CLIENT_SECRET",
+    "GITHUB_WEBHOOK_SECRET",
     "GITHUB_WEB_URL",
     "GITLAB_OAUTH_CLIENT_ID",
     "GITLAB_OAUTH_CLIENT_SECRET",
+    "GITLAB_WEBHOOK_SECRET",
+    "GITLAB_WEBHOOK_SIGNING_SECRET",
     "OAUTH_REDIRECT_URI",
     "PI_VERSION",
     "POSTGRES_PASSWORD",
@@ -53,10 +56,7 @@ class Settings(BaseSettings):
     CREDENTIALS_ENCRYPTION_KEY_VERSION: int = Field(1, ge=1)
 
     GITLAB_URL: HttpUrl = HttpUrl("https://gitlab.com")
-    GITLAB_WEBHOOK_SECRET: str = ""
-    GITLAB_WEBHOOK_SIGNING_SECRET: str = ""
     GITHUB_API_URL: HttpUrl = HttpUrl("https://api.github.com")
-    GITHUB_WEBHOOK_SECRET: str = ""
 
     PROJECT_CLONE_BASE_PATH: Path = Path("/var/workflowengine/repos")
     WORKTREE_BASE_PATH: Path = Path("/var/workflowengine/worktrees")

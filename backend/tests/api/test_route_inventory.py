@@ -28,6 +28,7 @@ def test_required_http_and_websocket_routes_are_registered() -> None:
         "/api/projects/{project_id}/governance-profiles",
         "/api/projects",
         "/api/projects/{project_id}/pi",
+        "/api/projects/{project_id}/webhook-secret",
         "/api/projects/{project_id}/workflows",
         "/api/projects/{project_id}/workflows/validate",
         "/api/projects/{project_id}/workflows/templates",

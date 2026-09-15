@@ -44,15 +44,16 @@ Generate the two keys independently and back them up through a secret channel se
 | --- | --- |
 | `GITLAB_URL` | GitLab web root |
 | `GITLAB_OAUTH_CLIENT_ID` / `GITLAB_OAUTH_CLIENT_SECRET` | GitLab OAuth application |
-| `GITLAB_WEBHOOK_SECRET` | Shared token for GitLab webhook authentication |
-| `GITLAB_WEBHOOK_SIGNING_SECRET` | Optional Standard Webhooks signature secret |
 | `GITHUB_WEB_URL` | GitHub or GHES web root |
 | `GITHUB_API_URL` | GitHub REST API root |
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth application |
-| `GITHUB_WEBHOOK_SECRET` | HMAC secret for `X-Hub-Signature-256` |
 | `OAUTH_REDIRECT_URI` | Exact shared callback ending in `/auth/callback` |
 
 A provider is enabled on the sign-in page only when both its OAuth ID and secret are present. See [provider setup](/deployment/providers).
+
+Webhook secrets are encrypted project settings managed from the Projects page. They are
+not deployment environment variables and do not need to be copied into Kubernetes Secrets
+or container environment files.
 
 ## Filesystem roots
 

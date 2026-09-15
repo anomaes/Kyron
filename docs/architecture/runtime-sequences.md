@@ -109,7 +109,8 @@ sequenceDiagram
 
     Reviewer->>Host: Approve, comment or request changes
     Host->>Webhook: Signed webhook delivery
-    Webhook->>Webhook: Verify signature and deduplicate delivery
+    Webhook->>DB: Resolve project from provider repository ID
+    Webhook->>Webhook: Verify with project secret and deduplicate delivery
     Webhook->>DB: Match provider identity to gate snapshot and permission
     Webhook->>DB: Append decision/feedback evidence
 

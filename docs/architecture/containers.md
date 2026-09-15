@@ -65,8 +65,8 @@ Three endpoint classes intentionally bypass browser OAuth:
 | Route | Reason | Authentication |
 | --- | --- | --- |
 | `/api/health` | Container and operator health checks | No browser identity; returns bounded health state |
-| `/api/webhook/gitlab` | GitLab event delivery | GitLab token and optional Standard Webhooks signature |
-| `/api/webhook/github` | GitHub event delivery | GitHub HMAC signature over the raw body |
+| `/api/webhook/gitlab` | GitLab event delivery | Project webhook token and optional project Standard Webhooks signature |
+| `/api/webhook/github` | GitHub event delivery | Project HMAC secret over the raw body |
 
 Backend, auth-service, and PostgreSQL ports are internal only. Direct access to the backend would bypass the trusted-header boundary and permit identity forgery.
 

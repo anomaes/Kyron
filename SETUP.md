@@ -268,11 +268,9 @@ openssl rand -hex 48
 # POSTGRES_PASSWORD (also used inside DATABASE_URL)
 openssl rand -hex 24
 
-# One independent value for each enabled provider's webhook secret
-openssl rand -hex 32
 ```
 
-Do not reuse the session, database, webhook, or credential-encryption keys. Keep
+Do not reuse the session, database, or credential-encryption keys. Keep
 an encrypted copy of `.env` in a separate secret manager or backup system. If
 `CREDENTIALS_ENCRYPTION_KEY` is lost, credentials stored by Kyron cannot be
 recovered from the database.
@@ -322,8 +320,6 @@ For GitLab:
 GITLAB_URL=https://gitlab.example.com
 GITLAB_OAUTH_CLIENT_ID=<GITLAB_CLIENT_ID>
 GITLAB_OAUTH_CLIENT_SECRET=<GITLAB_CLIENT_SECRET>
-GITLAB_WEBHOOK_SECRET=<INDEPENDENT_GITLAB_WEBHOOK_TOKEN>
-GITLAB_WEBHOOK_SIGNING_SECRET=
 ```
 
 For public GitHub:
@@ -333,18 +329,14 @@ GITHUB_WEB_URL=https://github.com
 GITHUB_API_URL=https://api.github.com
 GITHUB_OAUTH_CLIENT_ID=<GITHUB_CLIENT_ID>
 GITHUB_OAUTH_CLIENT_SECRET=<GITHUB_CLIENT_SECRET>
-GITHUB_WEBHOOK_SECRET=<INDEPENDENT_GITHUB_WEBHOOK_SECRET>
 ```
 
-For a provider that is not enabled, leave all of its OAuth values and webhook
-secrets empty. Do not retain `replace-me`: the auth service treats non-empty
+For a provider that is not enabled, leave all of its OAuth values empty. Do not retain `replace-me`: the auth service treats non-empty
 placeholder client values as an enabled provider.
 
 ```dotenv
 GITLAB_OAUTH_CLIENT_ID=
 GITLAB_OAUTH_CLIENT_SECRET=
-GITLAB_WEBHOOK_SECRET=
-GITLAB_WEBHOOK_SIGNING_SECRET=
 ```
 
 or:
@@ -352,7 +344,6 @@ or:
 ```dotenv
 GITHUB_OAUTH_CLIENT_ID=
 GITHUB_OAUTH_CLIENT_SECRET=
-GITHUB_WEBHOOK_SECRET=
 ```
 
 At least one complete OAuth client pair must remain configured.
@@ -458,7 +449,8 @@ not be published.
 
 OAuth signs users into Kyron; it is not the token used to clone and modify a
 repository. In the Kyron UI, register each project with an HTTPS clone URL and a
-dedicated per-project token. Kyron encrypts that token before persistence and
+dedicated per-project token. The form also generates the project's webhook secret; copy
+it before saving so it can be entered in the provider webhook. Kyron encrypts both values before persistence and
 uses temporary Git askpass credentials instead of authenticated Git URLs.
 
 The token must be able to:
@@ -503,13 +495,13 @@ checkpoints.
 For every registered GitLab project, create a webhook with:
 
 - URL: `https://kyron.example.com/api/webhook/gitlab`;
-- secret token: the exact `GITLAB_WEBHOOK_SECRET` value;
+- secret token: the webhook secret generated when the project was registered in Kyron;
 - merge request events: enabled;
 - comment/note events: enabled; and
 - SSL verification: enabled.
 
-If the GitLab instance emits Standard Webhooks signature headers and you set
-`GITLAB_WEBHOOK_SIGNING_SECRET`, configure the same signing secret at both ends.
+If the GitLab instance emits Standard Webhooks signature headers, store its signing
+secret through the project's **Webhook** action and configure the same value in GitLab.
 The normal GitLab secret-token check remains required.
 
 ### GitHub webhook
@@ -518,7 +510,7 @@ For every registered GitHub repository, create a webhook with:
 
 - payload URL: `https://kyron.example.com/api/webhook/github`;
 - content type: `application/json`;
-- secret: the exact `GITHUB_WEBHOOK_SECRET` value;
+- secret: the webhook secret generated when the project was registered in Kyron;
 - SSL verification: enabled; and
 - individual events: pull requests, pull-request reviews, and issue comments.
 
@@ -675,8 +667,9 @@ pre-upgrade database backup when the release notes require it.
 - Credential-encryption key rotation requires application-level re-encryption;
   do not merely replace `CREDENTIALS_ENCRYPTION_KEY` or existing credentials
   become unreadable.
-- Rotate provider client and webhook secrets in coordinated provider/application
-  changes to avoid authentication gaps.
+- Rotate provider client secrets in coordinated provider/application changes. Rotate a
+  project webhook secret through the Projects page and update the matching provider
+  webhook immediately.
 
 ## Backups and restore readiness
 
@@ -796,11 +789,11 @@ Cookies are secure in production and therefore require HTTPS.
 
 ### Webhook returns 401
 
-For GitLab, confirm the provider secret token equals
-`GITLAB_WEBHOOK_SECRET`. If signed webhook validation is enabled, confirm the
-signing secret and clock too. For GitHub, confirm the webhook secret equals
-`GITHUB_WEBHOOK_SECRET` and that the webhook sends `application/json` with the
-normal GitHub signature headers.
+For GitLab, confirm the provider secret token equals the secret stored for that project
+in Kyron. If signed webhook validation is enabled, confirm the project's signing secret
+and clock too. For GitHub, confirm the provider webhook secret equals the matching
+project secret and that the webhook sends `application/json` with the normal GitHub
+signature headers.
 
 ### Workflow cannot write its clone/worktree
 

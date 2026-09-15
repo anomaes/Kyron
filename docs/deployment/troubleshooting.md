@@ -54,7 +54,10 @@ A provider appears only when both its OAuth client ID and client secret are conf
 
 ## Webhook returns 401
 
-For GitLab, compare the shared token and optional signing secret. For GitHub, confirm the webhook sends JSON and that `GITHUB_WEBHOOK_SECRET` matches. Reverse proxies must preserve the raw body; signature validation happens before JSON normalization.
+Confirm that the provider webhook uses the secret stored for the matching project. For
+GitLab, also compare the optional project signing secret. For GitHub, confirm that the
+webhook sends JSON. Reverse proxies must preserve the raw body used for signature
+validation.
 
 Use a new provider delivery for each manual test. A previously accepted delivery ID is correctly treated as a duplicate.
 

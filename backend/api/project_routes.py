@@ -9,6 +9,7 @@ from backend.auth.authorization import (
     accessible_project_ids,
     audit_event,
     authorize_project,
+    project_permissions,
 )
 from backend.auth.dependencies import CurrentUser, DbSession, require_project_provider
 from backend.config import Settings, get_settings
@@ -21,6 +22,7 @@ from backend.schemas.project import (
     ProjectResponse,
     ProjectTokenUpdate,
     ProjectValidationResponse,
+    ProjectWebhookSecretUpdate,
 )
 from backend.services.project_service import ProjectService
 from backend.services.workflow_service import invalidate_workflow_catalog
@@ -60,7 +62,12 @@ async def list_projects(
     if allowed is not None:
         allowed_set = set(allowed)
         projects = [project for project in projects if project.id in allowed_set]
-    return [ProjectResponse.model_validate(item) for item in projects]
+    responses: list[ProjectResponse] = []
+    for project in projects:
+        response = ProjectResponse.model_validate(project)
+        response.can_manage = PROJECT_MANAGE in await project_permissions(db, user, project.id)
+        responses.append(response)
+    return responses
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -132,6 +139,45 @@ async def replace_project_token(
             "project",
             project_id=project_id,
             target_id=str(project_id),
+        )
+    )
+    await db.commit()
+    return ProjectResponse.model_validate(project)
+
+
+@router.put("/{project_id}/webhook-secret", response_model=ProjectResponse)
+async def replace_project_webhook_secret(
+    project_id: uuid.UUID,
+    request: ProjectWebhookSecretUpdate,
+    user: CurrentUser,
+    db: DbSession,
+    project_service: ProjectServiceDependency,
+) -> ProjectResponse:
+    try:
+        existing = await project_service.get(project_id)
+        require_project_provider(user, existing.provider)
+        await authorize_project(db, user, project_id, PROJECT_MANAGE)
+        project = await project_service.replace_webhook_secret(
+            project_id,
+            request.webhook_secret,
+            request.webhook_signing_secret,
+            request.clear_webhook_signing_secret,
+        )
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    db.add(
+        audit_event(
+            user,
+            "PROJECT_WEBHOOK_SECRET_REPLACED",
+            "project",
+            project_id=project_id,
+            target_id=str(project_id),
+            details={
+                "signing_secret_replaced": bool(request.webhook_signing_secret),
+                "signing_secret_cleared": request.clear_webhook_signing_secret,
+            },
         )
     )
     await db.commit()

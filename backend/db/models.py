@@ -163,6 +163,9 @@ class Project(Base):
     provider_project_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     encrypted_access_token: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     token_key_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    encrypted_webhook_secret: Mapped[bytes | None] = mapped_column(LargeBinary)
+    encrypted_webhook_signing_secret: Mapped[bytes | None] = mapped_column(LargeBinary)
+    webhook_secret_key_version: Mapped[int | None] = mapped_column(Integer)
     local_path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     default_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     pi: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, nullable=False, default=dict)
@@ -171,6 +174,14 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+    @property
+    def webhook_secret_configured(self) -> bool:
+        return self.encrypted_webhook_secret is not None
+
+    @property
+    def webhook_signing_secret_configured(self) -> bool:
+        return self.encrypted_webhook_signing_secret is not None
 
 
 class ProjectMembership(Base):

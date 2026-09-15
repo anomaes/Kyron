@@ -39,8 +39,8 @@ Set at least these groups in `.env`:
 | Public URL | `APP_HOST`, `OAUTH_REDIRECT_URI` |
 | Database | `POSTGRES_PASSWORD` and the matching password in `DATABASE_URL` |
 | Secrets | `CREDENTIALS_ENCRYPTION_KEY`, `SESSION_SIGNING_KEY` |
-| GitLab | OAuth ID/secret, URL, webhook secret—or leave the provider disabled |
-| GitHub | OAuth ID/secret, web/API URLs, webhook secret—or leave the provider disabled |
+| GitLab | OAuth ID/secret and URL—or leave the provider disabled |
+| GitHub | OAuth ID/secret and web/API URLs—or leave the provider disabled |
 | Storage | `WORKFLOW_DATA_HOST_PATH` and the three backend storage roots |
 
 At least one provider must have both OAuth values configured. A partially configured provider is not offered on the sign-in page.
@@ -75,9 +75,11 @@ In **Projects**, choose **Add project** and provide:
 - the code-host provider;
 - the GitLab project ID/path or GitHub `owner/repository` path;
 - an HTTPS clone URL without embedded credentials; and
-- a project token with repository contents and change-request write access.
+- a project token with repository contents and change-request write access; and
+- the generated project webhook secret, which you copy into the repository webhook.
 
-Kyron validates the provider metadata, stores canonical project identity, encrypts the token, and prepares the local clone.
+Kyron validates the provider metadata, stores canonical project identity, encrypts both
+secrets, and prepares the local clone.
 
 ## 5. Add and run a workflow
 

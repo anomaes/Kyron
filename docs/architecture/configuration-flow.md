@@ -77,7 +77,6 @@ This matrix identifies the process that reads each setting, regardless of the br
 | `GITHUB_API_URL` | Backend and auth service | Provider integration and OAuth user lookup |
 | `*_OAUTH_CLIENT_ID`, `*_OAUTH_CLIENT_SECRET`, `OAUTH_REDIRECT_URI` | Auth service | OAuth login and callback exchange |
 | `SESSION_SIGNING_KEY`, `SESSION_PREVIOUS_SIGNING_KEY`, `SESSION_MAX_AGE_SECONDS` | Auth service | Signed browser-session creation, verification, lifetime, and rotation |
-| `GITLAB_WEBHOOK_SECRET`, `GITLAB_WEBHOOK_SIGNING_SECRET`, `GITHUB_WEBHOOK_SECRET` | Backend | Authenticate provider webhook deliveries |
 | `PROJECT_CLONE_BASE_PATH`, `WORKTREE_BASE_PATH`, `RUN_DATA_BASE_PATH` | Backend | Validated container paths for managed runtime storage |
 | `WORKFLOW_DATA_HOST_PATH` | Docker Compose | Host side of the backend data-root bind mount |
 | `PI_MODELS_CONFIG_PATH` | Backend | Optional provider-registry bootstrap/fallback file |
@@ -158,6 +157,7 @@ Bubblewrap makes the container root recursively read-only and rebinds only the r
 | Credential encryption key | Protected deployment environment file | Backend environment/process memory | Container replacement or rotation |
 | User credentials | Fernet ciphertext in PostgreSQL | Backend memory and authorized child-process environment | Cleared after the operation/attempt; subprocess exit removes its environment |
 | Code-host project token | Fernet ciphertext in PostgreSQL | Backend memory and the individual provider/Git operation | Discarded after that operation |
+| Project webhook secret | Fernet ciphertext in PostgreSQL | Backend memory while authenticating a delivery for that repository | Discarded after verification |
 
 Plaintext values are registered with the streaming redactor before process output is persisted. This protects against accidental logging; trusted workflow code can still inspect any credential deliberately released to it.
 

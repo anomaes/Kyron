@@ -16,8 +16,8 @@ The VS Code device-code creation, token exchange, and revocation routes bypass
 browser OAuth because their one-time or rotating opaque credentials authenticate
 the request. Browser approval of a device code remains behind normal OAuth.
 `/api/health`, `/api/webhook/gitlab`, and `/api/webhook/github` also bypass browser
-OAuth; each webhook authenticates its raw body with provider-specific headers and
-secrets.
+OAuth; each webhook resolves the provider project and authenticates its raw body using
+that project's encrypted secret and provider-specific headers before processing it.
 
 ## Route inventory
 
@@ -44,6 +44,7 @@ secrets.
 | GET/POST | `/api/projects` | List or register repositories |
 | GET/DELETE | `/api/projects/{project_id}` | Inspect or remove a project |
 | PUT | `/api/projects/{project_id}/token` | Replace the write-only project token |
+| PUT | `/api/projects/{project_id}/webhook-secret` | Replace the write-only project webhook secret and manage optional GitLab signing |
 | POST | `/api/projects/{project_id}/fetch` | Fetch/prune the local clone |
 | POST | `/api/projects/{project_id}/validate` | Validate provider and repository access |
 | PUT | `/api/projects/{project_id}/pi` | Replace project-wide Pi provider, model, and skill defaults |

@@ -32,7 +32,7 @@ The permission catalogue has the following meaning:
 | Permission | Allows |
 | --- | --- |
 | `project.view` | View the project's repository metadata and configuration |
-| `project.manage` | Replace or validate the repository token, change Pi defaults, fetch the repository, and remove the project |
+| `project.manage` | Replace or validate the repository token, manage webhook secrets, change Pi defaults, fetch the repository, and remove the project |
 | `membership.manage` | List project members and available users, add or update memberships and role assignments, and activate or deactivate memberships |
 | `role.manage` | List roles and create or update custom roles; built-in roles remain immutable |
 | `policy.view` | View approval policies |
