@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import backend.api.project_routes as project_routes
 from backend.auth.dependencies import AuthenticatedUser
 from backend.db.models import AuthorizationAuditEvent, Project
-from backend.schemas.project import ProjectWebhookSecretUpdate
+from backend.schemas.project import ProjectTokenUpdate, ProjectWebhookSecretUpdate
 from backend.services.project_service import ProjectService
 
 
@@ -20,6 +20,7 @@ class GovernanceProjectService:
     def __init__(self, project: Project) -> None:
         self.project = project
         self.deleted = False
+        self.access_token: str | None = None
         self.webhook_secret: tuple[str, str | None] | None = None
 
     async def get(self, project_id: uuid.UUID) -> Project:
@@ -33,6 +34,11 @@ class GovernanceProjectService:
     async def delete(self, project_id: uuid.UUID) -> None:
         assert project_id == self.project.id
         self.deleted = True
+
+    async def replace_token(self, project_id: uuid.UUID, access_token: str) -> Project:
+        assert project_id == self.project.id
+        self.access_token = access_token
+        return self.project
 
     async def replace_webhook_secret(
         self,
@@ -91,6 +97,13 @@ async def test_project_fetch_and_deletion_are_audited(
         db_session,
         cast(ProjectService, service),
     )
+    await project_routes.replace_project_token(
+        project.id,
+        ProjectTokenUpdate(access_token="replacement-project-token"),
+        user,
+        db_session,
+        cast(ProjectService, service),
+    )
     updated = await project_routes.replace_project_webhook_secret(
         project.id,
         ProjectWebhookSecretUpdate(webhook_secret="replacement-webhook-secret"),
@@ -106,6 +119,7 @@ async def test_project_fetch_and_deletion_are_audited(
     )
 
     assert fetched == {"commit_sha": "a" * 40}
+    assert service.access_token == "replacement-project-token"  # noqa: S105
     assert updated.webhook_secret_configured
     assert service.webhook_secret == ("replacement-webhook-secret", None)
     assert response.status_code == 204
@@ -117,6 +131,7 @@ async def test_project_fetch_and_deletion_are_audited(
     )
     assert actions == [
         "PROJECT_FETCHED",
+        "PROJECT_TOKEN_REPLACED",
         "PROJECT_WEBHOOK_SECRET_REPLACED",
         "PROJECT_DELETED",
     ]

@@ -38,7 +38,10 @@ Never paste `https://user:token@host/repository.git`. Kyron constructs authentic
 
 Use **Validate** after changing provider permissions. Validation checks repository identity and the operations Kyron needs. **Fetch** updates and prunes the local clone. If the clone is missing, Fetch reconstructs it from the configured remote. It does not alter an existing run's pinned commit or workflow snapshot.
 
-Replacing a project token is a write-only operation. The old plaintext is not returned by the API or UI.
+Choose **Access token** on a project card to replace a revoked, expired, or rotated
+provider token. Kyron validates the replacement against the registered repository before
+storing it. The operation is write-only; the old plaintext is not returned by the API or
+UI.
 
 ## Configure or rotate a project webhook
 

@@ -132,6 +132,8 @@ async def replace_project_token(
         project = await project_service.replace_token(project_id, request.access_token)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except (CodeHostError, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     db.add(
         audit_event(
             user,
