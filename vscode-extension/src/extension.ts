@@ -4,6 +4,7 @@ import { ApiError, KyronApi, normalizeServerUrl, type RunSubject } from "./api";
 import { AuthenticationError, DeviceAuthentication } from "./auth";
 import { currentBranch, matchWorkspaceProject } from "./git";
 import { positiveIntegerValidation, validateWorkflowInput } from "./input";
+import { currentReviewForUser } from "./review";
 import {
   RunTreeItem,
   RunTreeProvider,
@@ -13,9 +14,7 @@ import {
 } from "./tree";
 import type {
   ChangeRequest,
-  Gate,
   Project,
-  RunGraph,
   User,
   ValidationIssue,
   Workflow,
@@ -403,8 +402,8 @@ class KyronController implements vscode.Disposable {
           if (run.status !== "AWAITING_FEEDBACK") return new RunTreeItem(run);
           try {
             const graph = await api.runGraph(run.id);
-            const { gate, changeRequest } = currentReview(graph);
-            return new RunTreeItem(run, gate, changeRequest);
+            const { gate, changeRequest, reviewRequested } = currentReviewForUser(graph, this.user);
+            return new RunTreeItem(run, gate, changeRequest, reviewRequested);
           } catch {
             return new RunTreeItem(run);
           }
@@ -434,7 +433,7 @@ class KyronController implements vscode.Disposable {
       const previous = this.knownRunStatuses.get(item.run.id);
       this.knownRunStatuses.set(item.run.id, item.run.status);
       if (!previous || previous === item.run.status) continue;
-      if (item.run.status === "AWAITING_FEEDBACK") {
+      if (item.run.status === "AWAITING_FEEDBACK" && item.reviewRequested) {
         const choice = await vscode.window.showWarningMessage(
           `Kyron run ${item.run.id.slice(0, 8)} is awaiting review.`,
           "Review gate",
@@ -639,7 +638,7 @@ class KyronController implements vscode.Disposable {
     let changeRequest = selected.changeRequest;
     if (!gate || !changeRequest) {
       const graph = await this.requireApi().runGraph(selected.run.id);
-      ({ gate, changeRequest } = currentReview(graph));
+      ({ gate, changeRequest } = currentReviewForUser(graph, this.user));
     }
     if (!gate) {
       vscode.window.showWarningMessage("This run has no open review gate.");
@@ -873,14 +872,6 @@ async function promptWorkflowInput(name: string, input: WorkflowInput): Promise<
 
 function subjectLabel(subject: RunSubject): string {
   return subject.type === "branch" ? `branch ${subject.ref}` : `change request #${subject.number}`;
-}
-
-function currentReview(graph: RunGraph): { gate?: Gate; changeRequest?: ChangeRequest } {
-  const gate = [...graph.gates].reverse().find((candidate) => candidate.status === "OPEN");
-  const changeRequest = gate?.change_request_id
-    ? graph.change_requests.find((candidate) => candidate.id === gate.change_request_id)
-    : [...graph.change_requests].reverse().find((candidate) => candidate.status === "OPEN");
-  return { gate, changeRequest };
 }
 
 async function openExternalHttps(rawUrl: string): Promise<void> {

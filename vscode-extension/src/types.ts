@@ -92,7 +92,31 @@ export type Gate = {
   change_request_id: string | null;
   policy_snapshot: {
     name?: string;
+    distinct_approvers_across_requirements?: boolean;
   };
+  eligible_snapshot: {
+    requirements: Array<{
+      key: string;
+      name: string;
+      quorum: number;
+      users: Array<{
+        user_id?: string;
+        provider: "gitlab" | "github";
+        provider_user_id: string;
+        provider_username?: string;
+        display_name?: string;
+        email?: string;
+      }>;
+    }>;
+  };
+};
+
+export type GateDecision = {
+  gate_instance_id: string;
+  event_type: string;
+  superseded: boolean;
+  actor_snapshot: Record<string, string | undefined>;
+  requirement_keys: string[];
 };
 
 export type ChangeRequest = {
@@ -106,6 +130,7 @@ export type ChangeRequest = {
 
 export type RunGraph = {
   gates: Gate[];
+  gate_decisions: GateDecision[];
   change_requests: ChangeRequest[];
 };
 

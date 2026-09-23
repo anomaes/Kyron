@@ -90,8 +90,10 @@ those changes first; local-definition test runs remain available in the web UI.
 
 The **Runs** view polls the selected project's latest runs. From a run you can
 inspect durable log events, open the full Kyron run, cancel active execution, or
-resume a recoverable run. VS Code notifies you when a run reaches a review gate,
-completes, fails, or is interrupted.
+resume a recoverable run. VS Code sends a review notification only when the
+connected provider identity is eligible for an open gate, has not already
+approved it, and can still contribute to its quorum. Completion, failure, and
+interruption notifications remain visible for all listed runs.
 
 For a GitLab gate, install the
 [GitLab Workflow extension](https://marketplace.visualstudio.com/items?itemName=GitLab.gitlab-workflow)

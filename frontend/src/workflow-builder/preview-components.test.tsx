@@ -173,7 +173,10 @@ describe("expanded composite controls", () => {
     render(<Providers catalog={[child]}><CompositePreviewNode {...compositeProps("call", data)} /></Providers>);
 
     expect(screen.getByRole("button", { name: "Collapse Quality checks" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: "Open Quality checks workflow in a new tab" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "Open Quality checks workflow in a new tab" }))
+      .toHaveAttribute("href", "/?kyron_route=%2Fprojects%2Fproject%2Fworkflows%2Fchild%2Fedit");
+    expect(screen.getByRole("link", { name: "Open Quality checks workflow in a new tab" }))
+      .toHaveAttribute("target", "_blank");
     expect(screen.getByText("This workflow has no nodes.")).toBeVisible();
   });
 });

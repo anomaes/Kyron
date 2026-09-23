@@ -42,6 +42,7 @@ export class RunTreeItem extends vscode.TreeItem {
     readonly run: Run,
     readonly gate?: Gate,
     readonly changeRequest?: ChangeRequest,
+    readonly reviewRequested = false,
   ) {
     super(`${run.root_workflow_id} · ${run.id.slice(0, 8)}`, vscode.TreeItemCollapsibleState.None);
     this.id = run.id;

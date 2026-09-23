@@ -3,6 +3,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { useWorkflowExpansion } from "./expansion-context";
 import type { CompositeContainerData, ReviewBranch } from "./projection";
 import { focusExpansionToggle, previewPanelId } from "./preview-target";
+import { workflowEditorNewTabHref } from "./workflow-link";
 
 type CompositeFlowNode = Node<CompositeContainerData>;
 
@@ -84,7 +85,7 @@ export function CompositePreviewNode({ data, selected }: NodeProps<CompositeFlow
       <div className="composite-preview-actions">
         {childId && <a
           className="preview-open nodrag nopan"
-          href={`/projects/${encodeURIComponent(expansion.projectId)}/workflows/${encodeURIComponent(childId)}/edit`}
+          href={workflowEditorNewTabHref(expansion.projectId, childId)}
           target="_blank"
           rel="noreferrer"
           aria-label={`Open ${childName} workflow in a new tab`}
