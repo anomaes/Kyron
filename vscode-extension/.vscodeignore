@@ -4,3 +4,5 @@ tsconfig.json
 node_modules/@types/**
 node_modules/typescript/**
 *.vsix
+out/*.test.js
+out/*.test.js.map

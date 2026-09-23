@@ -44,7 +44,15 @@ export type WorkflowCatalog = {
   base_commit_sha: string;
   outgoing_changes: number;
   in_review_changes: number;
+  change_request_url: string | null;
+  warnings: ValidationIssue[];
   items: Workflow[];
+};
+
+export type ValidationIssue = {
+  path: string;
+  code: string;
+  message: string;
 };
 
 export type Run = {

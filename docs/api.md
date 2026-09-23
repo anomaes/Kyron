@@ -30,6 +30,7 @@ that project's encrypted secret and provider-specific headers before processing 
 | GET/POST | `/api/auth/vscode/authorize?user_code=…` | Review and approve a device code through browser OAuth |
 | POST | `/api/auth/vscode/token` | Poll a device code or rotate a refresh credential |
 | POST | `/api/auth/vscode/revoke` | Revoke a VS Code client session |
+| GET | `/api/admin/permissions` | Fixed project-permission catalogue for system administrators |
 | GET/PATCH | `/api/admin/users[/{user_id}]` | System-administrator user activation and global-admin management |
 | GET/PUT | `/api/admin/pi-models` | Inspect or activate the versioned global Pi provider configuration |
 | POST | `/api/admin/pi-models/validate` | Validate a proposed provider configuration without saving it |
@@ -39,8 +40,10 @@ that project's encrypted secret and provider-specific headers before processing 
 | GET | `/api/projects/{project_id}/access` | Current project permissions |
 | GET/POST/PUT | `/api/projects/{project_id}/roles[...]` | Project role management |
 | GET/PUT | `/api/projects/{project_id}/memberships[...]` | Project membership and role assignment |
+| GET | `/api/projects/{project_id}/available-users` | Active users available for project membership; requires `membership.manage` |
 | GET/PUT | `/api/projects/{project_id}/approval-policies[...]` | Reusable quorum approval policies |
 | GET/PUT | `/api/projects/{project_id}/governance-profiles[...]` | Workflow conformance profiles |
+| GET | `/api/projects/{project_id}/authorization-audit` | Latest project authorization events; requires `audit.view` |
 | GET/POST | `/api/projects` | List or register repositories |
 | GET/DELETE | `/api/projects/{project_id}` | Inspect or remove a project |
 | PUT | `/api/projects/{project_id}/token` | Replace the write-only project token |
@@ -64,6 +67,7 @@ that project's encrypted secret and provider-specific headers before processing 
 | DELETE | `/api/runs/{run_id}` | Permanently remove an inactive run and its local resources; requires `run.delete` |
 | GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, workspaces, batches, change requests, waves, nodes, attempts, edges, and gates |
 | GET | `/api/runs/{run_id}/report` | Live or immutable terminal traceability report plus post-run lifecycle addenda |
+| GET | `/api/runs/{run_id}/usage` | Prompt-attempt token, model, request, and estimated-cost totals |
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}` | Node and attempt history |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}/output` | Safe stdout/stderr/Pi event retrieval |

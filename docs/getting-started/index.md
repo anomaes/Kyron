@@ -25,7 +25,7 @@ If one required node fails, the entire wave is reset. Resuming creates new attem
 
 ### Human review is part of the state machine
 
-`human_feedback` and `review_loop` nodes create or update a GitLab merge request or GitHub pull request and pause the run. Only the provider identity that triggered the run may control its checkpoint. An intermediate provider approval is consumed before execution continues, so it cannot accidentally count as final delivery approval.
+`human_feedback` and `review_loop` nodes create or update a GitLab merge request or GitHub pull request and pause the run. Only provider identities snapshotted as eligible by the gate's approval policy, and whose membership grants `gate.respond`, may control that checkpoint. The default policy selects only the user who triggered the run; custom policies can require other reviewers and quorums. Intermediate provider approvals are consumed before execution continues, so they cannot accidentally count as final delivery approval.
 
 ## What Kyron is not
 
@@ -40,6 +40,7 @@ If one required node fails, the entire wave is reset. Resuming creates new attem
 | --- | --- |
 | Evaluating Kyron | [Core concepts](/getting-started/concepts) → [Architecture](/architecture) → [Security model](/deployment/security) |
 | Trying Kyron locally | [Quick start](/getting-started/quick-start) → [Your first workflow](/getting-started/first-workflow) |
+| Using Visual Studio Code | [VS Code extension](/guides/vscode) → [Run workflows](/guides/running-workflows) |
 | A workflow author | [Workflow overview](/workflows/) → [Node types](/workflows/node-types) → [Example library](/workflows/examples) |
 | An operator | [Production deployment](/deployment/) → [Configuration](/deployment/configuration) → [Operations runbook](/operations) |
 | Building an integration | [API guide](/api) → [Run states](/reference/states) → [Variables](/reference/variables) |
@@ -47,13 +48,16 @@ If one required node fails, the entire wave is reset. Resuming creates new attem
 
 ## The shortest useful path
 
-If you want to see the product working, allow roughly 15 minutes:
+For the shortest deterministic verification path:
 
 1. [Start the local stack](/getting-started/quick-start).
 2. Register a trusted test repository.
-3. Add the [first workflow](/getting-started/first-workflow) to its default branch.
-4. Trigger the workflow with a small task.
+3. Add the Bash-only smoke workflow from the quick start to its default branch.
+4. Trigger it without exposing model credentials.
 5. Open the run detail and follow its wave, Git checkpoint, and output.
+
+After that succeeds, configure a model credential and continue with
+[your first Prompt workflow](/getting-started/first-workflow).
 
 ::: tip Keep the first run boring
 Use a disposable repository and a workflow that writes a small file, runs one test command, and stops. Add prompts, branching, and review only after the basic provider and worktree path is proven.

@@ -3,8 +3,24 @@ import * as vscode from "vscode";
 import { ApiError, KyronApi, normalizeServerUrl, type RunSubject } from "./api";
 import { AuthenticationError, DeviceAuthentication } from "./auth";
 import { currentBranch, matchWorkspaceProject } from "./git";
-import { RunTreeItem, RunTreeProvider, WorkflowTreeItem, WorkflowTreeProvider } from "./tree";
-import type { ChangeRequest, Gate, Project, Run, RunGraph, User, Workflow, WorkflowInput } from "./types";
+import { positiveIntegerValidation, validateWorkflowInput } from "./input";
+import {
+  RunTreeItem,
+  RunTreeProvider,
+  WorkflowTreeItem,
+  WorkflowTreeProvider,
+  type WorkflowTreeElement,
+} from "./tree";
+import type {
+  ChangeRequest,
+  Gate,
+  Project,
+  RunGraph,
+  User,
+  ValidationIssue,
+  Workflow,
+  WorkflowInput,
+} from "./types";
 
 const PROJECT_SELECTION_KEY = "kyron.selectedProject";
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING", "AWAITING_FEEDBACK", "RESUMING"]);
@@ -40,7 +56,7 @@ class KyronController implements vscode.Disposable {
   private readonly runProvider = new RunTreeProvider();
   private readonly output = vscode.window.createOutputChannel("Kyron");
   private readonly status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 30);
-  private readonly workflowView: vscode.TreeView<WorkflowTreeItem>;
+  private readonly workflowView: vscode.TreeView<WorkflowTreeElement>;
   private readonly runView: vscode.TreeView<RunTreeItem>;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly knownRunStatuses = new Map<string, string>();
@@ -51,16 +67,22 @@ class KyronController implements vscode.Disposable {
   private project?: Project;
   private workflows: Workflow[] = [];
   private hasDefinitionChanges = false;
+  private outgoingDefinitionChanges = 0;
+  private inReviewDefinitionChanges = 0;
+  private catalogWarnings: ValidationIssue[] = [];
+  private workflowLoading = false;
+  private workflowError?: string;
   private canTrigger = false;
   private runItems: RunTreeItem[] = [];
   private pollTimer?: ReturnType<typeof setInterval>;
   private refreshing?: Promise<void>;
+  private runRefreshing?: { project: Project; api: KyronApi; operation: Promise<void> };
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.authentication = new DeviceAuthentication(context);
     this.workflowView = vscode.window.createTreeView("kyron.workflows", {
       treeDataProvider: this.workflowProvider,
-      showCollapseAll: false,
+      showCollapseAll: true,
     });
     this.runView = vscode.window.createTreeView("kyron.runs", {
       treeDataProvider: this.runProvider,
@@ -72,12 +94,18 @@ class KyronController implements vscode.Disposable {
     this.disposables.push(
       this.workflowView,
       this.runView,
+      this.workflowProvider,
+      this.runProvider,
       this.output,
       this.status,
       this.command("kyron.connect", () => this.connect()),
       this.command("kyron.disconnect", () => this.disconnect()),
       this.command("kyron.selectProject", () => this.selectProject()),
       this.command("kyron.runWorkflow", (item?: WorkflowTreeItem) => this.runWorkflow(item)),
+      this.command("kyron.openWorkflowInBrowser", (item?: WorkflowTreeItem) =>
+        this.openWorkflowInBrowser(item),
+      ),
+      this.command("kyron.showCatalogWarnings", () => this.showCatalogWarnings()),
       this.command("kyron.refresh", () => this.refresh(false)),
       this.command("kyron.showRun", (item?: RunTreeItem) => this.showRun(item)),
       this.command("kyron.showRunLogs", (item?: RunTreeItem) => this.showRunLogs(item)),
@@ -194,12 +222,20 @@ class KyronController implements vscode.Disposable {
     this.project = undefined;
     this.workflows = [];
     this.hasDefinitionChanges = false;
+    this.outgoingDefinitionChanges = 0;
+    this.inReviewDefinitionChanges = 0;
+    this.catalogWarnings = [];
+    this.workflowLoading = false;
+    this.workflowError = undefined;
     this.canTrigger = false;
     this.runItems = [];
     this.knownRunStatuses.clear();
     this.workflowProvider.set([]);
     this.runProvider.set([]);
-    await vscode.commands.executeCommand("setContext", "kyron.canTrigger", false);
+    await Promise.all([
+      vscode.commands.executeCommand("setContext", "kyron.canTrigger", false),
+      vscode.commands.executeCommand("setContext", "kyron.hasCatalogWarnings", false),
+    ]);
     await this.setConnected(false);
   }
 
@@ -292,52 +328,101 @@ class KyronController implements vscode.Disposable {
     if (!this.project) {
       this.workflows = [];
       this.hasDefinitionChanges = false;
+      this.outgoingDefinitionChanges = 0;
+      this.inReviewDefinitionChanges = 0;
+      this.catalogWarnings = [];
+      this.workflowLoading = false;
+      this.workflowError = undefined;
       this.canTrigger = false;
       this.runItems = [];
       this.workflowProvider.set([]);
       this.runProvider.set([]);
-      await vscode.commands.executeCommand("setContext", "kyron.canTrigger", false);
+      await Promise.all([
+        vscode.commands.executeCommand("setContext", "kyron.canTrigger", false),
+        vscode.commands.executeCommand("setContext", "kyron.hasCatalogWarnings", false),
+      ]);
       this.updatePresentation();
       return;
     }
-    const [catalog, access] = await Promise.all([
-      this.requireApi().workflows(this.project.id),
-      this.requireApi().projectAccess(this.project.id),
-      this.refreshRuns(silent),
-    ]);
-    this.workflows = catalog.items;
-    this.hasDefinitionChanges = catalog.outgoing_changes > 0 || catalog.in_review_changes > 0;
-    this.canTrigger =
-      access.permissions.includes("run.trigger") && this.user?.provider === this.project.provider;
-    await vscode.commands.executeCommand(
-      "setContext",
-      "kyron.canTrigger",
-      this.canTrigger && !this.hasDefinitionChanges,
-    );
-    this.workflowProvider.set(this.workflows);
+    const project = this.project;
+    const api = this.requireApi();
+    this.workflowLoading = true;
+    this.workflowError = undefined;
     this.updatePresentation();
+    try {
+      const [catalog, access] = await Promise.all([
+        api.workflows(project.id),
+        api.projectAccess(project.id),
+        this.refreshRuns(silent),
+      ]);
+      if (this.project !== project || this.api !== api) return;
+      this.workflows = catalog.items;
+      this.outgoingDefinitionChanges = catalog.outgoing_changes;
+      this.inReviewDefinitionChanges = catalog.in_review_changes;
+      this.hasDefinitionChanges =
+        this.outgoingDefinitionChanges > 0 || this.inReviewDefinitionChanges > 0;
+      this.catalogWarnings = catalog.warnings ?? [];
+      this.canTrigger =
+        access.permissions.includes("run.trigger") && this.user?.provider === project.provider;
+      await Promise.all([
+        vscode.commands.executeCommand(
+          "setContext",
+          "kyron.canTrigger",
+          this.canTrigger && !this.hasDefinitionChanges,
+        ),
+        vscode.commands.executeCommand(
+          "setContext",
+          "kyron.hasCatalogWarnings",
+          this.catalogWarnings.length > 0,
+        ),
+      ]);
+      this.workflowProvider.set(this.workflows);
+    } catch (error) {
+      if (this.project === project && this.api === api) {
+        this.workflowError = error instanceof Error ? error.message : "The workflow catalog could not be loaded";
+      }
+      throw error;
+    } finally {
+      if (this.project === project && this.api === api) {
+        this.workflowLoading = false;
+        this.updatePresentation();
+      }
+    }
   }
 
   private async refreshRuns(silent: boolean): Promise<void> {
-    if (!this.project) return;
-    const response = await this.requireApi().runs(this.project.id);
-    const items = await Promise.all(
-      response.items.map(async (run) => {
-        if (run.status !== "AWAITING_FEEDBACK") return new RunTreeItem(run);
-        try {
-          const graph = await this.requireApi().runGraph(run.id);
-          const { gate, changeRequest } = currentReview(graph);
-          return new RunTreeItem(run, gate, changeRequest);
-        } catch {
-          return new RunTreeItem(run);
-        }
-      }),
-    );
-    if (!silent) await this.notifyRunTransitions(items);
-    else this.rememberRunStatuses(items);
-    this.runItems = items;
-    this.runProvider.set(items);
-    this.updatePresentation();
+    const project = this.project;
+    if (!project) return;
+    const api = this.requireApi();
+    const existing = this.runRefreshing;
+    if (existing?.project === project && existing.api === api) return existing.operation;
+    const operation = (async () => {
+      const response = await api.runs(project.id);
+      const items = await Promise.all(
+        response.items.map(async (run) => {
+          if (run.status !== "AWAITING_FEEDBACK") return new RunTreeItem(run);
+          try {
+            const graph = await api.runGraph(run.id);
+            const { gate, changeRequest } = currentReview(graph);
+            return new RunTreeItem(run, gate, changeRequest);
+          } catch {
+            return new RunTreeItem(run);
+          }
+        }),
+      );
+      if (this.project !== project || this.api !== api) return;
+      if (!silent) await this.notifyRunTransitions(items);
+      else this.rememberRunStatuses(items);
+      this.runItems = items;
+      this.runProvider.set(items);
+      this.updatePresentation();
+    })();
+    this.runRefreshing = { project, api, operation };
+    try {
+      await operation;
+    } finally {
+      if (this.runRefreshing?.operation === operation) this.runRefreshing = undefined;
+    }
   }
 
   private rememberRunStatuses(items: RunTreeItem[]): void {
@@ -370,19 +455,7 @@ class KyronController implements vscode.Disposable {
       await this.selectProject();
       if (!this.project) return;
     }
-    const workflow =
-      item?.workflow ??
-      (
-        await vscode.window.showQuickPick(
-          this.workflows.map((candidate) => ({
-            label: candidate.name,
-            description: candidate.id,
-            detail: candidate.description,
-            workflow: candidate,
-          })),
-          { title: "Run a Kyron workflow", matchOnDescription: true, matchOnDetail: true },
-        )
-      )?.workflow;
+    const workflow = item?.workflow ?? (await this.pickWorkflow("Run a Kyron workflow"));
     if (!workflow) return;
     if (!this.canTrigger) {
       vscode.window.showWarningMessage(
@@ -419,6 +492,55 @@ class KyronController implements vscode.Disposable {
       const runItem = this.runItems.find((candidate) => candidate.run.id === result.run_id);
       await this.showRun(runItem, result.run_id);
     }
+  }
+
+  private async pickWorkflow(title: string): Promise<Workflow | undefined> {
+    return (
+      await vscode.window.showQuickPick(
+        [...this.workflows]
+          .sort(
+            (left, right) =>
+              left.folder_path.localeCompare(right.folder_path) ||
+              left.name.localeCompare(right.name) ||
+              left.id.localeCompare(right.id),
+          )
+          .map((workflow) => ({
+            label: workflow.name,
+            description: workflow.folder_path
+              ? `.workflowEngine/${workflow.folder_path} · ${workflow.id}`
+              : `.workflowEngine/ · ${workflow.id}`,
+            detail: workflow.description || "No description",
+            workflow,
+          })),
+        { title, matchOnDescription: true, matchOnDetail: true },
+      )
+    )?.workflow;
+  }
+
+  private async openWorkflowInBrowser(item?: WorkflowTreeItem): Promise<void> {
+    if (!this.project) {
+      await this.selectProject();
+      if (!this.project) return;
+    }
+    const workflow = item?.workflow ?? (await this.pickWorkflow("Open a Kyron workflow"));
+    if (!workflow) return;
+    const path = `/projects/${encodeURIComponent(this.project.id)}/workflows/${encodeURIComponent(workflow.id)}/edit`;
+    await vscode.env.openExternal(vscode.Uri.parse(`${this.requireApi().serverUrl}${path}`));
+  }
+
+  private async showCatalogWarnings(): Promise<void> {
+    if (this.catalogWarnings.length === 0) {
+      vscode.window.showInformationMessage("Kyron found no workflow catalog warnings.");
+      return;
+    }
+    this.output.clear();
+    this.output.appendLine(
+      `Kyron workflow catalog — ${this.catalogWarnings.length} skipped or invalid definition${this.catalogWarnings.length === 1 ? "" : "s"}`,
+    );
+    for (const warning of this.catalogWarnings) {
+      this.output.appendLine(`${warning.path} [${warning.code}]: ${warning.message}`);
+    }
+    this.output.show(true);
   }
 
   private async pickSubject(project: Project): Promise<RunSubject | undefined> {
@@ -643,6 +765,35 @@ class KyronController implements vscode.Disposable {
   private updatePresentation(): void {
     this.workflowView.description = this.project?.name;
     this.runView.description = this.project?.name;
+    const workflowMessages: string[] = [];
+    if (this.api && this.project) {
+      if (this.workflowLoading) {
+        workflowMessages.push("Loading workflows…");
+      } else if (this.workflowError) {
+        workflowMessages.push(`Could not load workflows: ${this.workflowError}`);
+      } else if (this.workflows.length === 0) {
+        workflowMessages.push("No workflows in this project.");
+      }
+      if (this.catalogWarnings.length > 0) {
+        workflowMessages.push(
+          `${this.catalogWarnings.length} workflow definition${this.catalogWarnings.length === 1 ? " was" : "s were"} skipped; open catalog warnings for details.`,
+        );
+      }
+      if (this.hasDefinitionChanges) {
+        const changes = [
+          this.outgoingDefinitionChanges
+            ? `${this.outgoingDefinitionChanges} outgoing change${this.outgoingDefinitionChanges === 1 ? "" : "s"}`
+            : undefined,
+          this.inReviewDefinitionChanges
+            ? `${this.inReviewDefinitionChanges} change${this.inReviewDefinitionChanges === 1 ? "" : "s"} in review`
+            : undefined,
+        ].filter(Boolean);
+        workflowMessages.push(`Running is disabled while workflow definitions have ${changes.join(" and ")}.`);
+      } else if (!this.canTrigger) {
+        workflowMessages.push("Your current identity cannot trigger workflows for this project.");
+      }
+    }
+    this.workflowView.message = workflowMessages.length > 0 ? workflowMessages.join(" ") : undefined;
     if (!this.api) {
       this.status.text = "$(plug) Kyron";
       this.status.tooltip = "Connect VS Code to Kyron";
@@ -718,23 +869,6 @@ async function promptWorkflowInput(name: string, input: WorkflowInput): Promise<
     return { cancelled: false, include: true, value: Number(result) };
   }
   return { cancelled: false, include: true, value: result };
-}
-
-function validateWorkflowInput(value: string, input: WorkflowInput): string | undefined {
-  if (!value.trim()) {
-    return input.required && input.default == null ? "This input is required" : undefined;
-  }
-  if (input.type === "integer" && !/^-?\d+$/.test(value.trim())) {
-    return "Enter an integer";
-  }
-  if (input.type === "number" && !Number.isFinite(Number(value))) {
-    return "Enter a number";
-  }
-  return undefined;
-}
-
-function positiveIntegerValidation(value: string): string | undefined {
-  return /^[1-9]\d*$/.test(value.trim()) ? undefined : "Enter a positive integer";
 }
 
 function subjectLabel(subject: RunSubject): string {

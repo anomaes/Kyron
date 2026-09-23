@@ -67,7 +67,9 @@ Confirm:
 
 - the event belongs to the registered provider project;
 - the run is currently awaiting feedback;
-- the top-level actor is the triggering reviewer;
+- the top-level actor is an eligible provider identity in the current gate's
+  snapshot and still has `gate.respond` permission;
+- the approval satisfies the gate requirement and total quorum;
 - the comment is non-system and addresses `@kyron`, when applicable; and
 - approval reset/dismissal permissions are present.
 

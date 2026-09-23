@@ -7,6 +7,19 @@ description: Create, validate, merge, and run a small Kyron workflow.
 
 This workflow asks the coding agent to implement a small task, then runs a test command. It demonstrates inputs, template expansion, a dependency edge, and wave checkpoints without introducing review loops yet.
 
+## Before you begin
+
+Complete the non-AI smoke test in the [quick start](/getting-started/quick-start)
+first. Then:
+
+1. add the model-provider secret required by Pi under **Credentials**;
+2. select a provider and model in the project's **Pi defaults**, in the workflow
+   settings, or on the Prompt node; and
+3. confirm that the workflow credential policy permits that credential.
+
+The user who triggers the run must own the required credential. Kyron never
+reads model keys from workflow YAML.
+
 ## 1. Add the workflow file
 
 Create `.workflowEngine/implement_and_test.yaml` in a registered repository:

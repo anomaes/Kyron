@@ -1,5 +1,21 @@
 import * as vscode from "vscode";
+import { prettyStatus, runContextValue, statusIconSpec } from "./status";
 import type { ChangeRequest, Gate, Run, Workflow } from "./types";
+import { buildWorkflowFolderTree, type WorkflowFolder } from "./workflow-tree-model";
+
+export type WorkflowTreeElement = WorkflowFolderTreeItem | WorkflowTreeItem;
+
+export class WorkflowFolderTreeItem extends vscode.TreeItem {
+  readonly contextValue = "kyronWorkflowFolder";
+
+  constructor(readonly folder: WorkflowFolder) {
+    super(folder.name, vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = `folder:${folder.path}`;
+    this.description = `${folder.workflowCount}`;
+    this.tooltip = `.workflowEngine/${folder.path}\n\n${folder.workflowCount} workflow${folder.workflowCount === 1 ? "" : "s"}`;
+    this.iconPath = new vscode.ThemeIcon("folder");
+  }
+}
 
 export class WorkflowTreeItem extends vscode.TreeItem {
   readonly contextValue = "kyronWorkflow";
@@ -11,6 +27,7 @@ export class WorkflowTreeItem extends vscode.TreeItem {
     this.tooltip = [
       workflow.name,
       workflow.description || "No description",
+      workflow.folder_path ? `Folder: .workflowEngine/${workflow.folder_path}` : "Folder: .workflowEngine/",
       `${workflow.node_count} node${workflow.node_count === 1 ? "" : "s"}`,
     ].join("\n\n");
     this.iconPath = new vscode.ThemeIcon("workflow");
@@ -31,39 +48,40 @@ export class RunTreeItem extends vscode.TreeItem {
     this.description = prettyStatus(run.status);
     this.tooltip = runTooltip(run, changeRequest);
     this.iconPath = statusIcon(run.status);
-    if (run.status === "AWAITING_FEEDBACK") {
-      this.contextValue = "kyronRunAwaitingFeedback";
-    } else if (["QUEUED", "RUNNING", "RESUMING"].includes(run.status)) {
-      this.contextValue = "kyronRunActive";
-    } else if (["FAILED", "INTERRUPTED", "CANCELLED"].includes(run.status)) {
-      this.contextValue = "kyronRunResumable";
-    } else {
-      this.contextValue = "kyronRun";
-    }
+    this.contextValue = runContextValue(run.status);
     this.command = { command: "kyron.showRun", title: "Show Run Details", arguments: [this] };
   }
 }
 
-export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTreeItem> {
-  private readonly changed = new vscode.EventEmitter<WorkflowTreeItem | undefined>();
+export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTreeElement>, vscode.Disposable {
+  private readonly changed = new vscode.EventEmitter<WorkflowTreeElement | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
-  private items: WorkflowTreeItem[] = [];
+  private root = buildWorkflowFolderTree([]);
 
   set(workflows: Workflow[]): void {
-    this.items = workflows.map((workflow) => new WorkflowTreeItem(workflow));
+    this.root = buildWorkflowFolderTree(workflows);
     this.changed.fire(undefined);
   }
 
-  getTreeItem(element: WorkflowTreeItem): vscode.TreeItem {
+  getTreeItem(element: WorkflowTreeElement): vscode.TreeItem {
     return element;
   }
 
-  getChildren(): WorkflowTreeItem[] {
-    return this.items;
+  getChildren(element?: WorkflowTreeElement): WorkflowTreeElement[] {
+    if (element instanceof WorkflowTreeItem) return [];
+    const folder = element?.folder ?? this.root;
+    return [
+      ...folder.children.map((child) => new WorkflowFolderTreeItem(child)),
+      ...folder.workflows.map((workflow) => new WorkflowTreeItem(workflow)),
+    ];
+  }
+
+  dispose(): void {
+    this.changed.dispose();
   }
 }
 
-export class RunTreeProvider implements vscode.TreeDataProvider<RunTreeItem> {
+export class RunTreeProvider implements vscode.TreeDataProvider<RunTreeItem>, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<RunTreeItem | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   private items: RunTreeItem[] = [];
@@ -80,28 +98,23 @@ export class RunTreeProvider implements vscode.TreeDataProvider<RunTreeItem> {
   getChildren(): RunTreeItem[] {
     return this.items;
   }
-}
 
-function prettyStatus(status: string): string {
-  return status.toLowerCase().replaceAll("_", " ");
+  dispose(): void {
+    this.changed.dispose();
+  }
 }
 
 function statusIcon(status: string): vscode.ThemeIcon {
-  switch (status) {
-    case "COMPLETED":
-      return new vscode.ThemeIcon("pass", new vscode.ThemeColor("testing.iconPassed"));
-    case "FAILED":
-      return new vscode.ThemeIcon("error", new vscode.ThemeColor("testing.iconFailed"));
-    case "CANCELLED":
-    case "INTERRUPTED":
-      return new vscode.ThemeIcon("circle-slash");
-    case "AWAITING_FEEDBACK":
-      return new vscode.ThemeIcon("comment-discussion", new vscode.ThemeColor("notificationsWarningIcon.foreground"));
-    case "QUEUED":
-      return new vscode.ThemeIcon("watch");
-    default:
-      return new vscode.ThemeIcon("sync~spin");
-  }
+  const spec = statusIconSpec(status);
+  const color =
+    spec.color === "passed"
+      ? new vscode.ThemeColor("testing.iconPassed")
+      : spec.color === "failed"
+        ? new vscode.ThemeColor("testing.iconFailed")
+        : spec.color === "warning"
+          ? new vscode.ThemeColor("notificationsWarningIcon.foreground")
+          : undefined;
+  return new vscode.ThemeIcon(spec.id, color);
 }
 
 function runTooltip(run: Run, changeRequest?: ChangeRequest): string {

@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
+import { normalizeRepositoryPath, repositoryIdentity } from "./git-url";
 import type { Project } from "./types";
+
+export { repositoryIdentity } from "./git-url";
 
 type GitRemote = {
   name: string;
@@ -23,11 +26,6 @@ type GitApi = {
 type GitExtension = {
   enabled: boolean;
   getAPI(version: 1): GitApi;
-};
-
-type RepositoryIdentity = {
-  host: string;
-  path: string;
 };
 
 export async function workspaceRepository(): Promise<GitRepository | undefined> {
@@ -61,7 +59,7 @@ export async function matchWorkspaceProject(projects: Project[]): Promise<Projec
       if (!identity) continue;
       const match = projects.find((project) => {
         const projectIdentity = repositoryIdentity(project.git_url);
-        const projectPath = normalizePath(project.provider_project_path);
+        const projectPath = normalizeRepositoryPath(project.provider_project_path);
         return (
           projectIdentity?.host === identity.host &&
           (projectIdentity.path === identity.path || projectPath === identity.path)
@@ -75,30 +73,4 @@ export async function matchWorkspaceProject(projects: Project[]): Promise<Projec
 
 export async function currentBranch(): Promise<string | undefined> {
   return (await workspaceRepository())?.state.HEAD?.name;
-}
-
-export function repositoryIdentity(rawUrl: string): RepositoryIdentity | undefined {
-  const scpLike = rawUrl.match(/^(?:[^@/]+@)?([^:/]+):(.+)$/);
-  if (scpLike?.[1] && scpLike[2] && !rawUrl.includes("://")) {
-    return { host: scpLike[1].toLowerCase(), path: normalizePath(scpLike[2]) };
-  }
-  try {
-    const url = new URL(rawUrl);
-    if (!url.hostname) return undefined;
-    return { host: url.host.toLowerCase(), path: normalizePath(url.pathname) };
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizePath(value: string): string {
-  let path = value.trim().replace(/^\/+/, "").replace(/\/+$/, "");
-  if (path.toLowerCase().endsWith(".git")) {
-    path = path.slice(0, -4);
-  }
-  try {
-    return decodeURIComponent(path).toLowerCase();
-  } catch {
-    return path.toLowerCase();
-  }
 }

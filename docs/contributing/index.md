@@ -38,6 +38,7 @@ npm --prefix auth-service run build
 
 npm --prefix vscode-extension ci
 npm --prefix vscode-extension run check
+npm --prefix vscode-extension test
 npm --prefix vscode-extension run build
 ```
 

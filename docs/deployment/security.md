@@ -48,8 +48,9 @@ The included Compose stack uses an unconfined backend seccomp profile so Bubblew
 perform that setup; the process still runs as UID/GID `10001` with all Linux capabilities
 dropped.
 
-Kubernetes deployments may instead use a custom seccomp allow-list when the cluster can
-distribute one to every eligible node.
+An independently maintained Kubernetes adaptation may instead use a custom
+seccomp allow-list when the cluster can distribute one to every eligible node.
+Kubernetes is not currently a supported Kyron deployment mode.
 
 ## Network boundary
 
@@ -68,7 +69,11 @@ project's encrypted secret.
 
 ## Provider affinity
 
-A user may control only projects and runs on the provider of the active session. Identity is keyed by provider and immutable provider user ID, not email. Run checkpoints are bound to the triggering identity snapshot.
+A user may control only projects and runs on the provider of the active session.
+Identity is keyed by provider and immutable provider user ID, not email. An open
+checkpoint is bound to its immutable approval-policy and eligible-identity
+snapshot. The default policy selects the triggering identity; custom policies
+may select other project members and require a quorum.
 
 Project lists and run history are visible to authenticated internal users, but cross-provider mutations return HTTP 403.
 

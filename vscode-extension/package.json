@@ -33,6 +33,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test out/*.test.js",
     "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
@@ -64,6 +65,17 @@
         "title": "Run Workflow",
         "category": "Kyron",
         "icon": "$(play)"
+      },
+      {
+        "command": "kyron.openWorkflowInBrowser",
+        "title": "Open Workflow in Kyron",
+        "category": "Kyron"
+      },
+      {
+        "command": "kyron.showCatalogWarnings",
+        "title": "Show Workflow Catalog Warnings",
+        "category": "Kyron",
+        "icon": "$(warning)"
       },
       {
         "command": "kyron.refresh",
@@ -147,6 +159,11 @@
           "command": "kyron.refresh",
           "when": "view == kyron.workflows || view == kyron.runs",
           "group": "navigation"
+        },
+        {
+          "command": "kyron.showCatalogWarnings",
+          "when": "view == kyron.workflows && kyron.hasCatalogWarnings",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -154,6 +171,11 @@
           "command": "kyron.runWorkflow",
           "when": "view == kyron.workflows && viewItem == kyronWorkflow && kyron.canTrigger",
           "group": "inline"
+        },
+        {
+          "command": "kyron.openWorkflowInBrowser",
+          "when": "view == kyron.workflows && viewItem == kyronWorkflow",
+          "group": "navigation"
         },
         {
           "command": "kyron.reviewGate",

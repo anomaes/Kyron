@@ -36,5 +36,8 @@ jobs:
         working-directory: ${{ matrix.package }}
       - run: npm run build
         working-directory: ${{ matrix.package }}
+      - run: npm test
+        if: matrix.package == 'vscode-extension'
+        working-directory: ${{ matrix.package }}
       - run: npm audit --audit-level=high
         working-directory: ${{ matrix.package }}

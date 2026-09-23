@@ -45,9 +45,11 @@ features:
 | Bring up a local or production instance | [Follow the quick start](/getting-started/quick-start) |
 | Build a workflow in the UI | [Use the visual workflow builder](/guides/workflow-builder) |
 | Author workflow YAML directly | [Learn the workflow language](/workflows/) |
+| Browse and run workflows in VS Code | [Install the Kyron extension](/guides/vscode) |
 | Add approval or revision cycles | [Design a review loop](/workflows/review-loops) |
 | Diagnose or recover a failed run | [Use the recovery guide](/guides/recovery) |
 | Operate Kyron on a VM | [Open the deployment guide](/deployment/) |
+| Manage users, access, and AI providers | [Open the administration guides](/guides/) |
 | Integrate through HTTP or WebSocket | [Use the API reference](/api) |
 
 ::: warning Trusted internal execution

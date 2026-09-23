@@ -78,6 +78,35 @@ override any of them in its inspector; blank values inherit from the next
 scope. Skill values are repository-relative paths to a skill directory or `SKILL.md`,
 and the manifest must declare a `description` in its frontmatter for Pi to load it.
 
+## Choose delivery and credential behavior
+
+The visual inspector covers common settings and Pi defaults. Configure the
+following advanced workflow settings through reviewed YAML or the API; the
+builder preserves schema-valid fields but does not expose every one as a
+dedicated control:
+
+| Setting | Options and default | Effect |
+| --- | --- | --- |
+| `delivery_mode` | `propose_changes` (default), `report_only` | Push a result branch/change request, or inspect the pinned subject without publishing Git changes |
+| `credential_access.mode` | `default` (default), `none`, `all`, `allowlist` | Select which trigger-user credentials enter process environments |
+| `credential_access.keys` | credential names; required only for `allowlist` | Exact credential environment keys made available |
+| `verification_publication` | publish status, post summary, and required flags | Control commit-status and change-request verification publication |
+| `auto_commit_after_wave` | `true` by default | Commit each successful process wave |
+| `timeout_per_node_seconds` | `1800` by default | Per-node timeout, capped by the server maximum |
+| `max_review_iterations` | `5` by default | Per-workflow review-loop cap, bounded by the server maximum |
+| `max_output_variable_bytes` | `65536` by default | Public output-variable limit, bounded by the server maximum |
+
+`credential_access: {mode: default}` resolves to all trigger-user credentials
+for `propose_changes` and no credentials for `report_only`. Prefer `none` or an
+explicit `allowlist` whenever a workflow does not need the user's complete
+credential set. Credentials remain available to arbitrary Bash, Script, or
+Prompt code in that process environment, so only trusted workflow authors may
+broaden access.
+
+Commit-message and change-request title/description templates are also
+configurable in YAML. The [complete workflow specification](/workflow-yaml-authoring-spec#_9-settings)
+defines every field and template variable.
+
 ## Reuse node templates
 
 Select a configured node and choose **Store as template**. Give the template a stable ID, name, and optional description. Templates are scoped to the project and follow the same local-store and review lifecycle as workflows.

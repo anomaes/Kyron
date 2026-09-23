@@ -13,7 +13,9 @@ A browser session contains exactly one active provider identity. The durable ide
 
 The signed-in identity and project token have separate jobs:
 
-- **Signed-in identity** — determines who can mutate the project, trigger the run, and control feedback checkpoints.
+- **Signed-in identity** — determines provider affinity and who performs each
+  project, run, or gate action. Gate actions additionally require membership in
+  the gate's eligible-identity snapshot and the appropriate permission.
 - **Project token** — performs Git operations and provider API calls on Kyron's behalf.
 
 ## Shared OAuth callback
@@ -38,7 +40,7 @@ Configure a project access token able to:
 
 - read and write repository contents;
 - create/update merge requests;
-- assign or refresh the triggering reviewer;
+- assign or refresh every reviewer selected by an approval policy;
 - post traceability comments; and
 - synchronize and reset intermediate approvals.
 
@@ -84,7 +86,8 @@ request body with that project's secret. `X-GitHub-Delivery` is used for dedupli
 Every target branch used for delivery should require a fresh approving review. Kyron consumes intermediate checkpoint approvals before execution continues:
 
 - GitLab calls approval synchronization and reset.
-- GitHub dismisses the active approving review from the triggering reviewer.
+- GitHub dismisses the active approving reviews that satisfied the intermediate
+  gate.
 
 Grant this authority explicitly. Do not rely only on “dismiss stale approvals on new commits”; Kyron must be able to enforce the transition it records.
 
@@ -94,11 +97,15 @@ After authentication and project matching, Kyron normalizes:
 
 | Provider action | Kyron action |
 | --- | --- |
-| Triggering reviewer approves | Approval feedback |
-| Triggering reviewer posts non-system `@kyron` comment | Comment feedback |
+| Eligible reviewer approves | Approval toward the snapshotted policy quorum |
+| Eligible reviewer posts non-system `@kyron` comment | Revision feedback |
 | Change request merges or closes | Worktree/local branch cleanup |
 
-Top-level provider actor identity must match the reviewer snapshot stored on the run. Duplicate deliveries and concurrent UI/webhook submissions do not advance a checkpoint twice.
+The top-level provider actor identity must be present in the gate's immutable
+eligible-identity snapshot and retain `gate.respond` permission. The default
+policy selects only the run initiator; custom policies can select other members
+and require several approvals. Duplicate deliveries and concurrent UI/webhook
+submissions do not advance a checkpoint twice.
 
 ## Enterprise and self-managed hosts
 

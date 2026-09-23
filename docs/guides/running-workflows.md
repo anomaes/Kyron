@@ -48,6 +48,11 @@ Run detail combines four related views:
 - **Attempts** — immutable tries, exit state, timestamps, and output paths;
 - **Logs** — durable engine events followed by live process events.
 
+The **AI usage** summary totals every Prompt-node attempt, including retries.
+Expand it to see input, output, cache-read, and cache-write tokens, model calls,
+model routing, and estimated cost by node and attempt. Cost is provider/model
+metadata-based and should be treated as an estimate rather than an invoice.
+
 Prompt nodes that have started are clickable. Selecting one changes the right-hand panel
 from **Run log** to **Pi activity**, without hiding the workflow graph. Pi activity combines
 persisted attempt history with current streaming events: assistant messages are grouped,
@@ -78,3 +83,15 @@ Prefer this path to killing a container or process manually. It records intent a
 The node output API selects an attempt and one stream: `stdout`, `stderr`, or `pi_events`. `tail_lines` bounds large reads. Paths are derived from durable node metadata and revalidated against the configured run-data root; callers cannot supply arbitrary filesystem paths.
 
 For the exact routes and status codes, use the [API guide](/api).
+
+## Delete a terminal run
+
+A user with `run.delete` may permanently delete a run only when it is
+`completed`, `failed`, `interrupted`, or `cancelled`. **Delete run** removes the
+local worktree and branch, stored output, logs, report, and execution hierarchy.
+It does not remove a remote branch or pull/merge request, and Kyron retains an
+authorization audit event recording the deletion.
+
+Deletion is not a retention shortcut for an active run. Cancel active work
+first, verify the terminal state, and review any remote change request before
+deleting the local record.

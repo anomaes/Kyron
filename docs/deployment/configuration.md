@@ -5,49 +5,58 @@ description: Environment variables and limits for the Kyron production stack.
 
 # Configuration
 
-The repository `.env.example` is the authoritative deployment template. Keep `.env` aligned with it and never commit real values.
+The repository `.env.example` is the authoritative production deployment
+template. Keep `.env` aligned with it and never commit real values. Defaults
+below are the shipped template/runtime defaults; placeholders such as
+`replace-me` are deliberately invalid production choices and must be replaced.
+
+Unless a section says otherwise, an environment change requires recreating the
+service that consumes it. `docker compose up -d` performs that recreation after
+Compose validation. `PI_VERSION`, frontend source, and Caddyfile changes require
+an image rebuild. Database-managed AI-provider revisions take effect for newly
+queued runs without a container restart.
 
 ## Application and database
 
-| Variable | Purpose |
-| --- | --- |
-| `APP_ENV` | Use `production` on a deployed instance |
-| `APP_HOST` | Hostname served by Caddy |
-| `LOG_LEVEL` | Backend log level |
-| `DATABASE_URL` | Async SQLAlchemy PostgreSQL URL |
-| `POSTGRES_PASSWORD` | PostgreSQL container password; must match `DATABASE_URL` |
-| `DB_POOL_SIZE` | Persistent database pool size |
-| `DB_MAX_OVERFLOW` | Temporary connections above the pool size |
+| Variable | Default/template value | Constraints and purpose |
+| --- | --- | --- |
+| `APP_ENV` | `production` in `.env.example` | Use `production` for a deployment; `development` relaxes secure-cookie behavior and is not a production option |
+| `APP_HOST` | `workflow.example.internal` | Hostname only, without scheme, port, or path; served by Caddy |
+| `LOG_LEVEL` | `INFO` | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, or `DEBUG` |
+| `DATABASE_URL` | Compose PostgreSQL URL | Async SQLAlchemy URL; password must match `POSTGRES_PASSWORD` |
+| `POSTGRES_PASSWORD` | placeholder | Required PostgreSQL container password |
+| `DB_POOL_SIZE` | `20` | Integer ≥ 1; persistent database pool size |
+| `DB_MAX_OVERFLOW` | `10` | Integer ≥ 0; temporary connections above the pool size |
 
 The OAuth callback, Caddy host, and provider application URLs must describe the same public origin.
 
 ## Encryption and sessions
 
-| Variable | Purpose |
-| --- | --- |
-| `CREDENTIALS_ENCRYPTION_KEY` | Fernet key for stored credentials; mandatory in production |
-| `CREDENTIALS_ENCRYPTION_KEY_VERSION` | Metadata version for the current encryption key |
-| `SESSION_SIGNING_KEY` | Current auth-session signing key, at least 32 random characters |
-| `SESSION_PREVIOUS_SIGNING_KEY` | Optional previous key during a bounded rotation window |
-| `SESSION_MAX_AGE_SECONDS` | Signed browser session lifetime |
-| `AUTH_USER_TOUCH_INTERVAL_SECONDS` | Minimum interval between durable user metadata refreshes |
-| `VSCODE_DEVICE_CODE_TTL_SECONDS` | Lifetime of a one-time VS Code connection code |
-| `VSCODE_DEVICE_POLL_INTERVAL_SECONDS` | Minimum client polling interval during device authorization |
-| `VSCODE_ACCESS_TOKEN_TTL_SECONDS` | Lifetime of a short-lived VS Code bearer credential |
-| `VSCODE_REFRESH_TOKEN_TTL_DAYS` | Maximum VS Code client-session lifetime without reconnecting |
+| Variable | Default/template value | Constraints and purpose |
+| --- | --- | --- |
+| `CREDENTIALS_ENCRYPTION_KEY` | placeholder | URL-safe Fernet key; mandatory in production |
+| `CREDENTIALS_ENCRYPTION_KEY_VERSION` | `1` | Integer ≥ 1; metadata version for controlled key rotation |
+| `SESSION_SIGNING_KEY` | placeholder | Required, at least 32 random characters |
+| `SESSION_PREVIOUS_SIGNING_KEY` | empty | Optional previous key during a bounded rotation window |
+| `SESSION_MAX_AGE_SECONDS` | `28800` | Signed browser-session lifetime |
+| `AUTH_USER_TOUCH_INTERVAL_SECONDS` | `300` | Integer ≥ 0; minimum durable user-metadata refresh interval |
+| `VSCODE_DEVICE_CODE_TTL_SECONDS` | `600` | 60–1800 seconds; one-time connection-code lifetime |
+| `VSCODE_DEVICE_POLL_INTERVAL_SECONDS` | `3` | 1–30 seconds; minimum authorization polling interval |
+| `VSCODE_ACCESS_TOKEN_TTL_SECONDS` | `900` | 60–86400 seconds; short-lived bearer credential |
+| `VSCODE_REFRESH_TOKEN_TTL_DAYS` | `30` | 1–365 days; maximum client session without reconnecting |
 
 Generate the two keys independently and back them up through a secret channel separate from the database backup.
 
 ## Provider configuration
 
-| Variable | Purpose |
-| --- | --- |
-| `GITLAB_URL` | GitLab web root |
-| `GITLAB_OAUTH_CLIENT_ID` / `GITLAB_OAUTH_CLIENT_SECRET` | GitLab OAuth application |
-| `GITHUB_WEB_URL` | GitHub or GHES web root |
-| `GITHUB_API_URL` | GitHub REST API root |
-| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth application |
-| `OAUTH_REDIRECT_URI` | Exact shared callback ending in `/auth/callback` |
+| Variable | Default/template value | Constraints and purpose |
+| --- | --- | --- |
+| `GITLAB_URL` | instance-specific placeholder | HTTPS GitLab web root; use `https://gitlab.com` for SaaS |
+| `GITLAB_OAUTH_CLIENT_ID` / `GITLAB_OAUTH_CLIENT_SECRET` | placeholders | Configure both to enable GitLab, or leave both empty |
+| `GITHUB_WEB_URL` | `https://github.com` | GitHub or GHES web root |
+| `GITHUB_API_URL` | `https://api.github.com` | GitHub REST API root; change both GitHub URLs for GHES |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | placeholders | Configure both to enable GitHub, or leave both empty |
+| `OAUTH_REDIRECT_URI` | hostname-specific placeholder | Required exact HTTPS callback ending in `/auth/callback` |
 
 A provider is enabled on the sign-in page only when both its OAuth ID and secret are present. See [provider setup](/deployment/providers).
 
@@ -68,35 +77,35 @@ All paths must be explicit, durable, writable by UID/GID `10001`, and dedicated 
 
 ## Execution limits
 
-| Variable | Example | Effect |
+| Variable | Default | Effect and valid range |
 | --- | ---: | --- |
-| `MAX_CONCURRENT_RUNS` | `10` | In-process run semaphore |
-| `MAX_NODE_TIMEOUT_SECONDS` | `14400` | Maximum workflow-requested timeout |
-| `MAX_REVIEW_ITERATIONS` | `10` | Server cap for review loops |
-| `MAX_SUBWORKFLOW_DEPTH` | `8` | Server cap for nested invocations |
-| `MAX_OUTPUT_VARIABLE_BYTES` | `65536` | Public output preview bound |
-| `MAX_ATTEMPT_OUTPUT_BYTES` | `104857600` | Combined stdout/stderr bytes persisted per node attempt |
-| `PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS` | `30` | Time allowed to drain inherited process pipes after the direct child exits |
-| `WORKFLOW_CATALOG_CACHE_TTL_SECONDS` | `30` | Process-local repository workflow catalog cache lifetime |
-| `PROCESS_TERMINATION_GRACE_SECONDS` | `10` | Delay between `SIGTERM` and `SIGKILL` |
+| `MAX_CONCURRENT_RUNS` | `10` | Integer ≥ 1; in-process run semaphore |
+| `MAX_NODE_TIMEOUT_SECONDS` | `14400` | Integer ≥ 1; maximum workflow-requested timeout |
+| `MAX_REVIEW_ITERATIONS` | `10` | Integer ≥ 1; server cap for review loops |
+| `MAX_SUBWORKFLOW_DEPTH` | `8` | Integer ≥ 1; server cap for nested invocations |
+| `MAX_OUTPUT_VARIABLE_BYTES` | `65536` | Integer ≥ 1024; public output preview bound |
+| `MAX_ATTEMPT_OUTPUT_BYTES` | `104857600` | Integer ≥ 1024; combined stdout/stderr persisted per attempt |
+| `PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS` | `30` | Number > 0; pipe-drain timeout after the direct child exits |
+| `WORKFLOW_CATALOG_CACHE_TTL_SECONDS` | `30` | Integer ≥ 0; `0` disables process-local catalog caching |
+| `PROCESS_TERMINATION_GRACE_SECONDS` | `10` | Number ≥ 0; delay between `SIGTERM` and `SIGKILL` |
 
 Workflow settings may request smaller limits but cannot bypass server caps.
 
 ## Reconciliation and retention
 
-| Variable | Example | Effect |
+| Variable | Default | Effect and valid range |
 | --- | ---: | --- |
-| `QUEUE_RECONCILIATION_INTERVAL_SECONDS` | `60` | Detect queued work requiring scheduling |
-| `STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS` | `3600` | Repair missed cleanup and inspect orphans |
-| `STALE_FAILED_RUN_DAYS` | `7` | Failed-run cleanup age policy |
-| `TERMINAL_WORKTREE_RETENTION_DAYS` | `1` | Retain terminal worktrees that have no change request |
-| `ORPHAN_WORKTREE_GRACE_HOURS` | `24` | Minimum time after orphan detection and last activity before deletion |
-| `RUN_OUTPUT_RETENTION_DAYS` | `30` | Attempt output retention |
-| `LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS` | `14` | Age at which an open PR/MR emits a run warning |
-| `LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS` | `7` | Minimum interval between repeated open-PR/MR warnings |
-| `WORKTREE_USAGE_WARNING_BYTES` | `53687091200` | Worktree-root byte threshold; `0` disables it |
-| `RUN_DATA_USAGE_WARNING_BYTES` | `53687091200` | Run-data-root byte threshold; `0` disables it |
-| `FILESYSTEM_USAGE_WARNING_PERCENT` | `85` | Filesystem utilization warning threshold |
+| `QUEUE_RECONCILIATION_INTERVAL_SECONDS` | `60` | Integer ≥ 1; detect queued work requiring scheduling |
+| `STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS` | `3600` | Integer ≥ 60; repair missed cleanup and inspect orphans |
+| `STALE_FAILED_RUN_DAYS` | `7` | Integer ≥ 1; failed-run cleanup age |
+| `TERMINAL_WORKTREE_RETENTION_DAYS` | `1` | Integer ≥ 0; retain terminal worktrees without a change request |
+| `ORPHAN_WORKTREE_GRACE_HOURS` | `24` | Integer ≥ 1; grace after orphan detection and last activity |
+| `RUN_OUTPUT_RETENTION_DAYS` | `30` | Integer ≥ 1; attempt-output retention |
+| `LONG_OPEN_CHANGE_REQUEST_WARNING_DAYS` | `14` | Integer ≥ 1; age at which an open PR/MR emits a warning |
+| `LONG_OPEN_CHANGE_REQUEST_WARNING_REPEAT_DAYS` | `7` | Integer ≥ 1; repeated-warning interval |
+| `WORKTREE_USAGE_WARNING_BYTES` | `53687091200` | Integer ≥ 0; worktree-root warning threshold, `0` disables |
+| `RUN_DATA_USAGE_WARNING_BYTES` | `53687091200` | Integer ≥ 0; run-data warning threshold, `0` disables |
+| `FILESYSTEM_USAGE_WARNING_PERCENT` | `85` | Integer 1–100; filesystem utilization warning threshold |
 
 Database metadata and durable engine logs are not automatically governed by the output-file retention value.
 
@@ -107,13 +116,20 @@ events are also persisted in `resource_audit_logs`.
 
 ## Pi version
 
-`PI_VERSION` pins the coding-agent build installed in the backend image. Treat a change as a dependency upgrade: review release behavior, rebuild the image, and run prompt-node integration checks before production promotion.
+`PI_VERSION` defaults to the version pinned in `.env.example` and selects the
+coding-agent build installed in the backend image. Treat a change as a
+dependency upgrade: review release behavior, rebuild the image, and run
+prompt-node integration checks before production promotion.
 
 ## Custom Pi providers
 
 System administrators manage custom Pi providers from **Administration → AI providers**. The backend validates every proposed configuration with the installed Pi version before activation, records an audit event, and retains earlier revisions for rollback. A run snapshots the active revision when it is queued, so later administrative changes affect new runs only.
 
-The active configuration and its history live in PostgreSQL. Kubernetes deployments therefore need no `models.json` volume, ConfigMap, or pod restart for normal administration; save and activate the configuration in the UI after the database migration is deployed.
+The active configuration and its history live in PostgreSQL. An independently
+maintained Kubernetes adaptation therefore needs no `models.json` volume or
+ConfigMap for normal administration, although Kubernetes itself is not a
+supported Kyron deployment mode. Save and activate the configuration in the UI
+after the database migration is deployed.
 
 The guided editor covers common OpenAI-compatible, Anthropic-compatible, and Google-compatible endpoints. Its bearer and `x-api-key` credential fields may be used independently or together. Both accept Kyron credential names rather than secret values. Pi requires every custom model to resolve provider authentication even when a gateway authenticates only through a custom header, so Kyron also uses an `x-api-key`-only credential as Pi's provider key while sending it in the explicit `x-api-key` header. The advanced JSON editor supports the complete Pi [models configuration](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/models.md):
 

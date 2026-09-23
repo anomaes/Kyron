@@ -62,6 +62,7 @@ export default withMermaid(defineConfig({
     },
     nav: [
       { text: "Start", link: "/getting-started/" },
+      { text: "Guides", link: "/guides/" },
       { text: "Workflows", link: "/workflows/" },
       { text: "Deploy", link: "/deployment/" },
       { text: "Architecture", link: "/architecture" },
@@ -91,8 +92,10 @@ export default withMermaid(defineConfig({
         {
           text: "Use Kyron",
           items: [
+            { text: "Guide index", link: "/guides/" },
             { text: "Projects and credentials", link: "/guides/projects-and-credentials" },
             { text: "Access and governance", link: "/guides/access-and-governance" },
+            { text: "System administration", link: "/guides/system-administration" },
             { text: "Visual workflow builder", link: "/guides/workflow-builder" },
             { text: "Run workflows", link: "/guides/running-workflows" },
             { text: "Visual Studio Code", link: "/guides/vscode" },

@@ -7,7 +7,9 @@ description: Configure project roles, approval policies, workflow norms, and tra
 
 The first user to sign in to a new Kyron database becomes the global system
 administrator. That administrator registers projects and can reach every project.
-All other access comes from project membership.
+All other access comes from project membership. See
+[System administration](/guides/system-administration) for bootstrap, global-user,
+and AI-provider tasks.
 
 ## Project roles
 

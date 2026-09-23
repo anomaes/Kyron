@@ -7,6 +7,20 @@ description: Deploy Kyron's supported single-VM architecture with Docker Compose
 
 Kyron's supported deployment is one Linux VM running the included Docker Compose stack. Caddy is the only exposed service and exactly one backend worker owns orchestration.
 
+## Supported deployment choices
+
+| Choice | When to use it | TLS and webhook requirement |
+| --- | --- | --- |
+| Public DNS with Caddy automatic HTTPS | GitHub.com/GitLab.com or users must reach Kyron over the internet | Public DNS plus inbound 80/443; SaaS providers can deliver webhooks directly |
+| Private DNS with Caddy internal CA | All users and webhook senders are on a controlled network | Every client must trust the private CA; SaaS webhooks need an approved public ingress path |
+| Private DNS with a corporate certificate | The organization already operates internal PKI | Mount and protect the certificate/key; browsers and webhook senders must trust that PKI |
+
+All three choices retain the same single-VM Compose topology. Kubernetes,
+multiple backend replicas, a directly exposed backend, and replacement reverse
+proxies are not supported deployment modes. Adapting Kyron to them requires an
+independent security and orchestration review; in particular, production must
+still run exactly one backend worker.
+
 ## Topology
 
 | Service | Responsibility | Host exposure |
