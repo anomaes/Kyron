@@ -22,6 +22,8 @@ class CapturingRunner(ProcessRunner):
         self.scratch_root: Path | None = None
         self.stdout_lines: list[str] = []
         self.broadcast_stdout = True
+        self.preserve_stdout_lines = False
+        self.output_truncated = False
 
     async def execute(
         self,
@@ -34,6 +36,7 @@ class CapturingRunner(ProcessRunner):
         self.environment = dict(spec.environment)
         self.secret_values = list(secret_values)
         self.broadcast_stdout = spec.broadcast_stdout
+        self.preserve_stdout_lines = spec.preserve_stdout_lines
         bind_indexes = [
             index for index, value in enumerate(self.command) if value == "--bind"
         ]
@@ -54,6 +57,7 @@ class CapturingRunner(ProcessRunner):
             stderr_path=stderr,
             stdout_preview="",
             stderr_preview="",
+            output_truncated=self.output_truncated,
         )
 
 
@@ -102,6 +106,7 @@ async def test_prompt_node_is_write_confined_and_uses_ephemeral_pi_state(tmp_pat
     assert runner.scratch_root is not None
     assert not runner.scratch_root.exists()
     assert not runner.broadcast_stdout
+    assert runner.preserve_stdout_lines
     assert secrets == {}
 
 
@@ -217,6 +222,29 @@ async def test_prompt_node_converts_pi_json_error_to_process_failure(tmp_path: P
     assert result.exit_code == 1
     assert "Pi reported failure: 401 invalid API key" in result.stderr_preview
     assert "Pi reported failure: 401 invalid API key" in result.stderr_tail
+
+
+async def test_prompt_node_reports_attempt_output_limit_without_json_error(
+    tmp_path: Path,
+) -> None:
+    runner = CapturingRunner()
+    runner.output_truncated = True
+    operation = request(tmp_path, {})
+
+    result = await ProcessNodeExecutor(runner).execute(
+        PromptNode(
+            type="prompt",
+            id="prompt",
+            label="Prompt",
+            config=PromptConfig(prompt="Implement ${TASK}"),
+        ),
+        operation,
+    )
+
+    assert result.exit_code == 1
+    assert result.output_truncated
+    assert "Pi output exceeded Kyron's attempt byte limit" in result.stderr_preview
+    assert "malformed JSONL" not in result.stderr_preview
 
 
 async def test_skipped_skill_warning_survives_a_pi_failure(tmp_path: Path) -> None:

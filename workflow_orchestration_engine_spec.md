@@ -1027,10 +1027,13 @@ Rules:
 - `--no-extensions` plus the explicit built-in extension rejects out-of-worktree paths
   from Pi's `write` and `edit` tools without loading repository extensions.
 - The engine parses each JSONL record from stdout.
-- Raw JSONL is stored in `pi_events.jsonl`.
+- Read frames are reassembled before parsing so a large JSONL record is never parsed
+  or persisted as partial JSON. Buffering remains bounded by the attempt output limit.
+- Complete raw JSONL records are stored in `pi_events.jsonl`.
 - A human-readable event stream is published to the run log WebSocket.
 - Stderr is stored separately.
-- A non-zero process exit, malformed JSONL, or a terminal assistant result with
+- A non-zero process exit, exceeded attempt output limit, malformed JSONL, or a
+  terminal assistant result with
   `stopReason` equal to `error` or `aborted` fails the node. Pi JSON mode may return
   process exit code `0` for provider failures, so the exit code alone is insufficient.
 
@@ -2964,6 +2967,7 @@ Do not store sensitive environment data.
 The prompt node succeeds when:
 
 - The Pi process exits with code `0`.
+- The attempt output remains within the configured byte limit.
 - JSONL parsing did not encounter an unrecoverable framing error.
 - The final assistant message does not have `stopReason: "error"` or
   `stopReason: "aborted"`.
@@ -3568,7 +3572,7 @@ MAX_SUBWORKFLOW_DEPTH=8
 MAX_OUTPUT_VARIABLE_BYTES=65536
 PROCESS_TERMINATION_GRACE_SECONDS=10
 PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS=30
-MAX_ATTEMPT_OUTPUT_BYTES=104857600
+MAX_ATTEMPT_OUTPUT_BYTES=268435456
 WORKFLOW_CATALOG_CACHE_TTL_SECONDS=30
 QUEUE_RECONCILIATION_INTERVAL_SECONDS=60
 STALE_RESOURCE_RECONCILIATION_INTERVAL_SECONDS=3600

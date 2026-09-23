@@ -142,7 +142,7 @@ async def test_oversized_pi_event_is_drained_before_following_tool_error(
                     "events = [\n"
                     "  {'type': 'tool_execution_end', 'toolCallId': 'large-read', "
                     "'toolName': 'read', 'result': {'content': [{'type': 'text', "
-                    "'text': 'Rückrollschutz ' * 10_000}]}, 'isError': False},\n"
+                    "'text': 'Rückrollschutz ' * 100_000}]}, 'isError': False},\n"
                     "  {'type': 'tool_execution_end', 'toolCallId': 'failed-read', "
                     "'toolName': 'read', 'result': {'content': [{'type': 'text', "
                     "'text': 'document is too large'}]}, 'isError': True},\n"
@@ -161,6 +161,7 @@ async def test_oversized_pi_event_is_drained_before_following_tool_error(
             max_preview_bytes=100,
             stdout_filename="pi_events.jsonl",
             broadcast_stdout=False,
+            preserve_stdout_lines=True,
         ),
         line_callback=collector.accept,
     )
@@ -171,7 +172,7 @@ async def test_oversized_pi_event_is_drained_before_following_tool_error(
     assert result.exit_code == 0
     assert (
         persisted_events[0]["result"]["content"][0]["text"]
-        == "Rückrollschutz " * 10_000
+        == "Rückrollschutz " * 100_000
     )
     assert [event["type"] for event in collector.events] == [
         "tool_execution_end",
@@ -243,6 +244,49 @@ async def test_attempt_output_budget_truncates_combined_streams(tmp_path: Path) 
     assert result.output_truncated
     assert len(result.stdout_path.read_bytes()) + len(result.stderr_path.read_bytes()) <= 1024
     assert OUTPUT_TRUNCATION_MARKER.strip() in persisted
+
+
+async def test_structured_stdout_drops_incomplete_record_at_attempt_limit(
+    tmp_path: Path,
+) -> None:
+    collector = PiEventCollector()
+    runner = ProcessRunner(
+        ProcessRegistry(),
+        LogBroadcaster(),
+        max_attempt_output_bytes=1024,
+    )
+    result = await runner.execute(
+        ProcessSpec(
+            run_id=uuid.uuid4(),
+            attempt_id=uuid.uuid4(),
+            node_path="root/prompt",
+            command=[
+                sys.executable,
+                "-c",
+                (
+                    "import json; "
+                    "print(json.dumps({'type': 'agent_start'})); "
+                    "print(json.dumps({'type': 'message_end', 'value': 'x' * 4000}))"
+                ),
+            ],
+            cwd=tmp_path,
+            environment={},
+            output_directory=tmp_path / "bounded-pi-output",
+            timeout_seconds=5,
+            max_preview_bytes=2048,
+            stdout_filename="pi_events.jsonl",
+            broadcast_stdout=False,
+            preserve_stdout_lines=True,
+        ),
+        line_callback=collector.accept,
+    )
+
+    persisted = result.stdout_path.read_text()
+    assert result.output_truncated
+    assert persisted == '{"type": "agent_start"}\n'
+    assert OUTPUT_TRUNCATION_MARKER.strip() not in persisted
+    assert [event["type"] for event in collector.events] == ["agent_start"]
+    assert collector.errors == []
 
 
 async def test_stream_drain_timeout_terminates_background_pipe_holder(

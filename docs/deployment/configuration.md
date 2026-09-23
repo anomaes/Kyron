@@ -84,7 +84,7 @@ All paths must be explicit, durable, writable by UID/GID `10001`, and dedicated 
 | `MAX_REVIEW_ITERATIONS` | `10` | Integer ≥ 1; server cap for review loops |
 | `MAX_SUBWORKFLOW_DEPTH` | `8` | Integer ≥ 1; server cap for nested invocations |
 | `MAX_OUTPUT_VARIABLE_BYTES` | `65536` | Integer ≥ 1024; public output preview bound |
-| `MAX_ATTEMPT_OUTPUT_BYTES` | `104857600` | Integer ≥ 1024; combined stdout/stderr persisted per attempt |
+| `MAX_ATTEMPT_OUTPUT_BYTES` | `268435456` | Integer ≥ 1024; combined stdout/stderr persisted per attempt |
 | `PROCESS_STREAM_DRAIN_TIMEOUT_SECONDS` | `30` | Number > 0; pipe-drain timeout after the direct child exits |
 | `WORKFLOW_CATALOG_CACHE_TTL_SECONDS` | `30` | Integer ≥ 0; `0` disables process-local catalog caching |
 | `PROCESS_TERMINATION_GRACE_SECONDS` | `10` | Number ≥ 0; delay between `SIGTERM` and `SIGKILL` |

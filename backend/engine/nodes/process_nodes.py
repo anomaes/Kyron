@@ -189,6 +189,7 @@ class ProcessNodeExecutor:
                     max_preview_bytes=request.max_preview_bytes,
                     stdout_filename=stdout_filename,
                     broadcast_stdout=not isinstance(node, PromptNode),
+                    preserve_stdout_lines=isinstance(node, PromptNode),
                 ),
                 secret_values=list(request.secrets.values()),
                 line_callback=callback,
@@ -204,7 +205,9 @@ class ProcessNodeExecutor:
                 pi_scratch.cleanup()
         if isinstance(node, PromptNode) and collector is not None:
             failure_message = None
-            if collector.errors:
+            if result.output_truncated:
+                failure_message = "Pi output exceeded Kyron's attempt byte limit"
+            elif collector.errors:
                 failure_message = "Pi emitted malformed JSONL"
             elif collector.failure_message is not None:
                 failure_message = f"Pi reported failure: {collector.failure_message}"
@@ -226,6 +229,7 @@ class ProcessNodeExecutor:
                     ),
                     timed_out=result.timed_out,
                     cancelled=result.cancelled,
+                    output_truncated=result.output_truncated,
                     pi_usage=result.pi_usage,
                     pi_models=result.pi_models,
                     pi_skill_warning=result.pi_skill_warning,

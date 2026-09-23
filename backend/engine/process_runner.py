@@ -21,7 +21,7 @@ LineCallback = Callable[[str, str], Awaitable[None]]
 DIAGNOSTIC_TAIL_BYTES = 4096
 STREAM_READ_CHUNK_BYTES = 64 * 1024
 MAX_STREAM_FRAME_BYTES = 1 << 20
-DEFAULT_MAX_ATTEMPT_OUTPUT_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_ATTEMPT_OUTPUT_BYTES = 256 * 1024 * 1024
 DEFAULT_STREAM_DRAIN_TIMEOUT_SECONDS = 30.0
 OUTPUT_TRUNCATION_MARKER = "\n[Kyron output truncated: attempt byte limit reached]\n"
 
@@ -72,6 +72,7 @@ class ProcessSpec:
     stdout_filename: str = "stdout.log"
     stderr_filename: str = "stderr.log"
     broadcast_stdout: bool = True
+    preserve_stdout_lines: bool = False
 
 
 @dataclass(slots=True)
@@ -133,14 +134,19 @@ class AttemptOutputBudget:
         self.truncated = False
         self._lock = asyncio.Lock()
 
-    async def take(self, text: str) -> str:
+    async def take(self, text: str, *, add_truncation_marker: bool = True) -> str:
         encoded = text.encode("utf-8")
         async with self._lock:
+            if self.truncated:
+                return ""
             remaining = self.maximum_bytes - self.written_bytes
             if len(encoded) <= remaining:
                 self.written_bytes += len(encoded)
                 return text
-            if self.truncated or remaining <= 0:
+            if remaining <= 0:
+                self.truncated = True
+                return ""
+            if not add_truncation_marker:
                 self.truncated = True
                 return ""
             marker = OUTPUT_TRUNCATION_MARKER.encode("utf-8")
@@ -151,6 +157,10 @@ class AttemptOutputBudget:
             self.written_bytes += len(result_bytes)
             self.truncated = True
             return result_bytes.decode("utf-8", errors="ignore")
+
+    async def mark_truncated(self) -> None:
+        async with self._lock:
+            self.truncated = True
 
 
 class ProcessRunner:
@@ -220,28 +230,67 @@ class ProcessRunner:
             preview: BoundedPreview,
             tail: BoundedTail,
         ) -> None:
+            preserve_lines = source == "stdout" and spec.preserve_stdout_lines
+            pending_parts: list[str] = []
+            pending_bytes = 0
+            discarding_oversized_line = False
+
+            async def persist(text: str) -> None:
+                bounded = await output_budget.take(
+                    text,
+                    add_truncation_marker=not preserve_lines,
+                )
+                if not bounded:
+                    return
+                await output.write(bounded)
+                preview.append(bounded)
+                tail.append(bounded)
+                if source != "stdout" or spec.broadcast_stdout:
+                    await self.broadcaster.publish(
+                        spec.run_id,
+                        {
+                            "type": "process_output",
+                            "node_path": spec.node_path,
+                            "attempt_id": str(spec.attempt_id),
+                            "source": source,
+                            "line": bounded.rstrip("\n"),
+                        },
+                    )
+                if line_callback:
+                    await line_callback(source, bounded)
+
             async with aiofiles.open(path, "w", encoding="utf-8") as output:
                 async for chunk in iter_stream_lines(stream):
                     text = redactor.redact(chunk.decode("utf-8", errors="replace"))
-                    text = await output_budget.take(text)
-                    if not text:
+
+                    if not preserve_lines:
+                        await persist(text)
                         continue
-                    await output.write(text)
-                    preview.append(text)
-                    tail.append(text)
-                    if source != "stdout" or spec.broadcast_stdout:
-                        await self.broadcaster.publish(
-                            spec.run_id,
-                            {
-                                "type": "process_output",
-                                "node_path": spec.node_path,
-                                "attempt_id": str(spec.attempt_id),
-                                "source": source,
-                                "line": text.rstrip("\n"),
-                            },
-                        )
-                    if line_callback:
-                        await line_callback(source, text)
+
+                    if discarding_oversized_line:
+                        if text.endswith("\n"):
+                            discarding_oversized_line = False
+                        continue
+
+                    pending_parts.append(text)
+                    pending_bytes += len(text.encode("utf-8"))
+                    if pending_bytes > self.max_attempt_output_bytes:
+                        # A structured record cannot fit in this attempt's output budget.
+                        # Drain through its newline without persisting or parsing fragments.
+                        await output_budget.mark_truncated()
+                        pending_parts.clear()
+                        pending_bytes = 0
+                        discarding_oversized_line = not text.endswith("\n")
+                        continue
+                    if not text.endswith("\n"):
+                        continue
+
+                    await persist("".join(pending_parts))
+                    pending_parts.clear()
+                    pending_bytes = 0
+
+                if preserve_lines and pending_parts and not discarding_oversized_line:
+                    await persist("".join(pending_parts))
 
         assert process.stdout is not None
         assert process.stderr is not None
