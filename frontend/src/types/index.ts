@@ -319,6 +319,8 @@ export type RunReport = {
   schema_version: number; frozen: boolean; generated_at: string;
   run: Record<string, unknown> & { id: string; status: string; root_workflow_id: string; project_name: string };
   invocations: Array<Record<string, unknown>>;
+  waves?: Array<Record<string, unknown>>;
+  nodes?: Array<Record<string, unknown>>;
   gates: Array<GateInstance & { workflow_id: string; invocation_path: string; node_id: string; node_path: string; decisions: GateDecision[] }>;
   audit_events: Array<Record<string, unknown>>;
   post_run_lifecycle: Array<Record<string, unknown>>;

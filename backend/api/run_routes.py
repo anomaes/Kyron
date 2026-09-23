@@ -17,7 +17,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import ColumnElement, func, select
 
 from backend.approval_policy_defaults import DEFAULT_APPROVAL_POLICY_KEY
@@ -78,6 +78,7 @@ from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
 from backend.services.pi_usage_service import PiUsageService
+from backend.services.report_export import render_traceability_report_html
 from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -262,6 +263,28 @@ async def run_report(run_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dic
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
     await authorize_project(db, user, run.project_id, REPORT_VIEW)
     return await ReportService(db).get(run)
+
+
+@router.get("/{run_id}/report/export", response_class=HTMLResponse)
+async def export_run_report(
+    run_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+) -> HTMLResponse:
+    run = await db.get(WorkflowRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run does not exist")
+    await authorize_project(db, user, run.project_id, REPORT_VIEW)
+    report = await ReportService(db).get(run)
+    filename = f"kyron-run-{run.id}-traceability-report.html"
+    return HTMLResponse(
+        render_traceability_report_html(report),
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/{run_id}/usage")

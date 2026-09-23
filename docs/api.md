@@ -67,6 +67,7 @@ that project's encrypted secret and provider-specific headers before processing 
 | DELETE | `/api/runs/{run_id}` | Permanently remove an inactive run and its local resources; requires `run.delete` |
 | GET | `/api/runs/{run_id}/graph` | Snapshot, invocations, workspaces, batches, change requests, waves, nodes, attempts, edges, and gates |
 | GET | `/api/runs/{run_id}/report` | Live or immutable terminal traceability report plus post-run lifecycle addenda |
+| GET | `/api/runs/{run_id}/report/export` | Download the authorized traceability record as a self-contained, printable HTML report |
 | GET | `/api/runs/{run_id}/usage` | Prompt-attempt token, model, request, and estimated-cost totals |
 | GET | `/api/runs/{run_id}/logs` | Replay engine logs after a sequence ID |
 | GET | `/api/runs/{run_id}/nodes/{node_execution_id}` | Node and attempt history |

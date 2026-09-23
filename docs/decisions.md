@@ -74,6 +74,8 @@ replace that stable key with a project-managed policy.
 
 Terminal execution reports are immutable database snapshots. Provider merge/close events
 arriving after completion are append-only post-run lifecycle addenda.
+The same authorized report can be exported as self-contained HTML for archival or printing;
+the export is a presentation of the canonical JSON payload, not a second stored record.
 
 ## D-009 — Parallel composition uses invocation-owned Git workspaces
 

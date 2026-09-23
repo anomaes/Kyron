@@ -98,6 +98,8 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .admin-list-item p, .admin-list-item small { color: var(--muted); font-size: 11px; }
 .modal select { width: 100%; border: 1px solid #d5d7cc; border-radius: 7px; background: white; padding: 10px 11px; color: var(--ink); font: 13px Manrope; }
 .report-panel { margin-top: 16px; }
+.report-export-button { padding: 6px 9px; border: 1px solid #b7ce7a; border-radius: 6px; background: #edf5d8; color: #536c24; font-size: 9px; font-weight: 700; text-decoration: none; }
+.report-export-button:hover { background: #e4efc6; }
 .report-summary { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
 .report-summary > div { display: grid; gap: 5px; padding: 15px 17px; border-right: 1px solid var(--line); }
 .report-summary span, .report-gate small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; }

@@ -2186,6 +2186,8 @@ GET  /api/runs
 GET  /api/runs/{run_id}
 GET  /api/runs/{run_id}/graph
 GET  /api/runs/{run_id}/logs
+GET  /api/runs/{run_id}/report
+GET  /api/runs/{run_id}/report/export
 GET  /api/runs/{run_id}/usage
 GET  /api/runs/{run_id}/nodes/{node_execution_id}
 GET  /api/runs/{run_id}/nodes/{node_execution_id}/output
@@ -2214,6 +2216,12 @@ Query:
 - Optional byte range or `tail_lines`.
 
 The endpoint must not read arbitrary paths supplied by the client.
+
+The report endpoint returns the live traceability payload while a run is active and the
+immutable report snapshot after it becomes terminal, with append-only post-run lifecycle
+events. The export endpoint renders that same authorized payload as a self-contained HTML
+attachment suitable for archival or printing to PDF; it does not create a second report
+record.
 
 The Pi-events endpoint accepts an optional positive `attempt`, parses the corresponding
 redacted `pi_events.jsonl`, and returns Kyron's stable UI event schema, attempt status, and

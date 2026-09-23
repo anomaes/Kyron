@@ -1,9 +1,13 @@
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api import run_routes
+from backend.auth.dependencies import AuthenticatedUser
 from backend.db.models import (
     ChangeRequestLifecycleEvent,
+    ExecutionWave,
     GateDecision,
     GateInstance,
     NodeExecution,
@@ -16,7 +20,7 @@ from backend.services.report_service import ReportService
 
 
 async def test_terminal_report_contains_child_gates_and_lifecycle_addenda(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: Any
 ) -> None:
     user = User(email="actor@example.com", display_name="Actor")
     db_session.add(user)
@@ -75,6 +79,16 @@ async def test_terminal_report_contains_child_gates_and_lifecycle_addenda(
     )
     db_session.add(node)
     await db_session.flush()
+    db_session.add(
+        ExecutionWave(
+            run_id=run.id,
+            invocation_id=child.id,
+            wave_index=1,
+            status="SUCCESS",
+            start_commit_sha="b" * 40,
+            end_commit_sha="c" * 40,
+        )
+    )
     gate = GateInstance(
         run_id=run.id,
         invocation_id=child.id,
@@ -100,7 +114,10 @@ async def test_terminal_report_contains_child_gates_and_lifecycle_addenda(
     await db_session.commit()
 
     report = await ReportService(db_session).get(run)
+    assert report["schema_version"] == 3
     assert report["frozen"] is True
+    assert report["waves"][0]["status"] == "SUCCESS"
+    assert report["nodes"][0]["node_path"] == "root/call/approval"
     assert report["gates"][0]["workflow_id"] == "child"
     assert report["gates"][0]["invocation_path"] == "root/call"
     assert report["gates"][0]["decisions"][0]["event_type"] == "approval"
@@ -117,3 +134,31 @@ async def test_terminal_report_contains_child_gates_and_lifecycle_addenda(
     await db_session.commit()
     updated = await ReportService(db_session).get(run)
     assert updated["post_run_lifecycle"][0]["actor_username"] == "merger"
+
+    authorized: list[tuple[Any, ...]] = []
+
+    async def allow(*args: Any, **kwargs: Any) -> None:
+        authorized.append(args)
+
+    monkeypatch.setattr(run_routes, "authorize_project", allow)
+    response = await run_routes.export_run_report(
+        run.id,
+        AuthenticatedUser(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            avatar_url=None,
+            provider="gitlab",
+            provider_user_id="7",
+            provider_username="actor",
+        ),
+        db_session,
+    )
+
+    assert authorized
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="kyron-run-{run.id}-traceability-report.html"'
+    )
+    assert b"Actor" in response.body
+    assert b"merger" in response.body

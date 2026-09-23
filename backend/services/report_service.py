@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import (
     AuthorizationAuditEvent,
     ChangeRequestLifecycleEvent,
+    ExecutionWave,
     GateDecision,
     GateInstance,
     InvocationWorkspace,
@@ -25,6 +26,8 @@ from backend.db.models import (
 )
 from backend.db.statuses import TERMINAL_RUN_STATUSES
 
+REPORT_SCHEMA_VERSION = 3
+
 
 class ReportService:
     def __init__(self, session: AsyncSession) -> None:
@@ -35,7 +38,11 @@ class ReportService:
         if stored is None:
             payload = await self._build(run)
             if run.status in TERMINAL_RUN_STATUSES:
-                stored = RunReport(run_id=run.id, payload=payload)
+                stored = RunReport(
+                    run_id=run.id,
+                    schema_version=REPORT_SCHEMA_VERSION,
+                    payload=payload,
+                )
                 self.session.add(stored)
                 await self.session.commit()
         else:
@@ -63,12 +70,21 @@ class ReportService:
                 .order_by(WorkflowInvocation.started_at, WorkflowInvocation.invocation_path)
             )
         )
-        nodes = {
-            node.id: node
-            for node in await self.session.scalars(
-                select(NodeExecution).where(NodeExecution.run_id == run.id)
+        node_items = list(
+            await self.session.scalars(
+                select(NodeExecution)
+                .where(NodeExecution.run_id == run.id)
+                .order_by(NodeExecution.started_at, NodeExecution.node_path)
             )
-        }
+        )
+        nodes = {node.id: node for node in node_items}
+        waves = list(
+            await self.session.scalars(
+                select(ExecutionWave)
+                .where(ExecutionWave.run_id == run.id)
+                .order_by(ExecutionWave.started_at, ExecutionWave.wave_index)
+            )
+        )
         invocation_by_id = {item.id: item for item in invocations}
         gates = list(
             await self.session.scalars(
@@ -145,7 +161,7 @@ class ReportService:
             )
         )
         return {
-            "schema_version": 2,
+            "schema_version": REPORT_SCHEMA_VERSION,
             "run": {
                 "id": str(run.id),
                 "status": run.status,
@@ -176,6 +192,8 @@ class ReportService:
                 "error_message": run.error_message,
             },
             "invocations": [_row(item) for item in invocations],
+            "waves": [_execution_wave(item) for item in waves],
+            "nodes": [_node_execution(item) for item in node_items],
             "workspaces": [_row(item) for item in workspaces],
             "subworkflow_batches": [_row(item) for item in batches],
             "subworkflow_batch_members": [_row(item) for item in members],
@@ -183,6 +201,36 @@ class ReportService:
             "gates": gate_items,
             "audit_events": [_row(item) for item in audit],
         }
+
+
+def _execution_wave(wave: ExecutionWave) -> dict[str, Any]:
+    return {
+        "id": _json(wave.id),
+        "invocation_id": _json(wave.invocation_id),
+        "wave_index": wave.wave_index,
+        "status": wave.status,
+        "start_commit_sha": wave.start_commit_sha,
+        "end_commit_sha": wave.end_commit_sha,
+        "started_at": _json(wave.started_at),
+        "finished_at": _json(wave.finished_at),
+        "error_message": wave.error_message,
+    }
+
+
+def _node_execution(node: NodeExecution) -> dict[str, Any]:
+    return {
+        "id": _json(node.id),
+        "invocation_id": _json(node.invocation_id),
+        "wave_id": _json(node.wave_id),
+        "node_id": node.node_id,
+        "node_path": node.node_path,
+        "node_type": node.node_type,
+        "status": node.status,
+        "current_attempt": node.current_attempt,
+        "started_at": _json(node.started_at),
+        "finished_at": _json(node.finished_at),
+        "error_message": node.error_message,
+    }
 
 
 def _row(value: Any) -> dict[str, Any]:
