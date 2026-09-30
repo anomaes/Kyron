@@ -19,6 +19,7 @@ from backend.db.models import (
 from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
 from backend.engine.process_registry import ProcessRegistry
 from backend.engine.task_registry import TaskRegistry
+from backend.services.pi_summary_persistence import persist_terminal_pi_summaries
 
 
 async def cancel_run(
@@ -70,6 +71,7 @@ async def cancel_run(
         .where(NodeExecution.run_id == run.id, NodeExecution.status == NodeStatus.RUNNING)
         .values(status=NodeStatus.CANCELLED, finished_at=now)
     )
+    await persist_terminal_pi_summaries(session, [run.id], (AttemptStatus.CANCELLED,))
     await session.execute(
         update(ExecutionWave)
         .where(ExecutionWave.run_id == run.id, ExecutionWave.status == WaveStatus.RUNNING)

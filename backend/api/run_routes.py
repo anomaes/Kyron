@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
+from time import monotonic
 from typing import Annotated, Any
 
 from fastapi import (
@@ -65,8 +66,9 @@ from backend.db.statuses import RunStatus
 from backend.dependencies import Cipher
 from backend.engine.cancellation import cancel_run
 from backend.engine.output_paths import node_attempt_directory
-from backend.engine.pi.model_identity import aggregate_pi_models_content, normalize_pi_models
-from backend.engine.pi.ui_events import parse_pi_ui_events
+from backend.engine.pi.event_pages import read_pi_event_page
+from backend.engine.pi.live_summaries import snapshot as live_pi_summary
+from backend.engine.pi.model_identity import normalize_pi_models
 from backend.engine.process_registry import process_registry
 from backend.engine.resume import ResumeError, prepare_resume
 from backend.integrations.code_host import create_code_host_client, provider_display_name
@@ -77,6 +79,7 @@ from backend.schemas.run import FeedbackRequest, PaginatedRuns, RunResponse
 from backend.services.cleanup_service import CleanupService
 from backend.services.feedback_service import FeedbackError, FeedbackService
 from backend.services.log_broadcaster import log_broadcaster
+from backend.services.pi_activity_metrics import pi_activity_metrics
 from backend.services.pi_usage_service import PiUsageService
 from backend.services.report_export import render_traceability_report_html
 from backend.services.report_service import ReportService
@@ -85,6 +88,7 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 websocket_router = APIRouter(tags=["run logs"])
 TAIL_READ_BLOCK_BYTES = 64 * 1024
 MAX_TAIL_READ_BYTES = 1 << 20
+PI_ACTIVITY_PAGE_LIMITER = asyncio.Semaphore(4)
 
 
 def _read_tail_lines(path: Path, line_count: int) -> tuple[str, bool]:
@@ -406,6 +410,7 @@ async def node_pi_events(
     user: CurrentUser,
     db: DbSession,
     attempt: Annotated[int | None, Query(ge=1)] = None,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
     run = await db.get(WorkflowRun, run_id)
     node = await db.scalar(
@@ -438,17 +443,32 @@ async def node_pi_events(
     )
     if not output.is_relative_to(root):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pi activity does not exist")
-    content = ""
+    page: dict[str, Any] = {"events": [], "next_cursor": None, "has_more": False}
     if await asyncio.to_thread(output.is_file):
-        content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
-    models = aggregate_pi_models_content(content)
-    if not models and attempt_row.pi_models is not None:
-        models = normalize_pi_models(attempt_row.pi_models)
+        try:
+            async with PI_ACTIVITY_PAGE_LIMITER:
+                pi_activity_metrics.begin(await asyncio.to_thread(lambda: output.stat().st_size))
+                started = monotonic()
+                try:
+                    page = await asyncio.to_thread(
+                        read_pi_event_page, output, cursor, running=attempt_row.status == "RUNNING"
+                    )
+                finally:
+                    pi_activity_metrics.finish(
+                        int(page.get("source_bytes_read", 0)),
+                        int(page.get("response_bytes", 0)),
+                        monotonic() - started,
+                    )
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    elif cursor is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Stale Pi activity cursor")
+    live = live_pi_summary(attempt_row.id) if attempt_row.status == "RUNNING" else None
     return {
         "attempt": selected_attempt,
         "status": attempt_row.status,
-        "models": models,
-        "events": parse_pi_ui_events(content),
+        "models": live[1] if live is not None else normalize_pi_models(attempt_row.pi_models),
+        **page,
     }
 
 

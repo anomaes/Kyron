@@ -76,6 +76,12 @@ Monitor the authenticated `/api/metrics` endpoint. Root-byte and filesystem-use
 threshold transitions are written to `resource_audit_logs` and emitted through
 the backend logger for alert routing.
 
+Pi activity metrics include active page requests, request count, source and response
+bytes, total page duration, and the last requested event-file size. On Linux the
+endpoint also reports backend resident memory and cgroup memory when available.
+Alert on sustained cgroup memory above 80% of the container limit and investigate
+high Pi activity concurrency or rapidly growing event files before the limit is reached.
+
 ## Release verification
 
 Run `./scripts/verify.sh`, `npm audit` in both Node packages, and

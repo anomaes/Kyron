@@ -23,6 +23,7 @@ from backend.db.models import (
     WorkflowRun,
 )
 from backend.db.statuses import AttemptStatus, NodeStatus, RunStatus, WaveStatus
+from backend.engine.output_paths import node_attempt_directory
 from backend.engine.resume import ResumeError, mark_run_interrupted, prepare_resume
 from backend.engine.task_registry import TaskRegistry
 from backend.integrations.git_manager import GitManager
@@ -308,6 +309,50 @@ async def test_worker_crash_marks_active_state_interrupted(
     event = await db_session.scalar(select(RunLog).where(RunLog.run_id == run.id))
     assert event is not None
     assert event.event_type == "RUN_INTERRUPTED"
+
+
+async def test_interrupted_prompt_persists_summary_from_durable_events(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run = await _run(db_session, tmp_path, RunStatus.RUNNING)
+    run.run_data_path = str(tmp_path / "run-data")
+    invocation = WorkflowInvocation(
+        run_id=run.id, workflow_id="root", invocation_path="root", status="RUNNING"
+    )
+    db_session.add(invocation)
+    await db_session.flush()
+    node = NodeExecution(
+        run_id=run.id,
+        invocation_id=invocation.id,
+        node_id="prompt",
+        node_path="root/prompt",
+        node_type="prompt",
+        status=NodeStatus.RUNNING,
+    )
+    db_session.add(node)
+    await db_session.flush()
+    attempt = NodeAttempt(
+        node_execution_id=node.id, attempt_number=1, status=AttemptStatus.RUNNING
+    )
+    db_session.add(attempt)
+    output = node_attempt_directory(Path(run.run_data_path), node.node_path, 1)
+    output.mkdir(parents=True)
+    (output / "pi_events.jsonl").write_text(
+        '{"type":"message_end","message":{"role":"assistant",'
+        '"provider":"anthropic","model":"sonnet","content":[],"usage":'
+        '{"input":25,"output":5,"totalTokens":30}}}\n',
+        encoding="utf-8",
+    )
+    await db_session.commit()
+
+    assert await mark_run_interrupted(
+        db_session, run.id, error_type="ENGINE_CRASH", error_message="stopped"
+    )
+    await db_session.refresh(attempt)
+    assert attempt.pi_usage is not None and attempt.pi_usage["totalTokens"] == 30
+    assert attempt.pi_models == [
+        {"provider": "anthropic", "model": "sonnet", "response_models": []}
+    ]
 
 
 async def test_pending_publication_resumes_without_a_failed_wave(

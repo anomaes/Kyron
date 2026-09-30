@@ -10,8 +10,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.project_routes as project_routes
+from backend.auth.authorization import seed_project_roles
 from backend.auth.dependencies import AuthenticatedUser
-from backend.db.models import AuthorizationAuditEvent, Project
+from backend.db.models import (
+    AuthorizationAuditEvent,
+    Project,
+    ProjectMembership,
+    ProjectMembershipRole,
+    ProjectRole,
+    User,
+)
 from backend.schemas.project import ProjectTokenUpdate, ProjectWebhookSecretUpdate
 from backend.services.project_service import ProjectService
 
@@ -22,6 +30,10 @@ class GovernanceProjectService:
         self.deleted = False
         self.access_token: str | None = None
         self.webhook_secret: tuple[str, str | None] | None = None
+
+    async def list(self) -> list[Project]:
+        return [self.project]
+
 
     async def get(self, project_id: uuid.UUID) -> Project:
         assert project_id == self.project.id
@@ -53,6 +65,56 @@ class GovernanceProjectService:
         self.project.encrypted_webhook_secret = b"encrypted"
         self.project.encrypted_webhook_signing_secret = None
         return self.project
+
+
+async def test_project_list_keeps_manage_permissions_per_project(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    owner = User(email="owner-list@example.com", display_name="Owner")
+    other = User(email="other-list@example.com", display_name="Other")
+    db_session.add_all([owner, other])
+    await db_session.flush()
+
+    def project(name: str, added_by: uuid.UUID) -> Project:
+        return Project(
+            name=name, git_url=f"https://example.invalid/{name}.git",
+            provider="github", provider_project_id=name,
+            provider_project_path=f"example/{name}",
+            encrypted_access_token=b"encrypted", local_path=str(tmp_path / name),
+            default_branch="main", added_by=added_by,
+        )
+
+    managed = project("managed", owner.id)
+    viewed = project("viewed", other.id)
+    db_session.add_all([managed, viewed])
+    await db_session.flush()
+    await seed_project_roles(db_session, managed.id, owner.id)
+    await seed_project_roles(db_session, viewed.id, other.id)
+    viewer_role = await db_session.scalar(
+        select(ProjectRole).where(ProjectRole.project_id == viewed.id, ProjectRole.key == "viewer")
+    )
+    assert viewer_role is not None
+    membership = ProjectMembership(project_id=viewed.id, user_id=owner.id)
+    db_session.add(membership)
+    await db_session.flush()
+    db_session.add(ProjectMembershipRole(membership_id=membership.id, role_id=viewer_role.id))
+    await db_session.commit()
+    actor = AuthenticatedUser(
+        id=owner.id, email=owner.email, display_name=owner.display_name,
+        avatar_url=None, provider="github", provider_user_id="owner",
+        provider_username="owner",
+    )
+
+    class TwoProjects:
+        async def list(self) -> list[Project]:
+            return [managed, viewed]
+
+    responses = await project_routes.list_projects(
+        actor, db_session, cast(ProjectService, TwoProjects())
+    )
+    assert {item.name: item.can_manage for item in responses} == {
+        "managed": True, "viewed": False,
+    }
 
 
 async def test_project_fetch_and_deletion_are_audited(

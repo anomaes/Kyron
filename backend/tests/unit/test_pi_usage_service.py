@@ -14,6 +14,8 @@ from backend.db.models import (
     WorkflowRun,
 )
 from backend.engine.output_paths import node_attempt_directory
+from backend.engine.pi.json_events import PiEventCollector
+from backend.engine.pi.live_summaries import register, unregister
 from backend.services.pi_usage_service import PiUsageService
 
 
@@ -33,6 +35,33 @@ def stored_usage(total: int, cost: float) -> dict[str, object]:
         },
         "requestCount": 1,
     }
+
+
+async def test_running_attempt_uses_incremental_summary_without_scanning_file(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    node = NodeExecution(
+        id=uuid.uuid4(), node_path="root/prompt", node_type="prompt", status="RUNNING"
+    )
+    attempt = NodeAttempt(
+        id=uuid.uuid4(), node_execution_id=node.id, attempt_number=1, status="RUNNING"
+    )
+    collector = PiEventCollector()
+    await collector.accept(
+        "stdout",
+        '{"type":"message_end","message":{"role":"assistant",'
+        '"content":[],"usage":{"input":11,"output":3}}}\n',
+    )
+    register(attempt.id, collector)
+    try:
+        usage, models, source = await PiUsageService(db_session)._attempt_summary(
+            tmp_path, node, attempt
+        )
+    finally:
+        unregister(attempt.id)
+    assert source == "live"
+    assert usage["input"] == 11
+    assert models == []
 
 
 async def test_run_usage_includes_persisted_and_historical_attempts(

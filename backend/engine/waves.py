@@ -25,8 +25,7 @@ from backend.engine.context import expand_public_variables, output_variables
 from backend.engine.nodes.process_nodes import NodeExecutionRequest, ProcessNodeExecutor
 from backend.engine.output_paths import node_attempt_directory
 from backend.engine.pi.command import resolve_pi_settings
-from backend.engine.pi.model_identity import aggregate_pi_models_content
-from backend.engine.pi.usage import aggregate_pi_usage_content
+from backend.engine.pi.file_summary import summarize_pi_file
 from backend.engine.process_runner import ProcessResult
 from backend.integrations.git_manager import GitManager
 from backend.schemas.pi import PiSettings
@@ -277,6 +276,10 @@ class WaveExecutor:
             if task.cancelled():
                 attempt.status = AttemptStatus.CANCELLED
                 execution.status = NodeStatus.CANCELLED
+                if execution.node_type == "prompt":
+                    attempt.pi_usage, attempt.pi_models = await _read_pi_attempt_metadata(
+                        run_data, execution.node_path, attempt.attempt_number
+                    )
                 logger.warning(
                     "Node attempt cancelled after another node failed "
                     "(run=%s, wave=%s, node=%s, attempt=%s)",
@@ -547,8 +550,7 @@ async def _read_pi_attempt_metadata(
     output = node_attempt_directory(run_data, node_path, attempt_number) / "pi_events.jsonl"
     if not await asyncio.to_thread(output.is_file):
         return None, None
-    content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
-    return aggregate_pi_usage_content(content), aggregate_pi_models_content(content)
+    return await asyncio.to_thread(summarize_pi_file, output)
 
 
 def _failure_diagnostics(result: ProcessResult) -> str:

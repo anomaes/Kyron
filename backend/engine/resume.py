@@ -28,6 +28,7 @@ from backend.db.statuses import (
     WaveStatus,
 )
 from backend.integrations.git_manager import GitManager
+from backend.services.pi_summary_persistence import persist_terminal_pi_summaries
 
 
 class ResumeError(RuntimeError):
@@ -274,6 +275,7 @@ async def mark_interrupted_runs(session: AsyncSession) -> int:
         .where(NodeExecution.run_id.in_(run_ids), NodeExecution.status == NodeStatus.RUNNING)
         .values(status=NodeStatus.INTERRUPTED, finished_at=now)
     )
+    await persist_terminal_pi_summaries(session, run_ids, (AttemptStatus.INTERRUPTED,))
     await session.commit()
     return len(run_ids)
 
@@ -338,6 +340,7 @@ async def mark_run_interrupted(
         .where(NodeExecution.run_id == run.id, NodeExecution.status == NodeStatus.RUNNING)
         .values(status=NodeStatus.INTERRUPTED, finished_at=now, error_message=error_message)
     )
+    await persist_terminal_pi_summaries(session, [run.id], (AttemptStatus.INTERRUPTED,))
     session.add(
         RunLog(
             run_id=run.id,

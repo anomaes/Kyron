@@ -174,12 +174,11 @@ async def test_oversized_pi_event_is_drained_before_following_tool_error(
         persisted_events[0]["result"]["content"][0]["text"]
         == "Rückrollschutz " * 100_000
     )
-    assert [event["type"] for event in collector.events] == [
-        "tool_execution_end",
-        "tool_execution_end",
-        "agent_end",
+    assert [event["type"] for event in persisted_events] == [
+        "tool_execution_end", "tool_execution_end", "agent_end",
     ]
-    assert collector.events[1]["isError"]
+    assert persisted_events[1]["isError"]
+    assert collector.line_count == 3
     assert collector.failure_message is None
 
 
@@ -285,8 +284,8 @@ async def test_structured_stdout_drops_incomplete_record_at_attempt_limit(
     assert result.output_truncated
     assert persisted == '{"type": "agent_start"}\n'
     assert OUTPUT_TRUNCATION_MARKER.strip() not in persisted
-    assert [event["type"] for event in collector.events] == ["agent_start"]
-    assert collector.errors == []
+    assert collector.line_count == 1
+    assert collector.error_count == 0
 
 
 async def test_stream_drain_timeout_terminates_background_pipe_holder(

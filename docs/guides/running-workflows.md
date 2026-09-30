@@ -57,8 +57,10 @@ Prompt nodes that have started are clickable. Selecting one changes the right-ha
 from **Run log** to **Pi activity**, without hiding the workflow graph. Pi activity combines
 persisted attempt history with current streaming events: assistant messages are grouped,
 reasoning is collapsed, and each tool invocation appears as a compact status card. Expand a
-tool card to inspect its complete formatted input and output, or switch attempts after a
-retry. Use the **Run log** tab to return to the orchestration-wide stream.
+tool card to inspect its formatted input and output preview, or switch attempts after a
+retry. Use **Next page** and **Previous page** to browse persisted history, or download
+the complete Pi history for large records. Use the **Run log** tab to return to the
+orchestration-wide stream.
 
 The log WebSocket accepts `after_id`. On reconnect, the server first replays durable engine logs with larger sequence IDs and then switches to live delivery. Raw process output is live-only in the socket, but complete attempt files remain available through the output endpoint until retention cleanup. Pi protocol stdout is handled separately: raw redacted JSONL remains in the attempt file, while the socket and Pi-activity endpoint expose normalized node- and attempt-scoped events.
 

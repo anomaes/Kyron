@@ -17,7 +17,7 @@ from backend.services.log_broadcaster import LogBroadcaster
 
 logger = logging.getLogger(__name__)
 
-LineCallback = Callable[[str, str], Awaitable[None]]
+LineCallback = Callable[[str, str], Awaitable[object]]
 DIAGNOSTIC_TAIL_BYTES = 4096
 STREAM_READ_CHUNK_BYTES = 64 * 1024
 MAX_STREAM_FRAME_BYTES = 1 << 20

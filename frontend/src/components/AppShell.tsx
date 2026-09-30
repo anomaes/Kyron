@@ -23,7 +23,8 @@ export function AppShell() {
           <div><strong>{user.data?.display_name ?? "Loading…"}</strong><small>{user.data ? `${user.data.provider} · @${user.data.provider_username}` : ""}</small><a href="/auth/logout">Sign out</a></div>
         </div>
       </aside>
-      <main className="main"><Outlet context={{ user: user.data }} /></main>
+      <main className="main"><Suspense fallback={<p>Loading page…</p>}><Outlet context={{ user: user.data }} /></Suspense></main>
     </div>
   );
 }
+import { Suspense } from "react";

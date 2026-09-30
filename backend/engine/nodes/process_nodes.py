@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from backend.engine.context import build_process_environment, expand_public_variables
 from backend.engine.pi.command import PiSkillUnavailable, build_pi_command, resolve_pi_skill
 from backend.engine.pi.json_events import PiEventCollector
+from backend.engine.pi.live_summaries import register, unregister
 from backend.engine.pi.models_config import (
     PiModelsConfigError,
     stage_models_config,
@@ -18,7 +19,7 @@ from backend.engine.pi.models_config import (
 )
 from backend.engine.pi.renderer import render_event
 from backend.engine.pi.sandbox import sandboxed_command
-from backend.engine.pi.ui_events import normalize_pi_event
+from backend.engine.pi.ui_events import normalize_pi_event, preview_pi_event
 from backend.engine.process_runner import (
     DIAGNOSTIC_TAIL_BYTES,
     BoundedTail,
@@ -117,14 +118,15 @@ class ProcessNodeExecutor:
                     skill_name=skill_name,
                 )
                 collector = PiEventCollector()
+                register(request.attempt_id, collector)
 
                 async def collect_and_publish(source: str, line: str) -> None:
                     assert collector is not None
-                    before = len(collector.events)
-                    await collector.accept(source, line)
-                    if len(collector.events) > before:
+                    event = await collector.accept(source, line)
+                    if event is not None:
                         event_index = collector.line_count
-                        ui_event = normalize_pi_event(collector.events[-1], event_index)
+                        normalized = normalize_pi_event(event, event_index)
+                        ui_event = preview_pi_event(normalized) if normalized is not None else None
                         if ui_event is not None:
                             await self.runner.broadcaster.publish(
                                 request.run_id,
@@ -135,7 +137,7 @@ class ProcessNodeExecutor:
                                     "attempt_id": str(request.attempt_id),
                                     "attempt_number": request.attempt_number,
                                     "event": ui_event,
-                                    "message": render_event(collector.events[-1]),
+                                    "message": render_event(event)[:4096],
                                 },
                             )
 
@@ -199,6 +201,8 @@ class ProcessNodeExecutor:
                 result.pi_models = collector.models
             result.pi_skill_warning = pi_skill_warning
         finally:
+            if collector is not None:
+                unregister(request.attempt_id)
             request.secrets.clear()
             environment.clear()
             if pi_scratch is not None:
@@ -207,7 +211,7 @@ class ProcessNodeExecutor:
             failure_message = None
             if result.output_truncated:
                 failure_message = "Pi output exceeded Kyron's attempt byte limit"
-            elif collector.errors:
+            elif collector.error_count:
                 failure_message = "Pi emitted malformed JSONL"
             elif collector.failure_message is not None:
                 failure_message = f"Pi reported failure: {collector.failure_message}"

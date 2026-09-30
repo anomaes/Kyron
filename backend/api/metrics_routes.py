@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Response
 
 from backend.auth.dependencies import CurrentUser
 from backend.config import Settings, get_settings
+from backend.services.pi_activity_metrics import pi_activity_metrics
 from backend.services.storage_metrics import measure_storage_roots, prometheus_storage_metrics
 
 router = APIRouter(tags=["metrics"])
@@ -19,6 +20,6 @@ async def metrics(
 ) -> Response:
     usages = await asyncio.to_thread(measure_storage_roots, settings)
     return Response(
-        prometheus_storage_metrics(usages),
+        prometheus_storage_metrics(usages) + pi_activity_metrics.prometheus(),
         media_type="text/plain; version=0.0.4",
     )

@@ -154,14 +154,11 @@ def test_repository_skill_must_stay_inside_worktree(tmp_path: Path) -> None:
 
 async def test_known_and_unknown_events_are_preserved() -> None:
     collector = PiEventCollector()
-    await collector.accept("stdout", '{"type":"agent_start"}\n')
-    await collector.accept("stdout", '{"type":"future_event","value":1}\n')
-    assert [event["type"] for event in collector.events] == [
-        "agent_start",
-        "future_event",
-    ]
-    assert render_event(collector.events[0]) == "Pi session started"
-    assert render_event(collector.events[1]) == "Pi event: future_event"
+    first = await collector.accept("stdout", '{"type":"agent_start"}\n')
+    second = await collector.accept("stdout", '{"type":"future_event","value":1}\n')
+    assert first is not None and render_event(first) == "Pi session started"
+    assert second is not None and render_event(second) == "Pi event: future_event"
+    assert collector.line_count == 2
 
 
 async def test_collector_records_the_model_selected_by_pi() -> None:
@@ -188,9 +185,23 @@ async def test_collector_records_the_model_selected_by_pi() -> None:
     ]
 
 
+async def test_collector_keeps_summary_without_retaining_large_event_history() -> None:
+    collector = PiEventCollector()
+    for _ in range(2000):
+        await collector.accept(
+            "stdout",
+            '{"type":"message_end","message":{"role":"assistant",'
+            '"content":[],"usage":{"input":1,"output":1}}}\n',
+        )
+    assert collector.usage["requestCount"] == 2000
+    assert collector.usage["input"] == 2000
+    assert collector.line_count == 2000
+    assert not hasattr(collector, "events")
+
+
 async def test_terminal_assistant_error_is_a_pi_failure() -> None:
     collector = PiEventCollector()
-    await collector.accept(
+    event = await collector.accept(
         "stdout",
         '{"type":"agent_end","messages":['
         '{"role":"assistant","content":[],"stopReason":"error",'
@@ -198,7 +209,7 @@ async def test_terminal_assistant_error_is_a_pi_failure() -> None:
     )
 
     assert collector.failure_message == "401 invalid API key"
-    assert render_event(collector.events[-1]) == "Pi session failed: 401 invalid API key"
+    assert event is not None and render_event(event) == "Pi session failed: 401 invalid API key"
 
 
 async def test_latest_successful_agent_end_supersedes_a_retried_error() -> None:

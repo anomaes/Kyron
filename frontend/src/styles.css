@@ -132,6 +132,9 @@ button.danger { background: #fff0ee; color: #ac3939; border: 1px solid #efc8c4; 
 .pi-activity { height: 495px; overflow: auto; padding: 14px; background: #f3f2ed; }
 .panel.panel-fullscreen .pi-activity { flex: 1 1 auto; height: auto; min-height: 0; }
 .pi-activity-empty { padding: 100px 20px; color: var(--muted); text-align: center; font-size: 12px; }
+.pi-activity-pagination { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+.pi-activity-pagination button { padding: 6px 10px; font-size: 10px; }
+.pi-activity-pagination a { margin-left: auto; }
 .pi-system-event { display: flex; align-items: center; gap: 8px; margin: 5px 4px; color: #777b70; font: 10px "DM Mono", monospace; }
 .pi-system-event > span { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: #e2e1da; color: #73766c; font-weight: 700; }
 .pi-system-event.error { color: #a23d36; }

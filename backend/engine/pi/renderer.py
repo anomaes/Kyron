@@ -13,12 +13,17 @@ def _tool_result_text(event: dict[str, Any]) -> str | None:
     if not isinstance(content, list):
         return None
     messages: list[str] = []
+    total_length = 0
     for item in content:
         if not isinstance(item, dict) or item.get("type") != "text":
             continue
         text = item.get("text")
         if isinstance(text, str) and text.strip():
-            messages.append(text.strip())
+            excerpt = text.strip()[:2048]
+            messages.append(excerpt)
+            total_length += len(excerpt)
+            if total_length >= 4096:
+                break
     return " ".join(messages) or None
 
 

@@ -88,9 +88,14 @@ that project's encrypted secret and provider-specific headers before processing 
 `GET /api/runs` accepts `project_id`, `root_workflow_id`, `status`,
 `triggered_by`, `created_after`, and `created_before`. Output retrieval accepts
 `attempt`, `stream=stdout|stderr|pi_events`, and `tail_lines`.
-The normalized Pi-activity endpoint accepts `attempt` and returns the selected attempt
-status with structured assistant, tool, lifecycle, and error events. Its `event_index`
-matches the corresponding persisted JSONL record for live/replay deduplication.
+The normalized Pi-activity endpoint accepts `attempt` and an optional opaque `cursor`.
+It returns at most 100 events from at most 1 MiB of source data, plus `next_cursor`,
+`has_more`, selected-attempt status, and model identities. Pass `next_cursor` to read
+the next page; poll that cursor for new records if the live socket is unavailable.
+Its `event_index` matches the corresponding persisted JSONL record for live/replay
+deduplication. Large fields are shortened in this interactive response. The original
+redacted JSONL remains available from the node output endpoint with
+`stream=pi_events`.
 `DELETE /api/runs/{run_id}` accepts only completed, failed, interrupted, or
 cancelled runs. It removes the local worktree and branch, output, logs, report,
 and execution hierarchy while retaining a separate authorization audit event.

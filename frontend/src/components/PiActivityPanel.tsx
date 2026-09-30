@@ -83,12 +83,11 @@ function piModelLabel(identity: PiModelIdentity): string {
 export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   const tools = new Map<string, ToolItem>();
+  let openAssistant: AssistantItem | undefined;
 
   for (const event of events) {
     if (event.kind === "assistant_delta") {
-      let assistant = [...items].reverse().find(
-        (item): item is AssistantItem => item.kind === "assistant" && item.open,
-      );
+      let assistant = openAssistant;
       if (!assistant) {
         assistant = {
           kind: "assistant",
@@ -98,6 +97,7 @@ export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
           open: true,
         };
         items.push(assistant);
+        openAssistant = assistant;
       }
       if (event.stream === "thinking") assistant.thinking += event.delta ?? "";
       else assistant.text += event.delta ?? "";
@@ -105,9 +105,7 @@ export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
     }
 
     if (event.kind === "assistant_end") {
-      let assistant = [...items].reverse().find(
-        (item): item is AssistantItem => item.kind === "assistant" && item.open,
-      );
+      let assistant = openAssistant;
       if (
         !assistant &&
         (
@@ -132,6 +130,7 @@ export function buildPiTranscript(events: PiActivityEvent[]): TranscriptItem[] {
         assistant.error = event.error;
         assistant.usage = event.usage;
         assistant.open = false;
+        openAssistant = undefined;
       }
       continue;
     }
@@ -242,23 +241,66 @@ export function PiActivityPanel({
     [attempts, node.executionId],
   );
   const [selectedAttempt, setSelectedAttempt] = useState(node.currentAttempt);
+  const historyKey = `${runId}:${node.executionId}:${selectedAttempt}`;
   const [following, setFollowing] = useState(true);
   const activityRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
+  const [pageStarts, setPageStarts] = useState<Array<string | null>>([null]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageKey, setPageKey] = useState(historyKey);
+  const [pollCursor, setPollCursor] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedAttempt(node.currentAttempt);
   }, [node.executionId, node.currentAttempt]);
 
-  const history = useQuery({
-    queryKey: ["pi-events", runId, node.executionId, selectedAttempt],
-    queryFn: () => api<PiEventsResponse>(`/runs/${runId}/nodes/${node.executionId}/pi-events?attempt=${selectedAttempt}`),
-    refetchInterval: (query) => query.state.data?.status === "RUNNING" ? 3000 : false,
+  const historyUrl = `/runs/${runId}/nodes/${node.executionId}/pi-events?attempt=${selectedAttempt}`;
+  useEffect(() => {
+    setPageKey(historyKey);
+    setPageStarts([null]);
+    setPageIndex(0);
+  }, [historyKey]);
+  const cursor = pageKey === historyKey ? pageStarts[pageIndex] : null;
+  const onLatestPage = pageKey === historyKey && pageIndex === pageStarts.length - 1;
+  const activePollCursor = pageKey === historyKey ? pollCursor : null;
+  const liveGap = liveEvents.some((event) => event.type === "dropped");
+  const fallback = connectionState !== "live" || liveGap;
+  const historyQuery = useQuery({
+    queryKey: ["pi-events", runId, node.executionId, selectedAttempt, cursor],
+    queryFn: ({ signal }) => api<PiEventsResponse>(
+      `${historyUrl}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      { signal },
+    ),
+    staleTime: 3000,
+    gcTime: 0,
   });
+  const history = historyQuery.data;
+  const initialStatus = history?.status ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.status ?? node.status;
+  useEffect(() => {
+    setPollCursor(null);
+    if (!fallback || !onLatestPage || initialStatus !== "RUNNING" || !history?.next_cursor) return;
+    const timer = window.setTimeout(() => setPollCursor(history.next_cursor), 3000);
+    return () => window.clearTimeout(timer);
+  }, [initialStatus, fallback, history?.next_cursor, onLatestPage]);
+  const continuation = useQuery({
+    queryKey: ["pi-events", runId, node.executionId, selectedAttempt, activePollCursor],
+    queryFn: ({ signal }) => api<PiEventsResponse>(`${historyUrl}&cursor=${encodeURIComponent(activePollCursor!)}`, { signal }),
+    enabled: activePollCursor !== null,
+    staleTime: 3000,
+    gcTime: 0,
+    refetchInterval: (query) => !query.state.data || (query.state.data.status === "RUNNING" && !query.state.data.events.length) ? 3000 : false,
+  });
+  useEffect(() => {
+    if (!activePollCursor || pageStarts.includes(activePollCursor) || !continuation.data || (!continuation.data.events.length && !continuation.data.has_more)) return;
+    setPageStarts((current) => [...current.slice(0, pageIndex + 1), activePollCursor]);
+    setPageIndex(pageIndex + 1);
+  }, [activePollCursor, continuation.data, pageIndex, pageStarts]);
+  const continuationPage = activePollCursor ? continuation.data : undefined;
+  const attemptStatus = continuationPage?.status ?? initialStatus;
   const events = useMemo(() => {
     const merged = new Map<number, PiActivityEvent>();
-    for (const event of history.data?.events ?? []) merged.set(event.event_index, event);
-    for (const envelope of liveEvents) {
+    for (const event of history?.events ?? []) merged.set(event.event_index, event);
+    for (const envelope of onLatestPage ? liveEvents : []) {
       if (
         envelope.type === "pi_event" &&
         envelope.node_execution_id === node.executionId &&
@@ -267,7 +309,7 @@ export function PiActivityPanel({
       ) merged.set(envelope.event.event_index, envelope.event);
     }
     return [...merged.values()].sort((left, right) => left.event_index - right.event_index);
-  }, [history.data?.events, liveEvents, node.executionId, selectedAttempt]);
+  }, [history?.events, liveEvents, node.executionId, onLatestPage, selectedAttempt]);
 
   useLayoutEffect(() => {
     if (!followRef.current || !activityRef.current) return;
@@ -287,8 +329,7 @@ export function PiActivityPanel({
     activityRef.current?.scrollTo({ top: activityRef.current.scrollHeight, behavior: "smooth" });
   }
 
-  const attemptStatus = history.data?.status ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.status ?? node.status;
-  const attemptModels = history.data?.models ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.pi_models ?? [];
+  const attemptModels = continuationPage?.models ?? history?.models ?? nodeAttempts.find((attempt) => attempt.attempt_number === selectedAttempt)?.pi_models ?? [];
   const liveState = attemptStatus === "RUNNING" ? connectionState : "complete";
   return <div className={`panel log-panel pi-activity-panel ${fullscreen ? "panel-fullscreen" : ""}`}>
     <div className="panel-title">
@@ -305,9 +346,20 @@ export function PiActivityPanel({
     </div>
     <div className="pi-node-context"><div className="pi-node-copy"><span>Prompt node</span><strong>{node.label}</strong><code>{node.nodePath}</code></div><div className="pi-node-meta">{attemptModels.length > 0 && <div className="pi-model-list"><span>Model</span>{attemptModels.map((model) => <code key={`${model.provider}/${model.model}`}>{piModelLabel(model)}</code>)}</div>}<StatusBadge status={attemptStatus} /></div></div>
     <div className="pi-activity" ref={activityRef} onScroll={handleScroll}>
-      {history.isError && events.length === 0 && <div className="pi-activity-empty error">Could not load this Pi attempt.</div>}
-      {!history.isError && events.length === 0 && <div className="pi-activity-empty">{attemptStatus === "RUNNING" ? "Waiting for Pi output…" : "No Pi activity was recorded for this attempt."}</div>}
+      {historyQuery.isError && events.length === 0 && <div className="pi-activity-empty error">Could not load this Pi attempt.</div>}
+      {!historyQuery.isError && events.length === 0 && <div className="pi-activity-empty">{historyQuery.isPending ? "Loading Pi activity…" : attemptStatus === "RUNNING" ? "Waiting for Pi output…" : "No Pi activity was recorded for this attempt."}</div>}
       <Transcript events={events} />
+    </div>
+    <div className="pi-activity-pagination">
+      {pageIndex > 0 && <button type="button" disabled={historyQuery.isPending} onClick={() => setPageIndex(pageIndex - 1)}>Previous page</button>}
+      {history?.has_more && <button type="button" disabled={historyQuery.isPending} onClick={() => {
+        if (!history.next_cursor) return;
+        setPageStarts([...pageStarts.slice(0, pageIndex + 1), history.next_cursor]);
+        setPageIndex(pageIndex + 1);
+      }}>Next page</button>}
+      {history && <span>Page {pageIndex + 1}{history.has_more ? " · more history available" : ""}</span>}
+      {historyQuery.isError && events.length > 0 && <button type="button" onClick={() => { void historyQuery.refetch(); }}>Retry history</button>}
+      <a href={`/api/runs/${runId}/nodes/${node.executionId}/output?stream=pi_events&attempt=${selectedAttempt}`} download>Download complete Pi history</a>
     </div>
   </div>;
 }

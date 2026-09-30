@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import select
 
 from backend.auth.authorization import (
     PROJECT_MANAGE,
@@ -9,10 +10,10 @@ from backend.auth.authorization import (
     accessible_project_ids,
     audit_event,
     authorize_project,
-    project_permissions,
 )
 from backend.auth.dependencies import CurrentUser, DbSession, require_project_provider
 from backend.config import Settings, get_settings
+from backend.db.models import ProjectMembership, ProjectMembershipRole, ProjectRolePermission
 from backend.dependencies import Cipher
 from backend.integrations.code_host import CodeHostError, provider_display_name
 from backend.integrations.git_manager import GitManager
@@ -62,10 +63,32 @@ async def list_projects(
     if allowed is not None:
         allowed_set = set(allowed)
         projects = [project for project in projects if project.id in allowed_set]
+    manageable = (
+        {project.id for project in projects}
+        if user.is_system_admin
+        else set(
+            await db.scalars(
+                select(ProjectMembership.project_id)
+                .join(
+                    ProjectMembershipRole,
+                    ProjectMembershipRole.membership_id == ProjectMembership.id,
+                )
+                .join(
+                    ProjectRolePermission,
+                    ProjectRolePermission.role_id == ProjectMembershipRole.role_id,
+                )
+                .where(
+                    ProjectMembership.user_id == user.id,
+                    ProjectMembership.is_active.is_(True),
+                    ProjectRolePermission.permission == PROJECT_MANAGE,
+                )
+            )
+        )
+    )
     responses: list[ProjectResponse] = []
     for project in projects:
         response = ProjectResponse.model_validate(project)
-        response.can_manage = PROJECT_MANAGE in await project_permissions(db, user, project.id)
+        response.can_manage = project.id in manageable
         responses.append(response)
     return responses
 

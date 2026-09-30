@@ -9,14 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import NodeAttempt, NodeExecution, WorkflowRun
 from backend.engine.output_paths import node_attempt_directory
-from backend.engine.pi.model_identity import (
-    aggregate_pi_models_content,
-    merge_pi_models,
-    normalize_pi_models,
-)
+from backend.engine.pi.file_summary import summarize_pi_file
+from backend.engine.pi.live_summaries import snapshot
+from backend.engine.pi.model_identity import merge_pi_models, normalize_pi_models
 from backend.engine.pi.usage import (
     add_pi_usage,
-    aggregate_pi_usage_content,
     empty_pi_usage,
     normalize_pi_usage,
 )
@@ -25,6 +22,7 @@ from backend.engine.pi.usage import (
 class PiUsageService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self._backfilled = False
 
     async def get_run_usage(self, run: WorkflowRun) -> dict[str, Any]:
         nodes = list(
@@ -65,8 +63,7 @@ class PiUsageService:
             node_models: list[dict[str, Any]] = []
             attempt_breakdown: list[dict[str, Any]] = []
             for attempt in attempts_by_node.get(node.id, []):
-                usage, source = await self._attempt_usage(root, node, attempt)
-                models = await self._attempt_models(root, node, attempt)
+                usage, models, source = await self._attempt_summary(root, node, attempt)
                 add_pi_usage(node_usage, usage)
                 merge_pi_models(node_models, models)
                 attempt_breakdown.append(
@@ -92,6 +89,8 @@ class PiUsageService:
                     "attempts": attempt_breakdown,
                 }
             )
+        if self._backfilled:
+            await self.session.commit()
         return {
             "usage": total,
             "models": run_models,
@@ -100,42 +99,41 @@ class PiUsageService:
             "nodes": breakdown,
         }
 
-    async def _attempt_usage(
+    async def _attempt_summary(
         self,
         root: Path | None,
         node: NodeExecution,
         attempt: NodeAttempt,
-    ) -> tuple[dict[str, Any], str]:
-        stored = normalize_pi_usage(attempt.pi_usage)
-        if stored is not None and attempt.status != "RUNNING":
-            return stored, "persisted"
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+        stored_usage = normalize_pi_usage(attempt.pi_usage)
+        stored_models = normalize_pi_models(attempt.pi_models)
+        if attempt.status == "RUNNING":
+            live = snapshot(attempt.id)
+            if live is not None:
+                return live[0], live[1], "live"
+            if stored_usage is not None or attempt.pi_models is not None:
+                return stored_usage or empty_pi_usage(), stored_models, "persisted"
+            return empty_pi_usage(), [], "none"
+        if (
+            stored_usage is not None
+            and attempt.pi_models is not None
+            and attempt.status != "RUNNING"
+        ):
+            return stored_usage, stored_models, "persisted"
         if root is not None:
             output = (
                 node_attempt_directory(root, node.node_path, attempt.attempt_number)
                 / "pi_events.jsonl"
             ).resolve()
             if output.is_relative_to(root) and await asyncio.to_thread(output.is_file):
-                content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
-                return aggregate_pi_usage_content(content), "events"
-        if stored is not None:
-            return stored, "persisted"
-        return empty_pi_usage(), "none"
-
-    async def _attempt_models(
-        self,
-        root: Path | None,
-        node: NodeExecution,
-        attempt: NodeAttempt,
-    ) -> list[dict[str, Any]]:
-        if attempt.pi_models is not None:
-            return normalize_pi_models(attempt.pi_models)
-        if root is None:
-            return []
-        output = (
-            node_attempt_directory(root, node.node_path, attempt.attempt_number)
-            / "pi_events.jsonl"
-        ).resolve()
-        if not output.is_relative_to(root) or not await asyncio.to_thread(output.is_file):
-            return []
-        content = await asyncio.to_thread(output.read_text, "utf-8", "replace")
-        return aggregate_pi_models_content(content)
+                usage, models = await asyncio.to_thread(summarize_pi_file, output)
+                selected_models = stored_models if attempt.pi_models is not None else models
+                if attempt.pi_usage is None:
+                    attempt.pi_usage = usage
+                if attempt.pi_models is None:
+                    attempt.pi_models = models
+                self._backfilled = True
+                return stored_usage or usage, selected_models, "events"
+        if stored_usage is not None or attempt.pi_models is not None:
+            return stored_usage or empty_pi_usage(), stored_models, "persisted"
+        return empty_pi_usage(), [], "none"

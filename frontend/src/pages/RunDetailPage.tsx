@@ -12,7 +12,7 @@ import { RunUsageSummary } from "../components/RunUsageSummary";
 import { useRunLogs } from "../hooks/useRunLogs";
 import type { ProjectAccess, Run, RunGraph, RunReport, RunUsage, User } from "../types";
 
-const terminalStates = new Set(["COMPLETED", "CANCELLED"]);
+const terminalStates = new Set(["COMPLETED", "FAILED", "INTERRUPTED", "CANCELLED"]);
 const deletableStates = new Set(["COMPLETED", "FAILED", "INTERRUPTED", "CANCELLED"]);
 const directedEdge = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed } };
 
@@ -150,8 +150,8 @@ export function RunDetailPage() {
   const { runId = "" } = useParams(); const client = useQueryClient();
   const navigate = useNavigate();
   const { user } = useOutletContext<{ user?: User }>();
-  const run = useQuery({ queryKey: ["run", runId], queryFn: () => api<Run>(`/runs/${runId}`), refetchInterval: 3000 });
-  const graph = useQuery({ queryKey: ["run-graph", runId], queryFn: () => api<RunGraph>(`/runs/${runId}/graph`), refetchInterval: 3000 });
+  const run = useQuery({ queryKey: ["run", runId], queryFn: () => api<Run>(`/runs/${runId}`), refetchInterval: (query) => terminalStates.has(query.state.data?.status ?? "") ? false : 3000 });
+  const graph = useQuery({ queryKey: ["run-graph", runId], queryFn: () => api<RunGraph>(`/runs/${runId}/graph`), refetchInterval: terminalStates.has(run.data?.status ?? "") ? false : 3000 });
   const usage = useQuery({ queryKey: ["run-usage", runId], queryFn: () => api<RunUsage>(`/runs/${runId}/usage`), refetchInterval: terminalStates.has(run.data?.status ?? "") ? false : 3000 });
   const report = useQuery({ queryKey: ["run-report", runId], queryFn: () => api<RunReport>(`/runs/${runId}/report`), refetchInterval: terminalStates.has(run.data?.status ?? "") ? false : 5000 });
   const access = useQuery({ queryKey: ["project-access", run.data?.project_id], enabled: Boolean(run.data?.project_id), queryFn: () => api<ProjectAccess>(`/projects/${run.data?.project_id}/access`) });

@@ -13,10 +13,10 @@ export function ProjectsPage() {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api<Project[]>("/projects") });
   const user = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/auth/me") });
-  const piCatalog = useQuery({ queryKey: ["pi-models-catalog"], queryFn: () => api<PiModelsCatalog>("/pi/models/catalog"), staleTime: 30_000 });
   const [open, setOpen] = useState(false);
   const [newProjectWebhookSecret, setNewProjectWebhookSecret] = useState("");
   const [piTarget, setPiTarget] = useState<Project | null>(null);
+  const piCatalog = useQuery({ queryKey: ["pi-models-catalog"], queryFn: () => api<PiModelsCatalog>("/pi/models/catalog"), staleTime: 30_000, enabled: open || piTarget !== null });
   const [tokenTarget, setTokenTarget] = useState<Project | null>(null);
   const [webhookTarget, setWebhookTarget] = useState<Project | null>(null);
   const [webhookSecret, setWebhookSecret] = useState("");

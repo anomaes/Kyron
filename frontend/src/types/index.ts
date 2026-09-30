@@ -375,4 +375,6 @@ export type PiEventsResponse = {
   status: string;
   models: PiModelIdentity[];
   events: PiActivityEvent[];
+  next_cursor: string | null;
+  has_more: boolean;
 };

@@ -4,8 +4,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.engine.pi.model_identity import aggregate_pi_models_events
-from backend.engine.pi.usage import aggregate_pi_usage_events
+from backend.engine.pi.model_identity import aggregate_pi_models_events, merge_pi_models
+from backend.engine.pi.usage import add_pi_usage, aggregate_pi_usage_events, empty_pi_usage
 
 KNOWN_EVENT_TYPES = {
     "session",
@@ -41,7 +41,7 @@ def _assistant_failure(message: object) -> str | None:
         return None
     error_message = message.get("errorMessage", message.get("error_message"))
     if isinstance(error_message, str) and error_message.strip():
-        return error_message.strip()
+        return error_message.strip()[:4096]
     return f"Pi request ended with stop reason {stop_reason}"
 
 
@@ -62,7 +62,7 @@ def event_failure_message(event: dict[str, Any]) -> str | None:
     if event_type == "extension_error":
         error = event.get("error")
         if isinstance(error, str) and error.strip():
-            return f"Pi extension failed: {error.strip()}"
+            return f"Pi extension failed: {error.strip()[:4096]}"
         return "Pi extension failed"
     return None
 
@@ -79,37 +79,32 @@ def parse_event(line: str) -> dict[str, Any]:
 
 @dataclass(slots=True)
 class PiEventCollector:
-    events: list[dict[str, Any]] = field(default_factory=list)
-    errors: list[PiProtocolError] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=empty_pi_usage)
+    models: list[dict[str, Any]] = field(default_factory=list)
+    error_count: int = 0
     line_count: int = 0
+    _agent_end_seen: bool = False
+    _agent_failure: str | None = None
+    _other_failure: str | None = None
 
-    async def accept(self, source: str, line: str) -> None:
+    async def accept(self, source: str, line: str) -> dict[str, Any] | None:
         if source != "stdout":
-            return
+            return None
         self.line_count += 1
         try:
-            self.events.append(parse_event(line))
-        except PiProtocolError as exc:
-            self.errors.append(exc)
+            event = parse_event(line)
+        except PiProtocolError:
+            self.error_count += 1
+            return None
+        add_pi_usage(self.usage, aggregate_pi_usage_events((event,)))
+        merge_pi_models(self.models, aggregate_pi_models_events((event,)))
+        if event.get("type") == "agent_end":
+            self._agent_end_seen = True
+            self._agent_failure = event_failure_message(event)
+        elif failure := event_failure_message(event):
+            self._other_failure = failure
+        return event
 
     @property
     def failure_message(self) -> str | None:
-        # Pi can emit a failed agent_end and retry. Only the latest agent result is terminal.
-        for event in reversed(self.events):
-            if event.get("type") == "agent_end":
-                return event_failure_message(event)
-
-        # Retain compatibility with event streams that end after a turn or message event.
-        for event in reversed(self.events):
-            failure = event_failure_message(event)
-            if failure is not None:
-                return failure
-        return None
-
-    @property
-    def usage(self) -> dict[str, Any]:
-        return aggregate_pi_usage_events(self.events)
-
-    @property
-    def models(self) -> list[dict[str, Any]]:
-        return aggregate_pi_models_events(self.events)
+        return self._agent_failure if self._agent_end_seen else self._other_failure

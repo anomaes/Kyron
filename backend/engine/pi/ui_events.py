@@ -161,3 +161,39 @@ def parse_pi_ui_events(content: str) -> list[dict[str, Any]]:
         if normalized is not None:
             events.append(normalized)
     return events
+
+
+def preview_pi_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Bound interactive fields while leaving the original JSONL untouched."""
+    preview = dict(event)
+
+    def clip(value: object, budget: list[int], depth: int = 0) -> object:
+        if budget[0] <= 0 or depth > 5:
+            return "[preview truncated; download raw output]"
+        if isinstance(value, str):
+            length = min(len(value), budget[0])
+            budget[0] -= length
+            return value[:length] + ("… [preview truncated]" if length < len(value) else "")
+        if isinstance(value, dict):
+            result: dict[str, object] = {}
+            for index, (key, item) in enumerate(value.items()):
+                if index >= 40 or budget[0] <= 0:
+                    result["…"] = "[preview truncated]"
+                    break
+                result[str(key)[:128]] = clip(item, budget, depth + 1)
+            return result
+        if isinstance(value, list):
+            items = [clip(item, budget, depth + 1) for item in value[:40]]
+            if len(value) > 40:
+                items.append("[preview truncated]")
+            return items
+        budget[0] -= 16
+        return value
+
+    for field in ("args", "partial_result", "result", "usage"):
+        if field in preview:
+            preview[field] = clip(preview[field], [8192])
+    for field in ("text", "thinking", "delta", "message", "error"):
+        if isinstance(preview.get(field), str):
+            preview[field] = clip(preview[field], [16384])
+    return preview
